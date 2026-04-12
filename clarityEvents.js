@@ -1080,11 +1080,12 @@ function renderTaskEditorHTML(task) {
   html += '</div>';
 
   // Notes: view mode (rendered markdown) or edit mode (textarea)
-  var notesRaw = draft.notes.map(function(n) { return n.rawContent || n.content; }).join('\n');
+  // Strip leading tabs for display/editing — they represent nesting under the parent task
+  var notesDisplay = draft.notes.map(function(n) { return (n.rawContent || n.content).replace(/^\t+/, ''); }).join('\n');
   html += '<div class="cl-editor-section">';
   if (draft.activeField === 'notes') {
-    html += '<textarea class="cl-editor-notes cl-editor-field-active" data-field="notes">' + esc(notesRaw) + '</textarea>';
-  } else if (notesRaw.trim()) {
+    html += '<textarea class="cl-editor-notes cl-editor-field-active" data-field="notes">' + esc(notesDisplay) + '</textarea>';
+  } else if (notesDisplay.trim()) {
     html += '<div class="cl-editor-notes-view" data-field-view="notes">' + renderNotesMarkdown(draft.notes) + '</div>';
   } else {
     html += '<div class="cl-editor-notes-view cl-editor-notes-empty" data-field-view="notes">Notes...</div>';
@@ -1187,7 +1188,8 @@ function saveActiveFieldValue() {
     if (notesEl) {
       var lines = notesEl.value.split('\n');
       State.editDraft.notes = lines.map(function(l, i) {
-        return { content: l, rawContent: l, lineIndex: State.editDraft.notes[i] ? State.editDraft.notes[i].lineIndex : -1 };
+        // Prepend tab back to preserve nesting under the parent task
+        return { content: l, rawContent: '\t' + l, lineIndex: State.editDraft.notes[i] ? State.editDraft.notes[i].lineIndex : -1 };
       });
     }
   }
