@@ -140,12 +140,17 @@ function renderInlineMarkdown(text) {
 
   // Markdown links [text](url) — extract before escaping corrupts URLs
   s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(m, linkText, url) {
-    return placeholder('<a class="cl-link" href="' + url + '">' + linkText + '</a>');
+    return placeholder('<a class="cl-link" href="' + url + '" target="_blank">' + linkText + '</a>');
   });
 
   // Wiki links [[text]]
   s = s.replace(/\[\[([^\]]+)\]\]/g, function(m, linkText) {
     return placeholder('<span class="cl-wikilink">' + linkText + '</span>');
+  });
+
+  // Bare URLs (after markdown/wiki links are already placeholders)
+  s = s.replace(/(https?:\/\/[^\s<>\[\]]+)/g, function(m, url) {
+    return placeholder('<a class="cl-link" href="' + url + '" target="_blank">' + url + '</a>');
   });
 
   // Formatting
@@ -780,13 +785,22 @@ function attachMainEventListeners() {
   var main = document.getElementById('cl-main');
   if (!main) return;
 
+  // Double-click to expand task editor
+  main.addEventListener('dblclick', function(e) {
+    if (e.target.closest('.cl-cb') || e.target.closest('.cl-task-editor')) return;
+    var row = e.target.closest('.cl-task-row');
+    if (row) {
+      e.preventDefault();
+      expandTask(row.dataset.taskId);
+    }
+  });
+
   main.addEventListener('click', function(e) {
+    // Let links work normally
+    if (e.target.closest('a.cl-link')) return;
+
     var target = e.target.closest('[data-action]');
     if (!target) {
-      var row = e.target.closest('.cl-task-row');
-      if (row && !e.target.closest('.cl-cb')) {
-        expandTask(row.dataset.taskId);
-      }
       return;
     }
     var action = target.dataset.action;
