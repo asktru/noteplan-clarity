@@ -294,6 +294,8 @@ body {
 .cl-tag-pill { font-size: 10px; padding: 2px 6px; border-radius: 4px; background: rgba(139, 92, 246, 0.12); color: var(--cl-purple); }
 
 .cl-star { font-size: 12px; color: var(--cl-yellow); }
+.cl-child-icon { font-size: 11px; opacity: 0.5; }
+.cl-child-checklist { color: var(--cl-accent); opacity: 0.6; }
 .cl-overdue-date { color: var(--cl-red); }
 
 .cl-mention-inline { color: var(--cl-accent); }

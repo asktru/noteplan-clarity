@@ -362,6 +362,23 @@ function renderTaskRow(task, options) {
   if (task.isDelegated && task.mentions.length > 0) {
     metaParts.push('delegated to <span class="cl-mention-inline">' + esc(task.mentions[0]) + '</span>');
   }
+  // Children indicator
+  if (task.children && task.children.length > 0) {
+    var hasNotes = false;
+    var clCount = 0;
+    var clDone = 0;
+    var subCount = 0;
+    for (var ci = 0; ci < task.children.length; ci++) {
+      if (task.children[ci].type === 'note') hasNotes = true;
+      else if (task.children[ci].type === 'checklist') { clCount++; if (task.children[ci].status === 'done') clDone++; }
+      else if (task.children[ci].type === 'task') subCount++;
+    }
+    var indicators = [];
+    if (hasNotes) indicators.push('<span class="cl-child-icon" title="Has notes">\u2261</span>');
+    if (clCount > 0) indicators.push('<span class="cl-child-icon cl-child-checklist" title="Checklist">\u2611 ' + clDone + '/' + clCount + '</span>');
+    if (subCount > 0) indicators.push('<span class="cl-child-icon" title="Sub-tasks">\u2937 ' + subCount + '</span>');
+    if (indicators.length > 0) metaParts = metaParts.concat(indicators);
+  }
   if (metaParts.length > 0) {
     html += '<div class="cl-task-meta">' + metaParts.join(' &middot; ') + '</div>';
   }
@@ -746,6 +763,7 @@ function renderNoteView() {
   html += renderQuickAdd('note');
 
   html += '<div class="cl-task-list cl-note-content">';
+  var skipUntilIndent = -1; // when > 0, skip children of a task at this indent level
   for (var pi = 0; pi < paras.length; pi++) {
     var p = paras[pi];
     if (pi === 0 && p.content === '---') {
@@ -754,9 +772,16 @@ function renderNoteView() {
     }
     if (p.type === 'title' && p.headingLevel === 1 && pi <= 3) continue;
 
+    var pIndent = p.indentLevel || 0;
     var isTask = (p.type === 'open' || p.type === 'done' || p.type === 'cancelled');
     var isChecklist = (p.type === 'checklist' || p.type === 'checklistDone' || p.type === 'checklistCancelled');
     var isHeading = p.type === 'title';
+
+    // Skip children of a task (they'll show in expanded editor)
+    if (skipUntilIndent >= 0) {
+      if (pIndent > skipUntilIndent) continue;
+      skipUntilIndent = -1; // back to parent level, stop skipping
+    }
 
     if (State.tasksOnly && !isTask && !isChecklist && !isHeading) continue;
 
@@ -772,22 +797,41 @@ function renderNoteView() {
       var parsed = parseTaskContentClient(p.content);
       var status = (p.type === 'done' || p.type === 'checklistDone') ? 'done' : (p.type === 'cancelled' || p.type === 'checklistCancelled') ? 'cancelled' : 'open';
       var raw = (p.rawContent || '').trimStart();
+
+      // Count children and gather them for the task object
+      var children = [];
+      for (var chi = pi + 1; chi < paras.length; chi++) {
+        if ((paras[chi].indentLevel || 0) <= pIndent) break;
+        var cp = paras[chi];
+        var cpType = cp.type;
+        if (cpType === 'open' || cpType === 'done' || cpType === 'cancelled') {
+          var cpParsed = parseTaskContentClient(cp.content || '');
+          children.push({ type: 'task', content: cpParsed.cleanContent, rawContent: cp.content, status: cpType === 'done' ? 'done' : cpType === 'cancelled' ? 'cancelled' : 'open', lineIndex: cp.lineIndex, id: nc.filename + ':' + cp.lineIndex, priority: cpParsed.priority, scheduledDate: cpParsed.scheduledDate, scheduledWeek: cpParsed.scheduledWeek, tags: cpParsed.tags, mentions: cpParsed.mentions });
+        } else if (cpType === 'checklist' || cpType === 'checklistDone' || cpType === 'checklistCancelled') {
+          children.push({ type: 'checklist', content: cp.content || '', status: cpType === 'checklistDone' ? 'done' : cpType === 'checklistCancelled' ? 'cancelled' : 'open', lineIndex: cp.lineIndex });
+        } else {
+          children.push({ type: 'note', content: cp.content || '', lineIndex: cp.lineIndex });
+        }
+      }
+
+      // Skip children in subsequent iterations
+      if (children.length > 0) skipUntilIndent = pIndent;
+
       var taskObj = {
         id: nc.filename + ':' + p.lineIndex, content: parsed.cleanContent, rawContent: p.content,
         type: isChecklist ? 'checklist' : 'task', status: status, priority: parsed.priority,
         scheduledDate: parsed.scheduledDate, scheduledWeek: parsed.scheduledWeek,
         tags: parsed.tags, mentions: parsed.mentions, isDelegated: raw.startsWith('+'),
         noteFilename: nc.filename, noteTitle: nc.title, folderPath: '', folderName: '',
-        lineIndex: p.lineIndex, children: [],
+        lineIndex: p.lineIndex, children: children,
       };
-      var indent = (p.indentLevel || 0) * 20;
+      var indent = pIndent * 20;
       if (indent > 0) html += '<div style="padding-left:' + indent + 'px;">';
       html += renderTaskRow(taskObj, { showSource: false });
       if (indent > 0) html += '</div>';
     } else {
-      var indent = (p.indentLevel || 0) * 20;
+      var indent = pIndent * 20;
       var isList = (p.type === 'list' || p.type === 'list-bullet');
-      // Also detect bullets from rawContent: "- text" or "* text" (not tasks)
       if (!isList && p.rawContent) {
         var rawTrim = p.rawContent.trimStart();
         if (/^[-*]\s+(?!\[)/.test(rawTrim)) isList = true;
@@ -863,6 +907,17 @@ function attachMainEventListeners() {
   main.addEventListener('click', function(e) {
     // Let links work normally
     if (e.target.closest('a.cl-link')) return;
+
+    // Click on task row to focus it
+    var clickedRow = e.target.closest('.cl-task-row');
+    if (clickedRow && !e.target.closest('.cl-cb') && !e.target.closest('[data-action]')) {
+      var rows = document.querySelectorAll('.cl-task-row');
+      for (var ri = 0; ri < rows.length; ri++) {
+        rows[ri].classList.remove('cl-focused');
+        if (rows[ri] === clickedRow) State.focusedTaskIndex = ri;
+      }
+      clickedRow.classList.add('cl-focused');
+    }
 
     var target = e.target.closest('[data-action]');
     if (!target) {
