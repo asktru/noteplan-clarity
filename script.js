@@ -280,9 +280,15 @@ async function onMessageFromHTMLView(actionType, data) {
         var rcResult = [];
         for (var rci = 0; rci < rcParas.length; rci++) {
           var rp = rcParas[rci];
+          // Compute indent: prefer API indentLevel, fallback to counting leading tabs
+          var rcIndent = rp.indentLevel || 0;
+          if (rcIndent === 0 && rp.rawContent) {
+            var tabMatch = rp.rawContent.match(/^\t+/);
+            if (tabMatch) rcIndent = tabMatch[0].length;
+          }
           rcResult.push({
             type: rp.type, content: rp.content || '', lineIndex: rp.lineIndex,
-            indentLevel: rp.indentLevel || 0, headingLevel: rp.headingLevel || 0,
+            indentLevel: rcIndent, headingLevel: rp.headingLevel || 0,
             rawContent: rp.rawContent || '',
           });
         }

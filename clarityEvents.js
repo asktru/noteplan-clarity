@@ -773,6 +773,11 @@ function renderNoteView() {
     if (p.type === 'title' && p.headingLevel === 1 && pi <= 3) continue;
 
     var pIndent = p.indentLevel || 0;
+    // Fallback: detect indent from rawContent leading tabs
+    if (pIndent === 0 && p.rawContent) {
+      var tabMatch = p.rawContent.match(/^\t+/);
+      if (tabMatch) pIndent = tabMatch[0].length;
+    }
     var isTask = (p.type === 'open' || p.type === 'done' || p.type === 'cancelled');
     var isChecklist = (p.type === 'checklist' || p.type === 'checklistDone' || p.type === 'checklistCancelled');
     var isHeading = p.type === 'title';
