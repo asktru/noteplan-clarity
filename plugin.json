@@ -1,0 +1,81 @@
+{
+  "macOS.minVersion": "10.13.0",
+  "noteplan.minAppVersion": "3.9.0",
+  "plugin.id": "asktru.Clarity",
+  "plugin.name": "Clarity",
+  "plugin.description": "Things 3-inspired task clarity layer. Smart views for Inbox, Today, Upcoming, Anytime, Someday with inline task editing.",
+  "plugin.icon": "🔮",
+  "plugin.author": "asktru",
+  "plugin.version": "1.0.0",
+  "plugin.lastUpdateInfo": "Initial release",
+  "plugin.script": "script.js",
+  "plugin.isRemote": "false",
+  "plugin.dependsOn": [
+    {
+      "id": "np.Shared",
+      "minVersion": "1.0.0"
+    }
+  ],
+  "plugin.requiredFiles": [
+    "clarityEvents.js",
+    "clarity.css"
+  ],
+  "plugin.requiredSharedFiles": [
+    "fontawesome.css",
+    "regular.min.flat4NP.css",
+    "solid.min.flat4NP.css",
+    "fa-regular-400.woff2",
+    "fa-solid-900.woff2",
+    "pluginToHTMLCommsBridge.js"
+  ],
+  "plugin.settings": [
+    {
+      "type": "heading",
+      "title": "Clarity Settings"
+    },
+    {
+      "key": "inboxLookbackDays",
+      "title": "Inbox Lookback Days",
+      "description": "How many days back to scan daily notes for inbox tasks.",
+      "type": "number",
+      "default": 14,
+      "required": false
+    },
+    {
+      "key": "excludedFolders",
+      "title": "Excluded Folders",
+      "description": "Comma-separated folder names to exclude from scanning (in addition to @Archive, @Trash, @Templates).",
+      "type": "string",
+      "default": "",
+      "required": false
+    },
+    {
+      "key": "lastView",
+      "title": "Last View",
+      "description": "Internal. Remembers last active view.",
+      "type": "hidden",
+      "default": "inbox",
+      "required": false
+    }
+  ],
+  "plugin.commands": [
+    {
+      "name": "Clarity",
+      "alias": ["clarity", "things", "task clarity"],
+      "description": "Open the Clarity task view",
+      "jsFunction": "showClarity",
+      "sidebarView": {
+        "windowID": "asktru.Clarity.dashboard",
+        "title": "Clarity",
+        "icon": "fa-crystal-ball",
+        "iconColor": "#3B82F6"
+      }
+    },
+    {
+      "name": "onMessageFromHTMLView",
+      "description": "Callback for HTML window messages",
+      "jsFunction": "onMessageFromHTMLView",
+      "hidden": true
+    }
+  ]
+}
