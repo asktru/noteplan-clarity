@@ -502,8 +502,8 @@ function extractTasksFromNote(note, tasks, sourceType, sourceDate) {
 
   var filename = note.filename || '';
   var noteTitle = note.title || filename.replace(/\.md$/, '').split('/').pop();
-  var folderPath = filename.replace(/\/[^/]+$/, '') || '';
-  var folderName = folderPath.split('/').pop() || '';
+  var folderPath = filename.indexOf('/') >= 0 ? filename.replace(/\/[^/]+$/, '') : '';
+  var folderName = folderPath ? folderPath.split('/').pop() : noteTitle;
 
   for (var i = 0; i < paras.length; i++) {
     var p = paras[i];
