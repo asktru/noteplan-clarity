@@ -475,8 +475,12 @@ function renderGroupedTasks(tasks, grouping, options) {
   for (var gi = 0; gi < groupOrder.length; gi++) {
     var name = groupOrder[gi];
     var displayName = (grouping === 'date') ? formatDateHeader(name) : name;
-    html += '<div class="cl-group-header">' + esc(displayName) + '</div>';
     var group = groups[groupOrder[gi]];
+    if (grouping === 'note' && group[0] && group[0].noteFilename) {
+      html += '<div class="cl-group-header cl-group-clickable" data-action="openInEditor" data-filename="' + esc(group[0].noteFilename) + '">' + esc(displayName) + '</div>';
+    } else {
+      html += '<div class="cl-group-header">' + esc(displayName) + '</div>';
+    }
     for (var ti = 0; ti < group.length; ti++) {
       var rowOpts = { showSource: grouping !== 'note' };
       if (options.showStar) rowOpts.showStar = true;
@@ -1127,8 +1131,13 @@ function renderTaskEditorHTML(task) {
   else if (draft.scheduledWeek) dateLabel = draft.scheduledWeek;
   html += '<div class="cl-meta-chip" data-action="openDatePicker"><span class="cl-meta-icon">\uD83D\uDCC5</span>' + dateLabel + '</div>';
 
-  var moveLabel = task.sourceType === 'calendar' ? 'Move to...' : esc(task.noteTitle);
-  html += '<div class="cl-meta-chip" data-action="openNotePicker"><span class="cl-meta-icon">\uD83D\uDCC1</span>' + moveLabel + '</div>';
+  // Current location — click to open in split view
+  if (task.noteFilename) {
+    var noteLabel = draft.moveToFilename ? esc(draft.moveToLabel || 'Moved') : esc(task.noteTitle);
+    html += '<div class="cl-meta-chip" data-action="openInEditor" data-filename="' + esc(task.noteFilename) + '"><span class="cl-meta-icon">\uD83D\uDCC1</span>' + noteLabel + '</div>';
+  }
+  // Move to... button
+  html += '<div class="cl-meta-chip cl-meta-add" data-action="openNotePicker">\u2192 Move to...</div>';
 
   for (var ti = 0; ti < draft.tags.length; ti++) {
     html += '<div class="cl-meta-chip cl-meta-tag" data-action="removeTag" data-tag="' + esc(draft.tags[ti]) + '">' + esc(draft.tags[ti]) + ' <span class="cl-remove">\u00d7</span></div>';
@@ -1487,10 +1496,11 @@ function showNotePicker(anchor) {
     var target = e.target.closest('[data-action="selectNote"]');
     if (target) {
       State.editDraft.moveToFilename = target.dataset.filename;
+      State.editDraft.moveToLabel = target.dataset.title;
       var editor = document.getElementById('cl-editor');
       if (editor) {
         var chip = editor.querySelector('[data-action="openNotePicker"]');
-        if (chip) chip.innerHTML = '<span class="cl-meta-icon">\uD83D\uDCC1</span>' + esc(target.dataset.title);
+        if (chip) chip.textContent = '\u2192 ' + target.dataset.title;
       }
       closePickers();
     }
@@ -1500,6 +1510,23 @@ function showNotePicker(anchor) {
 function renderNoteResults(query) {
   var q = (query || '').toLowerCase();
   var html = '';
+
+  // Show current location first
+  if (State.expandedTaskId && !q) {
+    var curTask = null;
+    for (var ti = 0; ti < State.tasks.length; ti++) {
+      if (State.tasks[ti].id === State.expandedTaskId) { curTask = State.tasks[ti]; break; }
+    }
+    if (curTask && curTask.noteFilename) {
+      html += '<div class="cl-picker-group">Current Location</div>';
+      html += '<div class="cl-picker-result cl-picker-current" data-action="selectNote" data-filename="' + esc(curTask.noteFilename) + '" data-title="' + esc(curTask.noteTitle) + '">';
+      html += '<span class="cl-picker-note-icon">\uD83D\uDCCD</span>';
+      html += '<span class="cl-picker-note-title">' + esc(curTask.noteTitle) + '</span>';
+      html += '</div>';
+      html += '<div class="cl-picker-divider" style="margin:4px 14px;"></div>';
+    }
+  }
+
   for (var fi = 0; fi < State.folders.length; fi++) {
     var folder = State.folders[fi];
     var matchingNotes = [];
@@ -1522,10 +1549,33 @@ function renderNoteResults(query) {
   return html;
 }
 
+function getAllKnownTags() {
+  var tagMap = {};
+  for (var i = 0; i < State.tasks.length; i++) {
+    var t = State.tasks[i];
+    if (t.tags) { for (var j = 0; j < t.tags.length; j++) tagMap[t.tags[j]] = true; }
+  }
+  return Object.keys(tagMap).sort();
+}
+
+function getAllKnownMentions() {
+  var menMap = {};
+  for (var i = 0; i < State.tasks.length; i++) {
+    var t = State.tasks[i];
+    if (t.mentions) { for (var j = 0; j < t.mentions.length; j++) menMap[t.mentions[j]] = true; }
+  }
+  return Object.keys(menMap).sort();
+}
+
 function showInlineInput(anchor, prefix, onCommit) {
-  // Remove any existing inline input
   var existing = document.querySelector('.cl-inline-input-wrap');
   if (existing) existing.remove();
+
+  var allSuggestions = prefix === '#' ? getAllKnownTags() : getAllKnownMentions();
+  // Exclude already-added ones
+  var draft = State.editDraft;
+  var already = prefix === '#' ? (draft.tags || []) : (draft.mentions || []);
+  allSuggestions = allSuggestions.filter(function(s) { return already.indexOf(s) === -1; });
 
   var wrap = document.createElement('div');
   wrap.className = 'cl-inline-input-wrap';
@@ -1533,10 +1583,42 @@ function showInlineInput(anchor, prefix, onCommit) {
   input.className = 'cl-inline-input';
   input.placeholder = prefix + '...';
   input.value = prefix;
+
+  var dropdown = document.createElement('div');
+  dropdown.className = 'cl-autocomplete';
+  var selectedIdx = -1;
+
   wrap.appendChild(input);
+  wrap.appendChild(dropdown);
   anchor.parentNode.insertBefore(wrap, anchor.nextSibling);
   input.focus();
   input.setSelectionRange(prefix.length, prefix.length);
+
+  function updateSuggestions() {
+    var q = input.value.toLowerCase();
+    var matches = allSuggestions.filter(function(s) { return s.toLowerCase().indexOf(q) >= 0; });
+    if (matches.length === 0 || (matches.length === 1 && matches[0].toLowerCase() === q)) {
+      dropdown.innerHTML = '';
+      dropdown.style.display = 'none';
+      selectedIdx = -1;
+      return;
+    }
+    selectedIdx = -1;
+    dropdown.style.display = 'block';
+    dropdown.innerHTML = '';
+    for (var i = 0; i < Math.min(matches.length, 8); i++) {
+      var item = document.createElement('div');
+      item.className = 'cl-autocomplete-item';
+      item.textContent = matches[i];
+      item.dataset.value = matches[i];
+      item.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        input.value = this.dataset.value;
+        commit();
+      });
+      dropdown.appendChild(item);
+    }
+  }
 
   function commit() {
     var val = input.value.trim();
@@ -1546,12 +1628,26 @@ function showInlineInput(anchor, prefix, onCommit) {
     }
   }
 
+  input.addEventListener('input', updateSuggestions);
+  updateSuggestions();
+
   input.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); commit(); }
-    if (e.key === 'Escape') { e.stopPropagation(); wrap.remove(); }
+    var items = dropdown.querySelectorAll('.cl-autocomplete-item');
+    if (e.key === 'ArrowDown' && items.length > 0) {
+      e.preventDefault();
+      selectedIdx = Math.min(selectedIdx + 1, items.length - 1);
+      for (var i = 0; i < items.length; i++) items[i].classList.toggle('cl-autocomplete-active', i === selectedIdx);
+      input.value = items[selectedIdx].dataset.value;
+    } else if (e.key === 'ArrowUp' && items.length > 0) {
+      e.preventDefault();
+      selectedIdx = Math.max(selectedIdx - 1, 0);
+      for (var i = 0; i < items.length; i++) items[i].classList.toggle('cl-autocomplete-active', i === selectedIdx);
+      input.value = items[selectedIdx].dataset.value;
+    } else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); commit(); }
+    else if (e.key === 'Escape') { e.stopPropagation(); wrap.remove(); }
   });
   input.addEventListener('blur', function() {
-    setTimeout(function() { if (wrap.parentNode) commit(); }, 100);
+    setTimeout(function() { if (wrap.parentNode) commit(); }, 150);
   });
 }
 
