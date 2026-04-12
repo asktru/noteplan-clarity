@@ -59,30 +59,50 @@ function getTasksForView(view) {
   var today = State.today;
   var currentWeek = State.currentWeek;
   var result = [];
+  var seenBlockIds = {};
+  var needsDedup = (view === 'today' || view === 'upcoming');
+
   for (var i = 0; i < State.tasks.length; i++) {
     var t = State.tasks[i];
     if (t.status !== 'open') continue;
     if (t.isDelegated) continue;
+    var match = false;
     switch (view) {
       case 'inbox':
-        if (t.sourceType === 'calendar' && t.sourceDate && t.sourceDate <= today) result.push(t);
+        if (t.sourceType === 'calendar' && t.sourceDate && t.sourceDate <= today) match = true;
         break;
       case 'today':
-        if (t.scheduledDate && t.scheduledDate <= today) result.push(t);
+        if (t.scheduledDate && t.scheduledDate <= today) match = true;
         break;
       case 'upcoming':
-        if ((t.scheduledDate && t.scheduledDate > today) || (t.scheduledWeek && t.scheduledWeek > currentWeek)) result.push(t);
+        if ((t.scheduledDate && t.scheduledDate > today) || (t.scheduledWeek && t.scheduledWeek > currentWeek)) match = true;
         break;
       case 'anytime':
         if (!t.tags || t.tags.indexOf('#someday') === -1) {
           if (!t.scheduledDate || t.scheduledDate <= today) {
-            if (!t.scheduledWeek || t.scheduledWeek <= currentWeek) result.push(t);
+            if (!t.scheduledWeek || t.scheduledWeek <= currentWeek) match = true;
           }
         }
         break;
       case 'someday':
-        if (t.tags && t.tags.indexOf('#someday') >= 0) result.push(t);
+        if (t.tags && t.tags.indexOf('#someday') >= 0) match = true;
         break;
+    }
+    if (match) {
+      // Deduplicate by blockId in Today/Upcoming — prefer project note over calendar note
+      if (needsDedup && t.blockId) {
+        if (seenBlockIds[t.blockId]) {
+          // Replace calendar-source duplicate with project-note version
+          if (t.sourceType === 'note' && seenBlockIds[t.blockId].sourceType === 'calendar') {
+            var idx = result.indexOf(seenBlockIds[t.blockId]);
+            if (idx >= 0) result[idx] = t;
+            seenBlockIds[t.blockId] = t;
+          }
+          continue;
+        }
+        seenBlockIds[t.blockId] = t;
+      }
+      result.push(t);
     }
   }
   return result;
@@ -142,9 +162,17 @@ function renderInlineMarkdown(text) {
     return placeholder('<span class="cl-comment">' + m + '</span>');
   });
 
+  // Block IDs: ^abc123 → skyblue asterisk
+  s = s.replace(/\s*\^[\da-zA-Z]{4,}/g, function(m) {
+    return placeholder(' <span class="cl-block-id">*</span>');
+  });
+
   // Tags and mentions — now safe because URLs are placeholders
   s = s.replace(/(#[\w\-\/]+)/g, '<span class="cl-tag-inline">$1</span>');
-  s = s.replace(/(@(?!done|due|repeat)[\w\-]+)/g, '<span class="cl-mention-inline">$1</span>');
+  // Mentions: only match @word when preceded by space or start (not inside emails)
+  s = s.replace(/(^|[\s(])(@(?!done|due|repeat)[\w\-]+)/g, function(m, pre, mention) {
+    return pre + '<span class="cl-mention-inline">' + mention + '</span>';
+  });
 
   // Restore placeholders
   for (var i = 0; i < placeholders.length; i++) {

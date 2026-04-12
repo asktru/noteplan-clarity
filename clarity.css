@@ -287,6 +287,7 @@ body {
 .cl-wikilink { color: var(--cl-accent); text-decoration: underline; cursor: pointer; }
 .cl-link { color: var(--cl-accent); text-decoration: underline; }
 .cl-comment { opacity: 0.3; font-style: italic; }
+.cl-block-id { color: skyblue; opacity: 0.5; font-size: 12px; }
 
 .cl-empty { text-align: center; padding: 40px; opacity: 0.3; }
 .cl-focused { outline: 2px solid var(--cl-accent); outline-offset: -2px; border-radius: var(--cl-radius-sm); }
