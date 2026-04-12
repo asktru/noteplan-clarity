@@ -2,7 +2,7 @@
 
 A Things 3-inspired task clarity layer for [NotePlan](https://noteplan.co). Surfaces tasks from across your notes into smart views, provides inline task editing, and shows projects/areas in a collapsible sidebar.
 
-![Clarity](screenshot.jpg)
+![Clarity](screenshot.png)
 
 ## Features
 
