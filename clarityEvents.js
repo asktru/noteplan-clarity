@@ -1024,9 +1024,10 @@ function expandTask(taskId) {
 
   for (var ci = 0; ci < task.children.length; ci++) {
     var child = task.children[ci];
-    if (child.type === 'note') State.editDraft.notes.push({ content: child.content, lineIndex: child.lineIndex });
+    if (child.type === 'note') State.editDraft.notes.push({ content: child.content, rawContent: child.rawContent || child.content, lineIndex: child.lineIndex });
     else if (child.type === 'checklist') State.editDraft.checklists.push({ content: child.content, status: child.status, lineIndex: child.lineIndex });
   }
+  State.editDraft.activeField = null; // null = view mode, 'title' or 'notes' = editing
 
   var row = document.querySelector('.cl-task-row[data-task-id="' + CSS.escape(taskId) + '"]');
   if (!row) return;
@@ -1046,8 +1047,6 @@ function expandTask(taskId) {
     editor.parentNode.insertBefore(subRow, editor.nextSibling);
   }
 
-  var titleEl = editor.querySelector('.cl-editor-title');
-  if (titleEl) titleEl.focus();
   attachEditorListeners(editor);
 }
 
@@ -1070,14 +1069,26 @@ function renderTaskEditorHTML(task) {
   var draft = State.editDraft;
   var html = '';
 
+  // Title: view mode (rendered markdown) or edit mode (input)
   html += '<div class="cl-editor-row">';
   html += '<div class="cl-cb" data-action="toggle"></div>';
-  html += '<input class="cl-editor-title" value="' + esc(task.content) + '" data-field="title"/>';
+  if (draft.activeField === 'title') {
+    html += '<input class="cl-editor-title cl-editor-field-active" value="' + esc(draft.content) + '" data-field="title"/>';
+  } else {
+    html += '<div class="cl-editor-title-view" data-field-view="title">' + renderInlineMarkdown(draft.content) + '</div>';
+  }
   html += '</div>';
 
-  var notesText = draft.notes.map(function(n) { return n.content; }).join('\n');
+  // Notes: view mode (rendered markdown) or edit mode (textarea)
+  var notesRaw = draft.notes.map(function(n) { return n.rawContent || n.content; }).join('\n');
   html += '<div class="cl-editor-section">';
-  html += '<textarea class="cl-editor-notes" placeholder="Notes..." data-field="notes">' + esc(notesText) + '</textarea>';
+  if (draft.activeField === 'notes') {
+    html += '<textarea class="cl-editor-notes cl-editor-field-active" data-field="notes">' + esc(notesRaw) + '</textarea>';
+  } else if (notesRaw.trim()) {
+    html += '<div class="cl-editor-notes-view" data-field-view="notes">' + renderNotesMarkdown(draft.notes) + '</div>';
+  } else {
+    html += '<div class="cl-editor-notes-view cl-editor-notes-empty" data-field-view="notes">Notes...</div>';
+  }
   html += '</div>';
 
   if (draft.checklists.length > 0) {
@@ -1121,8 +1132,75 @@ function renderTaskEditorHTML(task) {
   return html;
 }
 
+function renderNotesMarkdown(notes) {
+  var html = '';
+  for (var i = 0; i < notes.length; i++) {
+    var raw = notes[i].rawContent || notes[i].content || '';
+    // Strip leading tab
+    raw = raw.replace(/^\t+/, '');
+    // Detect type from raw prefix
+    if (raw.match(/^>\s?/)) {
+      html += '<div class="cl-editor-note-line cl-note-quote" style="margin:2px 0;">' + renderInlineMarkdown(raw.replace(/^>\s?/, '')) + '</div>';
+    } else if (raw.match(/^[-*]\s+/)) {
+      html += '<div class="cl-editor-note-line">\u2022 ' + renderInlineMarkdown(raw.replace(/^[-*]\s+/, '')) + '</div>';
+    } else {
+      html += '<div class="cl-editor-note-line">' + renderInlineMarkdown(raw) + '</div>';
+    }
+  }
+  return html;
+}
+
+function activateEditorField(fieldName) {
+  if (!State.editDraft) return;
+  // Save current field value before switching
+  saveActiveFieldValue();
+  State.editDraft.activeField = fieldName;
+  // Re-render the editor
+  var task = null;
+  for (var i = 0; i < State.tasks.length; i++) {
+    if (State.tasks[i].id === State.expandedTaskId) { task = State.tasks[i]; break; }
+  }
+  if (!task) return;
+  var editor = document.getElementById('cl-editor');
+  if (!editor) return;
+  editor.innerHTML = renderTaskEditorHTML(task);
+  attachEditorListeners(editor);
+  // Focus the newly active field
+  if (fieldName === 'title') {
+    var el = editor.querySelector('.cl-editor-title');
+    if (el) { el.focus(); el.select(); }
+  } else if (fieldName === 'notes') {
+    var el = editor.querySelector('.cl-editor-notes');
+    if (el) { el.focus(); }
+  }
+}
+
+function saveActiveFieldValue() {
+  if (!State.editDraft) return;
+  var editor = document.getElementById('cl-editor');
+  if (!editor) return;
+  if (State.editDraft.activeField === 'title') {
+    var titleEl = editor.querySelector('.cl-editor-title');
+    if (titleEl) State.editDraft.content = titleEl.value;
+  } else if (State.editDraft.activeField === 'notes') {
+    var notesEl = editor.querySelector('.cl-editor-notes');
+    if (notesEl) {
+      var lines = notesEl.value.split('\n');
+      State.editDraft.notes = lines.map(function(l, i) {
+        return { content: l, rawContent: l, lineIndex: State.editDraft.notes[i] ? State.editDraft.notes[i].lineIndex : -1 };
+      });
+    }
+  }
+}
+
 function attachEditorListeners(editor) {
+  // Click on view fields to enter edit mode
   editor.addEventListener('click', function(e) {
+    var viewField = e.target.closest('[data-field-view]');
+    if (viewField) {
+      activateEditorField(viewField.dataset.fieldView);
+      return;
+    }
     var target = e.target.closest('[data-action]');
     if (!target) return;
     var action = target.dataset.action;
@@ -1172,6 +1250,23 @@ function attachEditorListeners(editor) {
         break;
     }
   });
+
+  // Tab cycles between title and notes only
+  editor.addEventListener('keydown', function(e) {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      e.stopPropagation();
+      var current = State.editDraft.activeField;
+      if (current === 'title') {
+        activateEditorField('notes');
+      } else if (current === 'notes') {
+        activateEditorField('title');
+      } else {
+        // No field active, activate title
+        activateEditorField('title');
+      }
+    }
+  });
 }
 
 function reRenderEditorMeta() {
@@ -1200,24 +1295,13 @@ function reRenderEditorMeta() {
 
 function saveExpandedTask() {
   if (!State.expandedTaskId || !State.editDraft) return;
+  // Save any active field value first
+  saveActiveFieldValue();
   var draft = State.editDraft;
   var taskId = State.expandedTaskId;
   var parts = taskId.split(':');
   var filename = parts.slice(0, -1).join(':');
   var lineIndex = parseInt(parts[parts.length - 1]);
-
-  var editor = document.getElementById('cl-editor');
-  if (editor) {
-    var titleInput = editor.querySelector('.cl-editor-title');
-    if (titleInput) draft.content = titleInput.value;
-    var notesArea = editor.querySelector('.cl-editor-notes');
-    if (notesArea) {
-      var noteLines = notesArea.value.split('\n').filter(function(l) { return l.trim(); });
-      draft.notes = noteLines.map(function(l, i) {
-        return { content: l, lineIndex: draft.notes[i] ? draft.notes[i].lineIndex : -1 };
-      });
-    }
-  }
 
   var msg = {
     filename: filename, lineIndex: lineIndex,

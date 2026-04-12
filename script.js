@@ -532,7 +532,7 @@ function extractTasksFromNote(note, tasks, sourceType, sourceDate) {
         var clStatus = cpType === 'checklistDone' ? 'done' : cpType === 'checklistCancelled' ? 'cancelled' : 'open';
         children.push({ type: 'checklist', content: cp.content || '', status: clStatus, lineIndex: cp.lineIndex });
       } else {
-        children.push({ type: 'note', content: cp.content || '', lineIndex: cp.lineIndex });
+        children.push({ type: 'note', content: cp.content || '', rawContent: cp.rawContent || cp.content || '', lineIndex: cp.lineIndex });
       }
     }
 
