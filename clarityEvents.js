@@ -690,7 +690,7 @@ function renderNoteView() {
     html += '<circle cx="12" cy="12" r="9" fill="none" stroke="' + bgColor + '" stroke-width="2.5" stroke-dasharray="' + circumference.toFixed(1) + '" stroke-dashoffset="' + offset.toFixed(1) + '" transform="rotate(-90 12 12)" stroke-linecap="round"/>';
   }
   html += '</svg>';
-  html += '<h1>' + esc(nc.title) + '</h1></div>';
+  html += '<h1 class="cl-note-title-link" data-action="openInEditor" data-filename="' + esc(nc.filename) + '">' + esc(nc.title) + '</h1></div>';
 
   var folderPath = (nc.filename || '').replace(/\/[^/]+$/, '');
   html += '<div class="cl-note-breadcrumb">' + esc(folderPath) + ' &middot; ' + doneCount + '/' + taskCount + ' done</div>';
@@ -852,6 +852,11 @@ function attachMainEventListeners() {
       case 'setGrouping':
         State.grouping = target.dataset.grouping || 'note';
         renderCurrentView();
+        break;
+      case 'openInEditor':
+        if (target.dataset.filename) {
+          sendMessageToPlugin('openNoteInEditor', JSON.stringify({ filename: target.dataset.filename }));
+        }
         break;
       case 'dismissMoved':
         State.movedFromInbox = [];

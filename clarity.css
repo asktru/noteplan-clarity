@@ -293,6 +293,8 @@ body {
 .cl-focused { outline: 2px solid var(--cl-accent); outline-offset: 4px; border-radius: var(--cl-radius-sm); }
 
 /* ─── Note View ───────────────────────────────────────── */
+.cl-note-title-link { cursor: pointer; }
+.cl-note-title-link:hover { text-decoration: underline; text-decoration-color: var(--cl-accent); text-underline-offset: 3px; }
 .cl-note-breadcrumb { font-size: 11px; opacity: 0.35; margin: -12px 0 12px 34px; }
 .cl-note-filters { display: flex; justify-content: space-between; align-items: center; padding: 0 0 12px; }
 .cl-tasks-only-toggle { font-size: 11px; padding: 3px 10px; border-radius: 10px; background: var(--cl-hover); opacity: 0.6; cursor: pointer; }

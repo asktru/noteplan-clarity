@@ -283,6 +283,20 @@ async function onMessageFromHTMLView(actionType, data) {
         break;
       }
 
+      case 'openNoteInEditor': {
+        if (msg.filename) {
+          await CommandBar.onMainThread();
+          var oeNote = findNoteByFilename(msg.filename);
+          var oeTitle = oeNote ? (oeNote.title || '') : '';
+          if (oeTitle) {
+            NotePlan.openURL('noteplan://x-callback-url/openNote?noteTitle=' + encodeURIComponent(oeTitle) + '&splitView=yes&reuseSplitView=yes');
+          } else {
+            Editor.openNoteByFilename(msg.filename);
+          }
+        }
+        break;
+      }
+
       default:
         console.log('Clarity: unknown action: ' + actionType);
     }
