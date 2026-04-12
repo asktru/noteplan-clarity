@@ -290,6 +290,12 @@ function handleNavClick(e) {
   var item = e.currentTarget;
   var view = item.dataset.view;
   if (!view) return;
+  // Close mobile sidebar
+  var sidebar = document.getElementById('cl-sidebar');
+  var overlay = document.getElementById('cl-sidebar-overlay');
+  if (sidebar) sidebar.classList.remove('cl-sidebar-open');
+  if (overlay) overlay.classList.remove('cl-sidebar-open');
+
   State.currentView = view;
   State.focusedTaskIndex = -1;
   State.filters = { tag: null, mention: null, text: '', noteStatus: 'all' };
@@ -1669,4 +1675,22 @@ document.addEventListener('DOMContentLoaded', function() {
   setTimeout(function() {
     sendMessageToPlugin('ready', '{}');
   }, 100);
+
+  // Mobile sidebar toggle
+  var toggle = document.getElementById('cl-sidebar-toggle');
+  var overlay = document.getElementById('cl-sidebar-overlay');
+  if (toggle) {
+    toggle.addEventListener('click', function() {
+      var sidebar = document.getElementById('cl-sidebar');
+      if (sidebar) sidebar.classList.toggle('cl-sidebar-open');
+      if (overlay) overlay.classList.toggle('cl-sidebar-open');
+    });
+  }
+  if (overlay) {
+    overlay.addEventListener('click', function() {
+      var sidebar = document.getElementById('cl-sidebar');
+      if (sidebar) sidebar.classList.remove('cl-sidebar-open');
+      overlay.classList.remove('cl-sidebar-open');
+    });
+  }
 });

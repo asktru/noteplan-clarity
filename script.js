@@ -81,6 +81,8 @@ function buildFullHTML() {
     '  <link rel="stylesheet" href="clarity.css">\n' +
     '  <style>' + themeCSS + '</style>\n' +
     '</head>\n<body>\n' +
+    '  <button class="cl-sidebar-toggle" id="cl-sidebar-toggle">\u2630</button>\n' +
+    '  <div class="cl-sidebar-overlay" id="cl-sidebar-overlay"></div>\n' +
     '  <div id="cl-root"><div id="cl-sidebar"></div><div id="cl-main"></div></div>\n' +
     '  <script>var receivingPluginID = \'' + PLUGIN_ID + '\';<\/script>\n' +
     '  <script type="text/javascript" src="clarityEvents.js"><\/script>\n' +
