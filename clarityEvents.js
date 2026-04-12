@@ -30,10 +30,15 @@ function onMessageFromPlugin(type, data) {
       State.today = data.today || '';
       State.currentWeek = data.currentWeek || '';
       if (data.lastView) State.currentView = data.lastView;
+      if (data.lastNoteFilename && data.lastView === 'note') State.currentNoteFilename = data.lastNoteFilename;
       if (data.collapsedAreas) {
         try { State.collapsedAreas = JSON.parse(data.collapsedAreas); } catch (e) { State.collapsedAreas = {}; }
       }
       renderSidebar();
+      // If in note view, re-request note content
+      if (State.currentView === 'note' && State.currentNoteFilename) {
+        sendMessageToPlugin('requestNoteContent', JSON.stringify({ filename: State.currentNoteFilename }));
+      }
       renderCurrentView();
       break;
     case 'NOTE_CONTENT':
@@ -310,7 +315,7 @@ function handleNavClick(e) {
     sendMessageToPlugin('requestNoteContent', JSON.stringify({ filename: State.currentNoteFilename }));
   }
 
-  sendMessageToPlugin('saveView', JSON.stringify({ view: view }));
+  sendMessageToPlugin('saveView', JSON.stringify({ view: view, noteFilename: State.currentNoteFilename }));
   var allNav = document.querySelectorAll('.cl-nav-item');
   for (var i = 0; i < allNav.length; i++) allNav[i].classList.remove('cl-nav-active');
   item.classList.add('cl-nav-active');

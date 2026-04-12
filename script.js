@@ -150,6 +150,7 @@ async function onMessageFromHTMLView(actionType, data) {
         break;
       case 'saveView':
         saveSetting('lastView', msg.view || 'inbox');
+        if (msg.noteFilename) saveSetting('lastNoteFilename', msg.noteFilename);
         break;
       case 'saveCollapsedAreas':
         saveSetting('collapsedAreas', msg.collapsedAreas || '{}');
@@ -337,6 +338,7 @@ async function handleReady() {
     today: getTodayStr(),
     currentWeek: getCurrentWeekStr(),
     collapsedAreas: s.collapsedAreas || '{}',
+    lastNoteFilename: s.lastNoteFilename || null,
   });
 }
 
