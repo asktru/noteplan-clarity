@@ -1009,14 +1009,27 @@ function expandTask(taskId) {
   collapseTask();
 
   State.expandedTaskId = taskId;
+
+  // Strip trailing tags from title — they'll be shown in the metadata bar
+  var titleContent = task.content;
+  var trailingTags = [];
+  var trailingMatch = titleContent.match(/(\s+#[\w\-\/]+)+$/);
+  if (trailingMatch) {
+    var trailingStr = trailingMatch[0];
+    titleContent = titleContent.substring(0, titleContent.length - trailingStr.length);
+    var tagMatches = trailingStr.match(/#[\w\-\/]+/g);
+    if (tagMatches) trailingTags = tagMatches;
+  }
+
   State.editDraft = {
-    content: task.content,
+    content: titleContent,
     rawContent: task.rawContent,
     priority: task.priority,
     scheduledDate: task.scheduledDate,
     scheduledWeek: task.scheduledWeek,
     tags: task.tags ? task.tags.slice() : [],
     mentions: task.mentions ? task.mentions.slice() : [],
+    trailingTags: trailingTags,
     moveToFilename: null,
     notes: [],
     checklists: [],
