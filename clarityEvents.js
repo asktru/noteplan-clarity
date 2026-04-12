@@ -744,7 +744,10 @@ function renderNoteView() {
         noteFilename: nc.filename, noteTitle: nc.title, folderPath: '', folderName: '',
         lineIndex: p.lineIndex, children: [],
       };
+      var indent = (p.indentLevel || 0) * 20;
+      if (indent > 0) html += '<div style="padding-left:' + indent + 'px;">';
       html += renderTaskRow(taskObj, { showSource: false });
+      if (indent > 0) html += '</div>';
     } else {
       html += '<div class="cl-note-para" style="padding-left:' + ((p.indentLevel || 0) * 20) + 'px;">' + renderInlineMarkdown(p.content) + '</div>';
     }
