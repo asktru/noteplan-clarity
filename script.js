@@ -157,6 +157,9 @@ async function onMessageFromHTMLView(actionType, data) {
       case 'saveCollapsedAreas':
         saveSetting('collapsedAreas', msg.collapsedAreas || '{}');
         break;
+      case 'saveViewPrefs':
+        saveSetting('viewPrefs', msg.viewPrefs || '{}');
+        break;
 
       case 'toggleTask': {
         var tNote = findNoteByFilename(msg.filename);
@@ -340,6 +343,7 @@ async function handleReady() {
     today: getTodayStr(),
     currentWeek: getCurrentWeekStr(),
     collapsedAreas: s.collapsedAreas || '{}',
+    viewPrefs: s.viewPrefs || '{}',
     lastNoteFilename: s.lastNoteFilename || null,
   });
 }

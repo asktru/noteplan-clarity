@@ -18,6 +18,7 @@ var State = {
   tasksOnly: false,
   noteContent: null,
   collapsedAreas: {},
+  viewPrefs: {},
 };
 
 // ─── Message Handling ──────────────────────────────────────
@@ -34,6 +35,10 @@ function onMessageFromPlugin(type, data) {
       if (data.collapsedAreas) {
         try { State.collapsedAreas = JSON.parse(data.collapsedAreas); } catch (e) { State.collapsedAreas = {}; }
       }
+      if (data.viewPrefs) {
+        try { State.viewPrefs = JSON.parse(data.viewPrefs); } catch (e) { State.viewPrefs = {}; }
+      }
+      restoreViewPrefs(State.currentView, State.currentNoteFilename);
       renderSidebar();
       // If in note view, re-request note content
       if (State.currentView === 'note' && State.currentNoteFilename) {
@@ -286,6 +291,41 @@ function renderSidebar() {
   }
 }
 
+function viewPrefsKey(view, filename) {
+  return view === 'note' ? 'note:' + (filename || '') : view;
+}
+
+function saveCurrentViewPrefs() {
+  var key = viewPrefsKey(State.currentView, State.currentNoteFilename);
+  if (State.currentView === 'note') {
+    State.viewPrefs[key] = { noteStatus: State.filters.noteStatus, tasksOnly: State.tasksOnly };
+  } else {
+    State.viewPrefs[key] = { tag: State.filters.tag, grouping: State.grouping };
+  }
+}
+
+function restoreViewPrefs(view, filename) {
+  var key = viewPrefsKey(view, filename);
+  var saved = State.viewPrefs[key];
+  if (view === 'note') {
+    State.filters.noteStatus = (saved && saved.noteStatus) || 'all';
+    State.tasksOnly = (saved && saved.tasksOnly) || false;
+  } else {
+    State.filters.tag = (saved && saved.tag) || null;
+    State.grouping = (saved && saved.grouping) || defaultGrouping(view);
+  }
+}
+
+function defaultGrouping(view) {
+  if (view === 'inbox') return 'date';
+  if (view === 'anytime') return 'folder';
+  return 'note';
+}
+
+function persistViewPrefs() {
+  sendMessageToPlugin('saveViewPrefs', JSON.stringify({ viewPrefs: JSON.stringify(State.viewPrefs) }));
+}
+
 function handleNavClick(e) {
   var item = e.currentTarget;
   var view = item.dataset.view;
@@ -296,6 +336,9 @@ function handleNavClick(e) {
   if (sidebar) sidebar.classList.remove('cl-sidebar-open');
   if (overlay) overlay.classList.remove('cl-sidebar-open');
 
+  // Save prefs for the view we're leaving
+  saveCurrentViewPrefs();
+
   State.currentView = view;
   State.focusedTaskIndex = -1;
   State.filters = { tag: null, mention: null, text: '', noteStatus: 'all' };
@@ -303,15 +346,14 @@ function handleNavClick(e) {
   State.expandedTaskId = null;
   State.editDraft = null;
 
-  if (view === 'inbox') State.grouping = 'date';
-  else if (view === 'today') State.grouping = 'note';
-  else if (view === 'anytime') State.grouping = 'folder';
-  else if (view === 'someday') State.grouping = 'note';
-
   if (view === 'note') {
     State.currentNoteFilename = item.dataset.filename || null;
     sendMessageToPlugin('requestNoteContent', JSON.stringify({ filename: State.currentNoteFilename }));
   }
+
+  // Restore saved prefs for the view we're entering
+  restoreViewPrefs(view, State.currentNoteFilename);
+  persistViewPrefs();
 
   sendMessageToPlugin('saveView', JSON.stringify({ view: view, noteFilename: State.currentNoteFilename }));
   var allNav = document.querySelectorAll('.cl-nav-item');
@@ -943,18 +985,22 @@ function attachMainEventListeners() {
         break;
       case 'filterTag':
         State.filters.tag = target.dataset.tag || null;
+        saveCurrentViewPrefs(); persistViewPrefs();
         renderCurrentView();
         break;
       case 'filterNoteStatus':
         State.filters.noteStatus = target.dataset.status || 'all';
+        saveCurrentViewPrefs(); persistViewPrefs();
         renderCurrentView();
         break;
       case 'toggleTasksOnly':
         State.tasksOnly = !State.tasksOnly;
+        saveCurrentViewPrefs(); persistViewPrefs();
         renderCurrentView();
         break;
       case 'setGrouping':
         State.grouping = target.dataset.grouping || 'note';
+        saveCurrentViewPrefs(); persistViewPrefs();
         renderCurrentView();
         break;
       case 'openInEditor':
