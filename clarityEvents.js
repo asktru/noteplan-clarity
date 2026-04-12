@@ -784,9 +784,12 @@ function parseTaskContentClient(content) {
 }
 
 // ─── Event Delegation ──────────────────────────────────────
+var _mainListenersAttached = false;
 function attachMainEventListeners() {
+  if (_mainListenersAttached) return;
   var main = document.getElementById('cl-main');
   if (!main) return;
+  _mainListenersAttached = true;
 
   // Double-click to expand task editor
   main.addEventListener('dblclick', function(e) {
