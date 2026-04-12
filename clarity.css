@@ -110,7 +110,21 @@ body {
   letter-spacing: 0.5px;
   opacity: 0.3;
   padding: 10px 8px 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  user-select: none;
 }
+.cl-area-header:hover { opacity: 0.5; }
+.cl-area-chevron {
+  font-size: 8px;
+  transition: transform 0.15s;
+  display: inline-block;
+}
+.cl-area-chevron:not(.cl-collapsed) { transform: rotate(90deg); }
+.cl-area-group { overflow: hidden; }
+.cl-hidden { display: none; }
 
 .cl-project-item { font-size: 12px; }
 .cl-project-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -288,6 +302,14 @@ body {
 .cl-link { color: var(--cl-accent); text-decoration: underline; }
 .cl-comment { opacity: 0.3; font-style: italic; }
 .cl-block-id { color: skyblue; opacity: 0.5; font-size: 12px; }
+.cl-inline-code {
+  font-family: 'SF Mono', 'Menlo', 'Monaco', monospace;
+  font-size: 0.9em;
+  padding: 1px 5px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  color: var(--cl-orange);
+}
 
 .cl-empty { text-align: center; padding: 40px; opacity: 0.3; }
 .cl-focused { outline: 2px solid var(--cl-accent); outline-offset: 4px; border-radius: var(--cl-radius-sm); }

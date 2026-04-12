@@ -151,6 +151,9 @@ async function onMessageFromHTMLView(actionType, data) {
       case 'saveView':
         saveSetting('lastView', msg.view || 'inbox');
         break;
+      case 'saveCollapsedAreas':
+        saveSetting('collapsedAreas', msg.collapsedAreas || '{}');
+        break;
 
       case 'toggleTask': {
         var tNote = findNoteByFilename(msg.filename);
@@ -319,6 +322,7 @@ async function handleReady() {
   var tasks = gatherAllTasks();
   var tree = getFolderTree();
   await CommandBar.onMainThread();
+  var s = DataStore.settings || {};
   await sendToHTMLWindow('INIT_DATA', {
     tasks: tasks,
     folders: tree.folders,
@@ -326,6 +330,7 @@ async function handleReady() {
     lastView: config.lastView,
     today: getTodayStr(),
     currentWeek: getCurrentWeekStr(),
+    collapsedAreas: s.collapsedAreas || '{}',
   });
 }
 

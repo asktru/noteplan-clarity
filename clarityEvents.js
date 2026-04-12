@@ -17,6 +17,7 @@ var State = {
   currentWeek: '',
   tasksOnly: false,
   noteContent: null,
+  collapsedAreas: {},
 };
 
 // ─── Message Handling ──────────────────────────────────────
@@ -29,6 +30,9 @@ function onMessageFromPlugin(type, data) {
       State.today = data.today || '';
       State.currentWeek = data.currentWeek || '';
       if (data.lastView) State.currentView = data.lastView;
+      if (data.collapsedAreas) {
+        try { State.collapsedAreas = JSON.parse(data.collapsedAreas); } catch (e) { State.collapsedAreas = {}; }
+      }
       renderSidebar();
       renderCurrentView();
       break;
@@ -153,6 +157,11 @@ function renderInlineMarkdown(text) {
     return placeholder('<a class="cl-link" href="' + url + '" target="_blank">' + url + '</a>');
   });
 
+  // Inline code — extract before other formatting to protect contents
+  s = s.replace(/`([^`]+)`/g, function(m, code) {
+    return placeholder('<code class="cl-inline-code">' + code + '</code>');
+  });
+
   // Formatting
   s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   s = s.replace(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>');
@@ -216,13 +225,23 @@ function renderSidebar() {
 
   html += '<div class="cl-nav-divider"></div>';
 
-  // Areas & Projects
+  // Areas & Projects (collapsible)
   var currentParent = '';
+  var areaIdx = 0;
   for (var fi = 0; fi < State.folders.length; fi++) {
     var folder = State.folders[fi];
     if (folder.parentFolder !== currentParent) {
+      // Close previous area group
+      if (currentParent) html += '</div>';
       currentParent = folder.parentFolder;
-      html += '<div class="cl-area-header">' + esc(currentParent) + '</div>';
+      var areaKey = currentParent;
+      var collapsed = State.collapsedAreas && State.collapsedAreas[areaKey];
+      html += '<div class="cl-area-header" data-area="' + esc(areaKey) + '">';
+      html += '<span class="cl-area-chevron' + (collapsed ? ' cl-collapsed' : '') + '">\u25B8</span>';
+      html += esc(currentParent);
+      html += '</div>';
+      html += '<div class="cl-area-group' + (collapsed ? ' cl-hidden' : '') + '" data-area-group="' + esc(areaKey) + '">';
+      areaIdx++;
     }
     var notes = folder.notes || [];
     for (var ni = 0; ni < notes.length; ni++) {
@@ -243,6 +262,7 @@ function renderSidebar() {
       html += '</div>';
     }
   }
+  if (currentParent) html += '</div>'; // close last area group
 
   html += '</div>';
   el.innerHTML = html;
@@ -250,6 +270,22 @@ function renderSidebar() {
   var navItems = el.querySelectorAll('.cl-nav-item');
   for (var ci = 0; ci < navItems.length; ci++) {
     navItems[ci].addEventListener('click', handleNavClick);
+  }
+
+  // Area collapse toggle
+  var areaHeaders = el.querySelectorAll('.cl-area-header');
+  for (var ai = 0; ai < areaHeaders.length; ai++) {
+    areaHeaders[ai].addEventListener('click', function(e) {
+      var areaKey = e.currentTarget.dataset.area;
+      if (!areaKey) return;
+      State.collapsedAreas[areaKey] = !State.collapsedAreas[areaKey];
+      var chevron = e.currentTarget.querySelector('.cl-area-chevron');
+      var group = el.querySelector('[data-area-group="' + areaKey + '"]');
+      if (chevron) chevron.classList.toggle('cl-collapsed');
+      if (group) group.classList.toggle('cl-hidden');
+      // Persist
+      sendMessageToPlugin('saveCollapsedAreas', JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
+    });
   }
 }
 
