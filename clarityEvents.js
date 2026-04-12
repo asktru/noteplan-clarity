@@ -230,24 +230,16 @@ function renderSidebar() {
 
   html += '<div class="cl-nav-divider"></div>';
 
-  // Areas & Projects (collapsible)
-  var currentParent = '';
-  var areaIdx = 0;
+  // Areas & Projects (collapsible by folder path)
   for (var fi = 0; fi < State.folders.length; fi++) {
     var folder = State.folders[fi];
-    if (folder.parentFolder !== currentParent) {
-      // Close previous area group
-      if (currentParent) html += '</div>';
-      currentParent = folder.parentFolder;
-      var areaKey = currentParent;
-      var collapsed = State.collapsedAreas && State.collapsedAreas[areaKey];
-      html += '<div class="cl-area-header" data-area="' + esc(areaKey) + '">';
-      html += '<span class="cl-area-chevron' + (collapsed ? ' cl-collapsed' : '') + '">\u25B8</span>';
-      html += esc(currentParent);
-      html += '</div>';
-      html += '<div class="cl-area-group' + (collapsed ? ' cl-hidden' : '') + '" data-area-group="' + esc(areaKey) + '">';
-      areaIdx++;
-    }
+    var areaKey = folder.path;
+    var collapsed = State.collapsedAreas && State.collapsedAreas[areaKey];
+    html += '<div class="cl-area-header" data-area="' + esc(areaKey) + '">';
+    html += '<span class="cl-area-chevron' + (collapsed ? ' cl-collapsed' : '') + '">\u25B8</span>';
+    html += esc(folder.name);
+    html += '</div>';
+    html += '<div class="cl-area-group' + (collapsed ? ' cl-hidden' : '') + '" data-area-group="' + esc(areaKey) + '">';
     var notes = folder.notes || [];
     for (var ni = 0; ni < notes.length; ni++) {
       var n = notes[ni];
@@ -266,8 +258,8 @@ function renderSidebar() {
       html += '<span class="cl-project-title">' + esc(n.title) + '</span>';
       html += '</div>';
     }
+    html += '</div>'; // close area group
   }
-  if (currentParent) html += '</div>'; // close last area group
 
   html += '</div>';
   el.innerHTML = html;
