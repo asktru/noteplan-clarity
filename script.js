@@ -159,7 +159,9 @@ async function onMessageFromHTMLView(actionType, data) {
         if (!tPara) break;
         var raw = (tPara.rawContent || '').trimStart();
         var isCl = raw.startsWith('+');
-        if (tPara.type === 'open' || tPara.type === 'checklist') {
+        var tWasOpen = (tPara.type === 'open' || tPara.type === 'checklist');
+        var tHasRepeat = (tPara.content || '').indexOf('@repeat') >= 0;
+        if (tWasOpen) {
           tPara.type = isCl ? 'checklistDone' : 'done';
           var now = new Date();
           var doneTag = '@done(' + now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0') + ')';
@@ -170,6 +172,12 @@ async function onMessageFromHTMLView(actionType, data) {
         }
         tNote.updateParagraph(tPara);
         await sendToHTMLWindow('TASK_TOGGLED', { id: msg.filename + ':' + msg.lineIndex });
+        // Invoke Routine plugin for repeating tasks
+        if (tHasRepeat && tWasOpen && (tPara.type === 'done' || tPara.type === 'checklistDone')) {
+          try {
+            await DataStore.invokePluginCommandByName('generate repeats', 'asktru.Routine', [msg.filename]);
+          } catch (e) { console.log('Clarity: Routine not available: ' + String(e)); }
+        }
         break;
       }
 

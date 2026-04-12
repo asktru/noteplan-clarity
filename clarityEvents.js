@@ -767,8 +767,9 @@ function renderNoteView() {
         html += '<div class="cl-note-list-item" style="padding-left:' + indent + 'px;"><span class="cl-bullet">\u2022</span><span>' + renderInlineMarkdown(p.content) + '</span></div>';
       } else if (isNumbered) {
         html += '<div class="cl-note-list-item" style="padding-left:' + indent + 'px;"><span class="cl-num-marker">' + numLabel + '</span><span>' + renderInlineMarkdown(p.content) + '</span></div>';
-      } else if (p.type === 'quote') {
-        html += '<div class="cl-note-quote" style="padding-left:' + indent + 'px;">' + renderInlineMarkdown(p.content) + '</div>';
+      } else if (p.type === 'quote' || (p.content && p.content.match(/^\s*>\s/))) {
+        var quoteText = (p.content || '').replace(/^\s*>\s?/, '');
+        html += '<div class="cl-note-quote" style="margin-left:' + indent + 'px;">' + renderInlineMarkdown(quoteText) + '</div>';
       } else {
         html += '<div class="cl-note-para" style="padding-left:' + indent + 'px;">' + renderInlineMarkdown(p.content) + '</div>';
       }
