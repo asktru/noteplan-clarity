@@ -255,7 +255,7 @@ body {
   cursor: pointer;
   transition: background 0.1s;
 }
-.cl-task-row:hover { background: var(--cl-hover); margin: 0 -8px; padding: 8px 8px; border-radius: var(--cl-radius-sm); }
+.cl-task-row:hover { background: var(--cl-hover); }
 
 .cl-cb {
   width: 18px; height: 18px;
@@ -314,7 +314,7 @@ body {
 }
 
 .cl-empty { text-align: center; padding: 40px; opacity: 0.3; }
-.cl-focused { outline: 2px solid var(--cl-accent); outline-offset: 4px; border-radius: var(--cl-radius-sm); }
+.cl-focused { box-shadow: inset 0 0 0 2px var(--cl-accent); border-radius: var(--cl-radius-sm); padding-left: 6px; padding-right: 6px; }
 
 /* ─── Note View ───────────────────────────────────────── */
 .cl-note-title-link { cursor: pointer; }
