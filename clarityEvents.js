@@ -1243,20 +1243,18 @@ function attachEditorListeners(editor) {
         target.remove();
         break;
       case 'addTag':
-        var newTag = prompt('Add tag (e.g. #w/milx):');
-        if (newTag && newTag.trim()) {
-          if (!newTag.startsWith('#')) newTag = '#' + newTag;
-          State.editDraft.tags.push(newTag.trim());
+        showInlineInput(target, '#', function(val) {
+          if (!val.startsWith('#')) val = '#' + val;
+          State.editDraft.tags.push(val);
           reRenderEditorMeta();
-        }
+        });
         break;
       case 'addMention':
-        var newMention = prompt('Add mention (e.g. @SerhiiP):');
-        if (newMention && newMention.trim()) {
-          if (!newMention.startsWith('@')) newMention = '@' + newMention;
-          State.editDraft.mentions.push(newMention.trim());
+        showInlineInput(target, '@', function(val) {
+          if (!val.startsWith('@')) val = '@' + val;
+          State.editDraft.mentions.push(val);
           reRenderEditorMeta();
-        }
+        });
         break;
       case 'openDatePicker':
         showDatePicker(target);
@@ -1519,6 +1517,39 @@ function renderNoteResults(query) {
   }
   if (!html) html = '<div class="cl-picker-empty">No notes found</div>';
   return html;
+}
+
+function showInlineInput(anchor, prefix, onCommit) {
+  // Remove any existing inline input
+  var existing = document.querySelector('.cl-inline-input-wrap');
+  if (existing) existing.remove();
+
+  var wrap = document.createElement('div');
+  wrap.className = 'cl-inline-input-wrap';
+  var input = document.createElement('input');
+  input.className = 'cl-inline-input';
+  input.placeholder = prefix + '...';
+  input.value = prefix;
+  wrap.appendChild(input);
+  anchor.parentNode.insertBefore(wrap, anchor.nextSibling);
+  input.focus();
+  input.setSelectionRange(prefix.length, prefix.length);
+
+  function commit() {
+    var val = input.value.trim();
+    wrap.remove();
+    if (val && val !== prefix) {
+      onCommit(val);
+    }
+  }
+
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); commit(); }
+    if (e.key === 'Escape') { e.stopPropagation(); wrap.remove(); }
+  });
+  input.addEventListener('blur', function() {
+    setTimeout(function() { if (wrap.parentNode) commit(); }, 100);
+  });
 }
 
 function closePickers() {

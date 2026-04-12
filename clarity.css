@@ -460,6 +460,18 @@ body {
 .cl-meta-pri { font-weight: 600; }
 .cl-remove { font-size: 10px; opacity: 0.4; margin-left: 2px; }
 .cl-editor-hints { margin-left: 28px; margin-top: 10px; font-size: 11px; opacity: 0.2; }
+.cl-inline-input-wrap { display: inline-flex; }
+.cl-inline-input {
+  width: 120px;
+  padding: 4px 10px;
+  border-radius: var(--cl-radius-sm);
+  background: var(--cl-bg);
+  border: 1px solid var(--cl-accent);
+  color: var(--cl-text);
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+}
 .cl-subtask-row { padding-left: 28px; }
 
 /* ─── Pickers ─────────────────────────────────────────── */
