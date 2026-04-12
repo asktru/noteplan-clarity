@@ -749,7 +749,29 @@ function renderNoteView() {
       html += renderTaskRow(taskObj, { showSource: false });
       if (indent > 0) html += '</div>';
     } else {
-      html += '<div class="cl-note-para" style="padding-left:' + ((p.indentLevel || 0) * 20) + 'px;">' + renderInlineMarkdown(p.content) + '</div>';
+      var indent = (p.indentLevel || 0) * 20;
+      var isList = (p.type === 'list' || p.type === 'list-bullet');
+      // Also detect bullets from rawContent: "- text" or "* text" (not tasks)
+      if (!isList && p.rawContent) {
+        var rawTrim = p.rawContent.trimStart();
+        if (/^[-*]\s+(?!\[)/.test(rawTrim)) isList = true;
+      }
+      var isNumbered = false;
+      var numLabel = '';
+      if (!isList && p.rawContent) {
+        var numMatch = p.rawContent.trimStart().match(/^(\d+)\.\s+/);
+        if (numMatch) { isNumbered = true; numLabel = numMatch[1] + '.'; }
+      }
+
+      if (isList) {
+        html += '<div class="cl-note-list-item" style="padding-left:' + indent + 'px;"><span class="cl-bullet">\u2022</span><span>' + renderInlineMarkdown(p.content) + '</span></div>';
+      } else if (isNumbered) {
+        html += '<div class="cl-note-list-item" style="padding-left:' + indent + 'px;"><span class="cl-num-marker">' + numLabel + '</span><span>' + renderInlineMarkdown(p.content) + '</span></div>';
+      } else if (p.type === 'quote') {
+        html += '<div class="cl-note-quote" style="padding-left:' + indent + 'px;">' + renderInlineMarkdown(p.content) + '</div>';
+      } else {
+        html += '<div class="cl-note-para" style="padding-left:' + indent + 'px;">' + renderInlineMarkdown(p.content) + '</div>';
+      }
     }
   }
   html += '</div>';

@@ -302,6 +302,10 @@ body {
 .cl-note-h4 { font-size: 13px; }
 .cl-section-heading { font-size: 14px; font-weight: 600; color: var(--cl-text-muted); margin: 14px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--cl-border); }
 .cl-note-para { font-size: 13px; opacity: 0.6; margin: 4px 0; line-height: 1.7; }
+.cl-note-list-item { font-size: 13px; opacity: 0.6; margin: 3px 0; line-height: 1.7; display: flex; gap: 6px; }
+.cl-bullet { opacity: 0.5; flex-shrink: 0; }
+.cl-num-marker { opacity: 0.5; flex-shrink: 0; min-width: 16px; }
+.cl-note-quote { font-size: 13px; opacity: 0.6; margin: 4px 0; line-height: 1.7; border-left: 3px solid var(--cl-orange); padding-left: 10px; font-style: italic; }
 .cl-note-content { padding: 0 24px 20px; }
 
 /* ─── Task Editor ─────────────────────────────────────── */
