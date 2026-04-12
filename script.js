@@ -479,6 +479,15 @@ function gatherAllTasks() {
   return tasks;
 }
 
+function getParaIndent(p) {
+  var indent = p.indentLevel || 0;
+  if (indent === 0 && p.rawContent) {
+    var tabMatch = p.rawContent.match(/^\t+/);
+    if (tabMatch) indent = tabMatch[0].length;
+  }
+  return indent;
+}
+
 function extractTasksFromNote(note, tasks, sourceType, sourceDate) {
   var paras = note.paragraphs;
   if (!paras || paras.length === 0) return;
@@ -494,7 +503,8 @@ function extractTasksFromNote(note, tasks, sourceType, sourceDate) {
     var isTask = (pType === 'open' || pType === 'done' || pType === 'cancelled');
     var isChecklist = (pType === 'checklist' || pType === 'checklistDone' || pType === 'checklistCancelled');
     if (!isTask && !isChecklist) continue;
-    if ((p.indentLevel || 0) > 0) continue;
+    var pIndent = getParaIndent(p);
+    if (pIndent > 0) continue;
 
     var status = 'open';
     if (pType === 'done' || pType === 'checklistDone') status = 'done';
@@ -507,7 +517,7 @@ function extractTasksFromNote(note, tasks, sourceType, sourceDate) {
     var children = [];
     for (var ci = i + 1; ci < paras.length; ci++) {
       var cp = paras[ci];
-      if ((cp.indentLevel || 0) <= (p.indentLevel || 0)) break;
+      if (getParaIndent(cp) <= pIndent) break;
       var cpType = cp.type;
       if (cpType === 'open' || cpType === 'done' || cpType === 'cancelled') {
         var cpParsed = parseTaskContent(cp.content || '');
