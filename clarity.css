@@ -462,6 +462,24 @@ body {
 .cl-meta-pri { font-weight: 600; }
 .cl-remove { font-size: 10px; opacity: 0.4; margin-left: 2px; }
 .cl-editor-hints { margin-left: 28px; margin-top: 10px; font-size: 11px; opacity: 0.2; }
+.cl-editor-actions { display: none; }
+.cl-editor-btn {
+  padding: 8px 20px;
+  border-radius: var(--cl-radius-sm);
+  border: 1px solid var(--cl-border);
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+  background: none;
+  color: var(--cl-text);
+}
+.cl-editor-btn-save {
+  background: var(--cl-accent);
+  color: #fff;
+  border-color: var(--cl-accent);
+  font-weight: 600;
+}
+.cl-editor-btn-cancel { opacity: 0.6; }
 .cl-autocomplete {
   position: absolute;
   top: 100%;
@@ -622,7 +640,7 @@ body {
   .cl-task-list { padding: 0 14px 16px; }
   .cl-moved-banner { margin: 0 14px 8px; }
   .cl-note-content { padding: 0 14px 16px; }
-  .cl-note-breadcrumb { margin-left: 34px; }
+  .cl-note-breadcrumb { margin-left: 70px; }
 
   .cl-task-row { padding: 6px 4px; gap: 8px; }
   .cl-task-title { font-size: 13px; }
@@ -633,13 +651,57 @@ body {
   .cl-group-toggle { flex-wrap: wrap; }
   .cl-note-filters { flex-direction: column; gap: 8px; align-items: flex-start; }
 
+  /* Prevent iOS zoom on focus — inputs must be >= 16px */
+  .cl-quick-add-input { font-size: 16px; }
+  .cl-editor-notes { font-size: 16px; }
+
   /* Editor compact */
   .cl-task-editor { padding: 12px; }
   .cl-editor-meta { margin-left: 0; flex-wrap: wrap; }
   .cl-editor-section { margin-left: 0; }
-  .cl-editor-hints { margin-left: 0; }
+  .cl-editor-hints { display: none; }
+  .cl-editor-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 12px; }
   .cl-editor-row { gap: 8px; }
 
   /* Pickers full-width on mobile */
   .cl-picker { left: 10px !important; right: 10px; width: auto !important; }
+}
+
+/* ─── Drag & Drop ──────────────────────────────────────────── */
+.cl-task-row.cl-drag-ghost {
+  opacity: 0.25;
+  pointer-events: none;
+}
+
+.cl-drag-clone {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  transform: scale(1.02);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+  border: 2px solid var(--cl-accent);
+  border-radius: var(--cl-radius-sm);
+  background: var(--cl-bg);
+  transition: none;
+  max-width: 90vw;
+  overflow: hidden;
+}
+
+.cl-drop-indicator {
+  height: 3px;
+  background: var(--cl-accent);
+  border-radius: 2px;
+  margin: 0;
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+.cl-dragging {
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grabbing;
+}
+
+.cl-dragging .cl-task-row:not(.cl-drag-ghost) {
+  transition: transform 0.15s ease;
 }

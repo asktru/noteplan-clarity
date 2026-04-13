@@ -218,10 +218,22 @@ async function onMessageFromHTMLView(actionType, data) {
 
         // Update child notes
         var msgNotes = msg.notes || [];
+        // Find insert position for new notes: after task + all existing children
+        var insertAfter = msg.lineIndex;
+        var sParas = sNote.paragraphs;
+        var sIndent = sPara.indentLevel || 0;
+        for (var fi = msg.lineIndex + 1; fi < sParas.length; fi++) {
+          if ((sParas[fi].indentLevel || 0) <= sIndent) break;
+          insertAfter = fi;
+        }
         for (var ni = 0; ni < msgNotes.length; ni++) {
           if (msgNotes[ni].lineIndex >= 0) {
             var notePara = findParagraph(sNote, msgNotes[ni].lineIndex);
             if (notePara) { notePara.content = msgNotes[ni].content; sNote.updateParagraph(notePara); }
+          } else if (msgNotes[ni].content.trim()) {
+            // New note line — insert after the task's children
+            insertAfter++;
+            sNote.insertParagraph('\t' + msgNotes[ni].content, insertAfter, 'text');
           }
         }
 
@@ -276,6 +288,43 @@ async function onMessageFromHTMLView(actionType, data) {
         for (var cti = 0; cti < ctTags.length; cti++) ctContent += ' ' + ctTags[cti];
         ctNote.appendParagraph(ctContent, 'open');
         await sendToHTMLWindow('TASK_CREATED', { filename: ctFilename });
+        break;
+      }
+
+      case 'reorderTask': {
+        var rtNote = findNoteByFilename(msg.filename);
+        if (!rtNote) break;
+
+        var srcIdx = msg.sourceLineIndex;
+        var childCnt = msg.childCount || 0;
+        var tgtIdx = msg.targetLineIndex;
+        var blockSize = childCnt + 1;
+
+        // Raw content manipulation to preserve indentation perfectly
+        var lines = rtNote.content.split('\n');
+        if (srcIdx < 0 || srcIdx + blockSize > lines.length) break;
+
+        // Extract the source block lines
+        var srcLines = lines.splice(srcIdx, blockSize);
+
+        // Adjust target index after removal
+        var adjustedTarget = tgtIdx;
+        if (srcIdx < tgtIdx) {
+          adjustedTarget = tgtIdx - blockSize;
+        }
+
+        // Clamp to valid range
+        if (adjustedTarget < 0) adjustedTarget = 0;
+        if (adjustedTarget > lines.length) adjustedTarget = lines.length;
+
+        // Re-insert source block at target position
+        for (var ins = 0; ins < srcLines.length; ins++) {
+          lines.splice(adjustedTarget + ins, 0, srcLines[ins]);
+        }
+
+        rtNote.content = lines.join('\n');
+
+        await sendToHTMLWindow('TASK_REORDERED', { success: true });
         break;
       }
 
