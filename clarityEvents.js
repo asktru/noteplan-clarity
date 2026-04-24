@@ -1298,10 +1298,10 @@ function renderNoteView() {
       var hClass = State.tasksOnly ? 'cl-section-heading' : 'cl-note-heading cl-note-h' + hLevel;
       var chevronDir = hCollapsed ? 'right' : 'down';
       html += '<div class="' + hClass + '" data-line-index="' + p.lineIndex + '">';
-      html += '<span class="cl-heading-toggle" data-action="toggleHeadingCollapse" data-line-index="' + p.lineIndex + '">';
+      html += '<span class="cl-heading-text">' + renderInlineMarkdown(hDisplay) + '</span>';
+      html += '<span class="cl-heading-toggle' + (hCollapsed ? ' cl-always-visible' : '') + '" data-action="toggleHeadingCollapse" data-line-index="' + p.lineIndex + '" title="Toggle collapse">';
       html += '<svg width="10" height="10" viewBox="0 0 10 10" class="cl-heading-chevron cl-chevron-' + chevronDir + '"><polyline points="2,3 5,7 8,3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
       html += '</span>';
-      html += '<span class="cl-heading-text">' + renderInlineMarkdown(hDisplay) + '</span>';
       html += '</div>';
       html += '<div class="cl-section-body"' + (hCollapsed ? ' style="display:none"' : '') + ' data-heading-line="' + p.lineIndex + '">';
       sectionStack.push({ level: hLevel, collapsed: hCollapsed });
@@ -1492,6 +1492,7 @@ function attachMainEventListeners() {
             svg.classList.toggle('cl-chevron-right', nowHidden);
             svg.classList.toggle('cl-chevron-down', !nowHidden);
           }
+          target.classList.toggle('cl-always-visible', nowHidden);
         }
         sendMessageToPlugin('toggleHeadingCollapse', JSON.stringify({
           filename: State.currentNoteFilename,

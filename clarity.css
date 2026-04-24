@@ -442,24 +442,28 @@ body.cl-resizing * { cursor: col-resize !important; }
   gap: 6px;
 }
 .cl-section-heading { display: flex; align-items: center; gap: 6px; }
+.cl-heading-text { min-width: 0; }
 .cl-heading-toggle {
   flex-shrink: 0;
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  opacity: 0.5;
+  opacity: 0;
   color: var(--cl-text-muted);
   border-radius: 3px;
   transition: opacity 0.1s, background 0.1s;
 }
-.cl-heading-toggle:hover { opacity: 1; background: var(--cl-hover); }
+.cl-note-heading:hover .cl-heading-toggle,
+.cl-section-heading:hover .cl-heading-toggle { opacity: 0.5; }
+.cl-note-heading .cl-heading-toggle.cl-always-visible,
+.cl-section-heading .cl-heading-toggle.cl-always-visible { opacity: 0.5; }
+.cl-heading-toggle:hover { opacity: 1 !important; background: var(--cl-hover); }
 .cl-heading-chevron { transition: transform 0.15s ease; }
 .cl-chevron-right { transform: rotate(-90deg); }
 .cl-chevron-down { transform: rotate(0deg); }
-.cl-heading-text { flex: 1; min-width: 0; }
 .cl-section-body { }
 .cl-note-h2 { font-size: 16px; }
 .cl-note-h3 { font-size: 14px; }
