@@ -193,6 +193,9 @@ async function onMessageFromHTMLView(actionType, data) {
         if (!isNaN(w) && w >= 140 && w <= 500) saveSetting('sidebarWidth', w);
         break;
       }
+      case 'saveVisibleViews':
+        saveSetting('visibleViews', msg.visibleViews || '{}');
+        break;
       case 'saveViewPrefs':
         saveSetting('viewPrefs', msg.viewPrefs || '{}');
         break;
@@ -447,6 +450,7 @@ async function handleReady() {
     lastNoteFilename: s.lastNoteFilename || null,
     hideEmptyProjects: !!s.hideEmptyProjects,
     sidebarWidth: s.sidebarWidth || null,
+    visibleViews: s.visibleViews || '{}',
   });
 }
 

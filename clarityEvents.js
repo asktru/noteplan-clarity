@@ -20,6 +20,8 @@ var State = {
   collapsedAreas: {},
   viewPrefs: {},
   hideEmptyProjects: false,
+  visibleViews: { inbox: true, today: true, upcoming: true, anytime: true, someday: true },
+  settingsPopoverOpen: false,
 };
 
 // ─── Drag & Drop (note view only) ─────────────────────────
@@ -236,6 +238,19 @@ function onMessageFromPlugin(type, data) {
         try { State.viewPrefs = JSON.parse(data.viewPrefs); } catch (e) { State.viewPrefs = {}; }
       }
       State.hideEmptyProjects = !!data.hideEmptyProjects;
+      if (data.visibleViews) {
+        try {
+          var parsedViews = JSON.parse(data.visibleViews);
+          // Merge into defaults so new views added later default to visible
+          if (parsedViews && typeof parsedViews === 'object') {
+            for (var vk in parsedViews) {
+              if (Object.prototype.hasOwnProperty.call(parsedViews, vk)) {
+                State.visibleViews[vk] = !!parsedViews[vk];
+              }
+            }
+          }
+        } catch (e) { /* keep defaults */ }
+      }
       applySidebarWidth(data.sidebarWidth);
       restoreViewPrefs(State.currentView, State.currentNoteFilename);
       renderSidebar();
@@ -502,21 +517,22 @@ function buildProgressPie(pct, color) {
 }
 
 // ─── Sidebar ───────────────────────────────────────────────
+var SIDEBAR_VIEWS = [
+  { id: 'inbox', icon: '📥', label: 'Inbox' },
+  { id: 'today', icon: '⭐', label: 'Today' },
+  { id: 'upcoming', icon: '📅', label: 'Upcoming' },
+  { id: 'anytime', icon: '📋', label: 'Anytime' },
+  { id: 'someday', icon: '💤', label: 'Someday' },
+];
+
 function renderSidebar() {
   var el = document.getElementById('cl-sidebar');
   if (!el) return;
 
-  var views = [
-    { id: 'inbox', icon: '📥', label: 'Inbox' },
-    { id: 'today', icon: '⭐', label: 'Today' },
-    { id: 'upcoming', icon: '📅', label: 'Upcoming' },
-    { id: 'anytime', icon: '📋', label: 'Anytime' },
-    { id: 'someday', icon: '💤', label: 'Someday' },
-  ];
-
   var html = '<div class="cl-sidebar-inner">';
-  for (var vi = 0; vi < views.length; vi++) {
-    var v = views[vi];
+  for (var vi = 0; vi < SIDEBAR_VIEWS.length; vi++) {
+    var v = SIDEBAR_VIEWS[vi];
+    if (State.visibleViews[v.id] === false) continue;
     var count = getViewCount(v.id);
     var active = State.currentView === v.id ? ' cl-nav-active' : '';
     html += '<div class="cl-nav-item' + active + '" data-view="' + v.id + '">';
@@ -529,14 +545,6 @@ function renderSidebar() {
   }
 
   html += '<div class="cl-nav-divider"></div>';
-
-  // Filter toggle: hide projects with no incomplete (open) tasks
-  html += '<div class="cl-sidebar-filter">';
-  html += '<label class="cl-sidebar-filter-label">';
-  html += '<input type="checkbox" id="cl-hide-empty-toggle"' + (State.hideEmptyProjects ? ' checked' : '') + '>';
-  html += '<span>Hide projects without open tasks</span>';
-  html += '</label>';
-  html += '</div>';
 
   // Areas & Projects (collapsible by folder path)
   for (var fi = 0; fi < State.folders.length; fi++) {
@@ -566,7 +574,9 @@ function renderSidebar() {
     html += '</div>'; // close area group
   }
 
-  html += '</div>';
+  html += '</div>'; // close cl-sidebar-inner
+  html += renderSidebarFooter();
+
   el.innerHTML = html;
 
   var navItems = el.querySelectorAll('.cl-nav-item');
@@ -574,7 +584,6 @@ function renderSidebar() {
     navItems[ci].addEventListener('click', handleNavClick);
   }
 
-  // Area collapse toggle
   var areaHeaders = el.querySelectorAll('.cl-area-header');
   for (var ai = 0; ai < areaHeaders.length; ai++) {
     areaHeaders[ai].addEventListener('click', function(e) {
@@ -585,19 +594,113 @@ function renderSidebar() {
       var group = el.querySelector('[data-area-group="' + areaKey + '"]');
       if (chevron) chevron.classList.toggle('cl-collapsed');
       if (group) group.classList.toggle('cl-hidden');
-      // Persist
       sendMessageToPlugin('saveCollapsedAreas', JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
     });
   }
 
-  // Hide-empty-projects toggle
-  var hideToggle = el.querySelector('#cl-hide-empty-toggle');
-  if (hideToggle) {
-    hideToggle.addEventListener('change', function(e) {
-      State.hideEmptyProjects = !!e.currentTarget.checked;
-      sendMessageToPlugin('saveHideEmptyProjects', JSON.stringify({ hideEmptyProjects: State.hideEmptyProjects }));
-      renderSidebar();
-    });
+  attachSidebarFooterHandlers();
+}
+
+function renderSidebarFooter() {
+  var open = State.settingsPopoverOpen;
+  var html = '<div class="cl-sidebar-footer">';
+
+  // Popover (positioned above the button)
+  html += '<div class="cl-settings-popover' + (open ? ' cl-popover-open' : '') + '">';
+
+  // Projects section
+  html += '<div class="cl-settings-section">';
+  html += '<div class="cl-settings-section-title">Projects</div>';
+  html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleHideEmpty"' + (State.hideEmptyProjects ? ' checked' : '') + '><span>Hide projects without open tasks</span></label>';
+  html += '<button class="cl-settings-action" data-action="collapseAllAreas">Collapse all</button>';
+  html += '<button class="cl-settings-action" data-action="expandAllAreas">Expand all</button>';
+  html += '</div>';
+
+  // Views section
+  html += '<div class="cl-settings-section">';
+  html += '<div class="cl-settings-section-title">Views</div>';
+  for (var vi = 0; vi < SIDEBAR_VIEWS.length; vi++) {
+    var v = SIDEBAR_VIEWS[vi];
+    var checked = State.visibleViews[v.id] !== false;
+    html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleViewVisibility" data-view="' + v.id + '"' + (checked ? ' checked' : '') + '><span>' + v.icon + ' ' + v.label + '</span></label>';
+  }
+  html += '</div>';
+
+  html += '</div>'; // close popover
+
+  // Strip button
+  html += '<button class="cl-settings-btn' + (open ? ' cl-active' : '') + '" data-action="toggleSettingsPopover" title="View settings">';
+  html += '<i class="fa-solid fa-sliders"></i>';
+  html += '<span>View settings</span>';
+  html += '</button>';
+
+  html += '</div>';
+  return html;
+}
+
+var _settingsOutsideListener = null;
+
+function attachSidebarFooterHandlers() {
+  var footer = document.querySelector('.cl-sidebar-footer');
+  if (!footer) return;
+
+  // Clean up any previous outside-click listener before attaching a new one
+  if (_settingsOutsideListener) {
+    document.removeEventListener('click', _settingsOutsideListener);
+    _settingsOutsideListener = null;
+  }
+
+  footer.addEventListener('click', function(e) {
+    var target = e.target.closest('[data-action]');
+    if (!target) return;
+    var action = target.dataset.action;
+    switch (action) {
+      case 'toggleSettingsPopover':
+        State.settingsPopoverOpen = !State.settingsPopoverOpen;
+        renderSidebar();
+        break;
+      case 'toggleHideEmpty':
+        State.hideEmptyProjects = !!target.checked;
+        sendMessageToPlugin('saveHideEmptyProjects', JSON.stringify({ hideEmptyProjects: State.hideEmptyProjects }));
+        renderSidebar();
+        break;
+      case 'collapseAllAreas':
+        for (var fi = 0; fi < State.folders.length; fi++) {
+          State.collapsedAreas[State.folders[fi].path] = true;
+        }
+        sendMessageToPlugin('saveCollapsedAreas', JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
+        renderSidebar();
+        break;
+      case 'expandAllAreas':
+        State.collapsedAreas = {};
+        sendMessageToPlugin('saveCollapsedAreas', JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
+        renderSidebar();
+        break;
+      case 'toggleViewVisibility': {
+        var vid = target.dataset.view;
+        if (!vid) break;
+        State.visibleViews[vid] = !!target.checked;
+        sendMessageToPlugin('saveVisibleViews', JSON.stringify({ visibleViews: JSON.stringify(State.visibleViews) }));
+        renderSidebar();
+        break;
+      }
+    }
+  });
+
+  // Close popover when clicking outside the footer
+  if (State.settingsPopoverOpen) {
+    _settingsOutsideListener = function(e) {
+      var f = document.querySelector('.cl-sidebar-footer');
+      if (f && !f.contains(e.target)) {
+        State.settingsPopoverOpen = false;
+        document.removeEventListener('click', _settingsOutsideListener);
+        _settingsOutsideListener = null;
+        renderSidebar();
+      }
+    };
+    setTimeout(function() {
+      if (_settingsOutsideListener) document.addEventListener('click', _settingsOutsideListener);
+    }, 0);
   }
 }
 
