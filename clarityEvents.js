@@ -1127,6 +1127,7 @@ function renderNoteView() {
 
   html += '<div class="cl-task-list cl-note-content">';
   var skipUntilIndent = -1; // when > 0, skip children of a task at this indent level
+  var sectionStack = []; // stack of { level, collapsed } for open <div class="cl-section-body">
   for (var pi = 0; pi < paras.length; pi++) {
     var p = paras[pi];
     if (pi === 0 && p.content === '---') {
@@ -1181,8 +1182,26 @@ function renderNoteView() {
     }
 
     if (isHeading) {
-      var hClass = State.tasksOnly ? 'cl-section-heading' : 'cl-note-heading cl-note-h' + p.headingLevel;
-      html += '<div class="' + hClass + '">' + renderInlineMarkdown(p.content) + '</div>';
+      var hLevel = p.headingLevel || 1;
+      // Close open section-bodies at same or deeper heading level
+      while (sectionStack.length > 0 && sectionStack[sectionStack.length - 1].level >= hLevel) {
+        html += '</div>';
+        sectionStack.pop();
+      }
+      // NotePlan convention: trailing "…" (U+2026) marks a collapsed heading
+      var hRawContent = p.content || '';
+      var hCollapsed = /\u2026\s*$/.test(hRawContent);
+      var hDisplay = hRawContent.replace(/\s*\u2026\s*$/, '');
+      var hClass = State.tasksOnly ? 'cl-section-heading' : 'cl-note-heading cl-note-h' + hLevel;
+      var chevronDir = hCollapsed ? 'right' : 'down';
+      html += '<div class="' + hClass + '" data-line-index="' + p.lineIndex + '">';
+      html += '<span class="cl-heading-toggle" data-action="toggleHeadingCollapse" data-line-index="' + p.lineIndex + '">';
+      html += '<svg width="10" height="10" viewBox="0 0 10 10" class="cl-heading-chevron cl-chevron-' + chevronDir + '"><polyline points="2,3 5,7 8,3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      html += '</span>';
+      html += '<span class="cl-heading-text">' + renderInlineMarkdown(hDisplay) + '</span>';
+      html += '</div>';
+      html += '<div class="cl-section-body"' + (hCollapsed ? ' style="display:none"' : '') + ' data-heading-line="' + p.lineIndex + '">';
+      sectionStack.push({ level: hLevel, collapsed: hCollapsed });
     } else if (isTask || isChecklist) {
       var parsed = parseTaskContentClient(p.content);
       var status = (p.type === 'done' || p.type === 'checklistDone') ? 'done' : (p.type === 'cancelled' || p.type === 'checklistCancelled') ? 'cancelled' : 'open';
@@ -1245,6 +1264,8 @@ function renderNoteView() {
       }
     }
   }
+  // Close any remaining open section-bodies
+  while (sectionStack.length > 0) { html += '</div>'; sectionStack.pop(); }
   html += '</div>';
   return html;
 }
@@ -1355,6 +1376,26 @@ function attachMainEventListeners() {
         State.movedFromInbox = [];
         renderCurrentView();
         break;
+      case 'toggleHeadingCollapse': {
+        var lineIdx = parseInt(target.dataset.lineIndex, 10);
+        if (isNaN(lineIdx) || !State.currentNoteFilename) break;
+        // Optimistic UI: toggle chevron + section-body display immediately
+        var body = document.querySelector('.cl-section-body[data-heading-line="' + lineIdx + '"]');
+        if (body) {
+          var nowHidden = body.style.display !== 'none';
+          body.style.display = nowHidden ? 'none' : '';
+          var svg = target.querySelector('.cl-heading-chevron');
+          if (svg) {
+            svg.classList.toggle('cl-chevron-right', nowHidden);
+            svg.classList.toggle('cl-chevron-down', !nowHidden);
+          }
+        }
+        sendMessageToPlugin('toggleHeadingCollapse', JSON.stringify({
+          filename: State.currentNoteFilename,
+          lineIndex: lineIdx,
+        }));
+        break;
+      }
     }
   });
 

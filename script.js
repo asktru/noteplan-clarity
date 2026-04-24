@@ -197,6 +197,21 @@ async function onMessageFromHTMLView(actionType, data) {
         saveSetting('viewPrefs', msg.viewPrefs || '{}');
         break;
 
+      case 'toggleHeadingCollapse': {
+        var hNote = findNoteByFilename(msg.filename);
+        if (!hNote) break;
+        var hPara = findParagraph(hNote, msg.lineIndex);
+        if (!hPara) break;
+        var hContent = (hPara.content || '');
+        // NotePlan convention: trailing "…" (U+2026) on a heading means collapsed.
+        // Strip it if present (expanding), append it if not (collapsing).
+        var stripped = hContent.replace(/\s*\u2026\s*$/, '');
+        var nowCollapsed = !/\u2026\s*$/.test(hContent);
+        hPara.content = nowCollapsed ? (stripped + ' \u2026') : stripped;
+        hNote.updateParagraph(hPara);
+        break;
+      }
+
       case 'toggleTask': {
         var tNote = findNoteByFilename(msg.filename);
         if (!tNote) break;
