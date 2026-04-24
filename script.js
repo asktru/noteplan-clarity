@@ -83,7 +83,7 @@ function buildFullHTML() {
     '</head>\n<body>\n' +
     '  <button class="cl-sidebar-toggle" id="cl-sidebar-toggle">\u2630</button>\n' +
     '  <div class="cl-sidebar-overlay" id="cl-sidebar-overlay"></div>\n' +
-    '  <div id="cl-root"><div id="cl-sidebar"></div><div id="cl-main"></div></div>\n' +
+    '  <div id="cl-root"><div id="cl-sidebar"></div><div id="cl-resizer"></div><div id="cl-main"></div></div>\n' +
     '  <script>var receivingPluginID = \'' + PLUGIN_ID + '\';<\/script>\n' +
     '  <script type="text/javascript" src="clarityEvents.js"><\/script>\n' +
     '  <script type="text/javascript" src="../np.Shared/pluginToHTMLCommsBridge.js"><\/script>\n' +
@@ -157,6 +157,14 @@ async function onMessageFromHTMLView(actionType, data) {
       case 'saveCollapsedAreas':
         saveSetting('collapsedAreas', msg.collapsedAreas || '{}');
         break;
+      case 'saveHideEmptyProjects':
+        saveSetting('hideEmptyProjects', !!msg.hideEmptyProjects);
+        break;
+      case 'saveSidebarWidth': {
+        var w = parseInt(msg.width, 10);
+        if (!isNaN(w) && w >= 140 && w <= 500) saveSetting('sidebarWidth', w);
+        break;
+      }
       case 'saveViewPrefs':
         saveSetting('viewPrefs', msg.viewPrefs || '{}');
         break;
@@ -394,6 +402,8 @@ async function handleReady() {
     collapsedAreas: s.collapsedAreas || '{}',
     viewPrefs: s.viewPrefs || '{}',
     lastNoteFilename: s.lastNoteFilename || null,
+    hideEmptyProjects: !!s.hideEmptyProjects,
+    sidebarWidth: s.sidebarWidth || null,
   });
 }
 
@@ -661,11 +671,13 @@ function getFolderTree() {
     var paras = note.paragraphs;
     var taskCount = 0;
     var doneCount = 0;
+    var openCount = 0;
     for (var pi = 0; pi < paras.length; pi++) {
       var pt = paras[pi].type;
       if (pt === 'open' || pt === 'done' || pt === 'cancelled') {
         taskCount++;
         if (pt === 'done') doneCount++;
+        else if (pt === 'open') openCount++;
       }
     }
 
@@ -685,6 +697,7 @@ function getFolderTree() {
       folderPath: folderPath,
       taskCount: taskCount,
       doneCount: doneCount,
+      openCount: openCount,
       hasProjectOrAreaType: hasProjectOrAreaType,
       bgColorDark: bgColorDark,
     };

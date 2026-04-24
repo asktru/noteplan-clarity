@@ -19,6 +19,7 @@ var State = {
   noteContent: null,
   collapsedAreas: {},
   viewPrefs: {},
+  hideEmptyProjects: false,
 };
 
 // ─── Drag & Drop (note view only) ─────────────────────────
@@ -234,6 +235,8 @@ function onMessageFromPlugin(type, data) {
       if (data.viewPrefs) {
         try { State.viewPrefs = JSON.parse(data.viewPrefs); } catch (e) { State.viewPrefs = {}; }
       }
+      State.hideEmptyProjects = !!data.hideEmptyProjects;
+      applySidebarWidth(data.sidebarWidth);
       restoreViewPrefs(State.currentView, State.currentNoteFilename);
       renderSidebar();
       // If in note view, re-request note content
@@ -403,6 +406,30 @@ function renderInlineMarkdown(text) {
   return s;
 }
 
+// ─── Progress Pie (Things 3 style) ─────────────────────────
+// Outline circle with a filled pie slice inside, growing clockwise from 12 o'clock.
+function buildProgressPie(pct, color) {
+  var svg = '<svg class="cl-progress-ring" width="18" height="18" viewBox="0 0 18 18">';
+  // Outline ring
+  svg += '<circle cx="9" cy="9" r="7" fill="none" stroke="' + color + '" stroke-width="1.5"/>';
+  // Pie slice inside
+  if (pct >= 100) {
+    svg += '<circle cx="9" cy="9" r="5.2" fill="' + color + '"/>';
+  } else if (pct > 0) {
+    var r = 5.2;
+    var angle = (pct / 100) * 360;
+    var endRad = (angle - 90) * Math.PI / 180;
+    var endX = 9 + r * Math.cos(endRad);
+    var endY = 9 + r * Math.sin(endRad);
+    var largeArc = angle > 180 ? 1 : 0;
+    svg += '<path d="M9,9 L9,' + (9 - r) +
+      ' A' + r + ',' + r + ' 0 ' + largeArc + ',1 ' + endX.toFixed(3) + ',' + endY.toFixed(3) +
+      ' Z" fill="' + color + '"/>';
+  }
+  svg += '</svg>';
+  return svg;
+}
+
 // ─── Sidebar ───────────────────────────────────────────────
 function renderSidebar() {
   var el = document.getElementById('cl-sidebar');
@@ -432,31 +459,36 @@ function renderSidebar() {
 
   html += '<div class="cl-nav-divider"></div>';
 
+  // Filter toggle: hide projects with no incomplete (open) tasks
+  html += '<div class="cl-sidebar-filter">';
+  html += '<label class="cl-sidebar-filter-label">';
+  html += '<input type="checkbox" id="cl-hide-empty-toggle"' + (State.hideEmptyProjects ? ' checked' : '') + '>';
+  html += '<span>Hide projects without open tasks</span>';
+  html += '</label>';
+  html += '</div>';
+
   // Areas & Projects (collapsible by folder path)
   for (var fi = 0; fi < State.folders.length; fi++) {
     var folder = State.folders[fi];
     var areaKey = folder.path;
     var collapsed = State.collapsedAreas && State.collapsedAreas[areaKey];
+    var notes = folder.notes || [];
+    var visibleNotes = State.hideEmptyProjects
+      ? notes.filter(function(n) { return (n.openCount || 0) > 0; })
+      : notes;
+    if (State.hideEmptyProjects && visibleNotes.length === 0) continue;
     html += '<div class="cl-area-header" data-area="' + esc(areaKey) + '">';
     html += '<span class="cl-area-chevron' + (collapsed ? ' cl-collapsed' : '') + '">\u25B8</span>';
     html += esc(folder.name);
     html += '</div>';
     html += '<div class="cl-area-group' + (collapsed ? ' cl-hidden' : '') + '" data-area-group="' + esc(areaKey) + '">';
-    var notes = folder.notes || [];
-    for (var ni = 0; ni < notes.length; ni++) {
-      var n = notes[ni];
+    for (var ni = 0; ni < visibleNotes.length; ni++) {
+      var n = visibleNotes[ni];
       var pct = n.taskCount > 0 ? Math.round((n.doneCount / n.taskCount) * 100) : 0;
       var color = n.bgColorDark || '#3B82F6';
       var noteActive = (State.currentView === 'note' && State.currentNoteFilename === n.filename) ? ' cl-nav-active' : '';
-      var circumference = 2 * Math.PI * 7;
-      var offset = circumference - (pct / 100) * circumference;
       html += '<div class="cl-nav-item cl-project-item' + noteActive + '" data-view="note" data-filename="' + esc(n.filename) + '">';
-      html += '<svg class="cl-progress-ring" width="18" height="18" viewBox="0 0 18 18">';
-      html += '<circle cx="9" cy="9" r="7" fill="none" stroke="' + color + '" stroke-opacity="0.2" stroke-width="2"/>';
-      if (pct > 0) {
-        html += '<circle cx="9" cy="9" r="7" fill="none" stroke="' + color + '" stroke-width="2" stroke-dasharray="' + circumference.toFixed(1) + '" stroke-dashoffset="' + offset.toFixed(1) + '" transform="rotate(-90 9 9)" stroke-linecap="round"/>';
-      }
-      html += '</svg>';
+      html += buildProgressPie(pct, color);
       html += '<span class="cl-project-title">' + esc(n.title) + '</span>';
       html += '</div>';
     }
@@ -484,6 +516,16 @@ function renderSidebar() {
       if (group) group.classList.toggle('cl-hidden');
       // Persist
       sendMessageToPlugin('saveCollapsedAreas', JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
+    });
+  }
+
+  // Hide-empty-projects toggle
+  var hideToggle = el.querySelector('#cl-hide-empty-toggle');
+  if (hideToggle) {
+    hideToggle.addEventListener('change', function(e) {
+      State.hideEmptyProjects = !!e.currentTarget.checked;
+      sendMessageToPlugin('saveHideEmptyProjects', JSON.stringify({ hideEmptyProjects: State.hideEmptyProjects }));
+      renderSidebar();
     });
   }
 }
@@ -2168,4 +2210,58 @@ document.addEventListener('DOMContentLoaded', function() {
       overlay.classList.remove('cl-sidebar-open');
     });
   }
+
+  // Sidebar resizer (desktop only — CSS hides it on mobile)
+  setupSidebarResizer();
 });
+
+// ─── Sidebar Resize ────────────────────────────────────────
+var SIDEBAR_MIN_WIDTH = 140;
+var SIDEBAR_MAX_WIDTH = 500;
+var SIDEBAR_DEFAULT_WIDTH = 200;
+
+function applySidebarWidth(width) {
+  var w = parseInt(width, 10);
+  if (isNaN(w)) w = SIDEBAR_DEFAULT_WIDTH;
+  if (w < SIDEBAR_MIN_WIDTH) w = SIDEBAR_MIN_WIDTH;
+  if (w > SIDEBAR_MAX_WIDTH) w = SIDEBAR_MAX_WIDTH;
+  document.documentElement.style.setProperty('--cl-sidebar-width', w + 'px');
+}
+
+function setupSidebarResizer() {
+  var resizer = document.getElementById('cl-resizer');
+  var sidebar = document.getElementById('cl-sidebar');
+  if (!resizer || !sidebar) return;
+
+  var dragging = false;
+  var startX = 0;
+  var startWidth = 0;
+
+  resizer.addEventListener('mousedown', function(e) {
+    // Ignore on mobile (resizer is display:none there, but guard anyway)
+    if (window.innerWidth <= 600) return;
+    dragging = true;
+    startX = e.clientX;
+    startWidth = sidebar.getBoundingClientRect().width;
+    document.body.classList.add('cl-resizing');
+    resizer.classList.add('cl-resizer-active');
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', function(e) {
+    if (!dragging) return;
+    var newWidth = startWidth + (e.clientX - startX);
+    if (newWidth < SIDEBAR_MIN_WIDTH) newWidth = SIDEBAR_MIN_WIDTH;
+    if (newWidth > SIDEBAR_MAX_WIDTH) newWidth = SIDEBAR_MAX_WIDTH;
+    document.documentElement.style.setProperty('--cl-sidebar-width', newWidth + 'px');
+  });
+
+  document.addEventListener('mouseup', function() {
+    if (!dragging) return;
+    dragging = false;
+    document.body.classList.remove('cl-resizing');
+    resizer.classList.remove('cl-resizer-active');
+    var finalWidth = sidebar.getBoundingClientRect().width;
+    sendMessageToPlugin('saveSidebarWidth', JSON.stringify({ width: Math.round(finalWidth) }));
+  });
+}
