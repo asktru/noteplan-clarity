@@ -406,6 +406,77 @@ function renderInlineMarkdown(text) {
   return s;
 }
 
+// ─── Markdown Tables ───────────────────────────────────────
+// A separator row like "| --- | :---: | ---: |" — used to anchor table detection
+// and determine per-column alignment.
+function isTableSeparatorLine(line) {
+  var cells = splitTableCells(line);
+  if (cells.length === 0) return false;
+  for (var i = 0; i < cells.length; i++) {
+    if (!/^:?-{3,}:?$/.test(cells[i])) return false;
+  }
+  return true;
+}
+
+function splitTableCells(line) {
+  var s = line.trim();
+  // Strip leading and trailing pipe
+  if (s.charAt(0) === '|') s = s.substring(1);
+  if (s.charAt(s.length - 1) === '|') s = s.substring(0, s.length - 1);
+  var cells = s.split('|');
+  for (var i = 0; i < cells.length; i++) cells[i] = cells[i].trim();
+  return cells;
+}
+
+function renderMarkdownTable(lines) {
+  var rows = lines.map(splitTableCells);
+  var sepIdx = -1;
+  for (var i = 0; i < rows.length; i++) {
+    if (isTableSeparatorLine(lines[i])) { sepIdx = i; break; }
+  }
+  // Derive alignment from the separator row
+  var alignments = [];
+  if (sepIdx >= 0) {
+    for (var a = 0; a < rows[sepIdx].length; a++) {
+      var cell = rows[sepIdx][a];
+      if (/^:-+:$/.test(cell)) alignments.push('center');
+      else if (/^-+:$/.test(cell)) alignments.push('right');
+      else alignments.push('left');
+    }
+  }
+  var colCount = 0;
+  for (var r = 0; r < rows.length; r++) if (rows[r].length > colCount) colCount = rows[r].length;
+
+  function cellStyle(col) {
+    var align = alignments[col] || 'left';
+    return align === 'left' ? '' : ' style="text-align:' + align + '"';
+  }
+
+  var html = '<div class="cl-note-table-wrap"><table class="cl-note-table">';
+  var hasHeader = sepIdx === 1; // standard markdown: header, separator, body
+  var bodyStart = sepIdx >= 0 ? sepIdx + 1 : 0;
+  if (hasHeader) {
+    html += '<thead><tr>';
+    for (var h = 0; h < colCount; h++) {
+      var headText = rows[0][h] || '';
+      html += '<th' + cellStyle(h) + '>' + renderInlineMarkdown(headText) + '</th>';
+    }
+    html += '</tr></thead>';
+  }
+  html += '<tbody>';
+  for (var br = bodyStart; br < rows.length; br++) {
+    if (br === sepIdx) continue;
+    html += '<tr>';
+    for (var c = 0; c < colCount; c++) {
+      var cellText = rows[br][c] || '';
+      html += '<td' + cellStyle(c) + '>' + renderInlineMarkdown(cellText) + '</td>';
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table></div>';
+  return html;
+}
+
 // ─── Progress Pie (Things 3 style) ─────────────────────────
 // Outline circle with a filled pie slice inside, growing clockwise from 12 o'clock.
 function buildProgressPie(pct, color) {
@@ -1085,6 +1156,28 @@ function renderNoteView() {
     if (State.filters.noteStatus && State.filters.noteStatus !== 'all' && (isTask || isChecklist)) {
       var taskStatus = (p.type === 'done' || p.type === 'checklistDone') ? 'done' : (p.type === 'open' || p.type === 'checklist') ? 'open' : 'cancelled';
       if (State.filters.noteStatus !== taskStatus) continue;
+    }
+
+    // --- Markdown tables: consecutive lines beginning with "|" ---
+    if (!isTask && !isChecklist && !isHeading) {
+      var rawTrim0 = ((p.rawContent || p.content) || '').trim();
+      if (rawTrim0.charAt(0) === '|' && rawTrim0.length > 1) {
+        var tableLines = [];
+        var endIdx = pi;
+        for (var tli = pi; tli < paras.length; tli++) {
+          var tRaw = ((paras[tli].rawContent || paras[tli].content) || '').trim();
+          if (tRaw.charAt(0) !== '|') break;
+          tableLines.push(tRaw);
+          endIdx = tli;
+        }
+        // Require at least 2 rows AND a separator row (e.g. "| --- | --- |") to treat as table
+        if (tableLines.length >= 2 && isTableSeparatorLine(tableLines[1])) {
+          if (State.tasksOnly) { pi = endIdx; continue; } // hide tables in tasks-only mode
+          html += renderMarkdownTable(tableLines);
+          pi = endIdx;
+          continue;
+        }
+      }
     }
 
     if (isHeading) {

@@ -387,6 +387,43 @@ body.cl-resizing * { cursor: col-resize !important; }
 }
 .cl-note-content { padding: 0 24px 20px; }
 
+/* ─── Markdown Tables ─────────────────────────────────── */
+.cl-note-table-wrap {
+  margin: 10px 0;
+  overflow-x: auto;
+  border: 1px solid var(--cl-border);
+  border-radius: var(--cl-radius-sm);
+}
+.cl-note-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.cl-note-table th,
+.cl-note-table td {
+  padding: 6px 10px;
+  text-align: left;
+  border-right: 1px solid var(--cl-border);
+  vertical-align: top;
+}
+.cl-note-table th:last-child,
+.cl-note-table td:last-child { border-right: none; }
+.cl-note-table thead th {
+  font-weight: 600;
+  background: var(--cl-hover);
+  border-bottom: 1px solid var(--cl-border);
+  color: var(--cl-text);
+}
+.cl-note-table tbody tr {
+  border-top: 1px solid var(--cl-border);
+}
+.cl-note-table tbody tr:first-child { border-top: none; }
+.cl-note-table tbody td {
+  color: var(--cl-text);
+  opacity: 0.85;
+}
+
 /* ─── Task Editor ─────────────────────────────────────── */
 .cl-task-editor {
   margin: 8px 0;
