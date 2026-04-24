@@ -34,6 +34,34 @@ function npColor(argbHex) {
   return '';
 }
 
+// Tailwind-500 color palette — used by Memo AI and similar tools that write
+// class-style names like "purple-950" into bg-color-dark frontmatter.
+var TAILWIND_COLORS = {
+  slate: '#64748B', gray: '#6B7280', zinc: '#71717A', neutral: '#737373', stone: '#78716C',
+  red: '#EF4444', orange: '#F97316', amber: '#F59E0B', yellow: '#EAB308',
+  lime: '#84CC16', green: '#22C55E', emerald: '#10B981', teal: '#14B8A6',
+  cyan: '#06B6D4', sky: '#0EA5E9', blue: '#3B82F6', indigo: '#6366F1',
+  violet: '#8B5CF6', purple: '#A855F7', fuchsia: '#D946EF', pink: '#EC4899', rose: '#F43F5E',
+};
+
+// Normalize any of the color formats we see in the wild into a browser-valid
+// CSS color string. Falls back to the default blue for anything unrecognized.
+function normalizeColor(value, fallback) {
+  var dflt = fallback || '#3B82F6';
+  if (!value || typeof value !== 'string') return dflt;
+  var v = value.trim();
+  if (!v) return dflt;
+  if (v.charAt(0) === '#') {
+    var converted = npColor(v);
+    if (converted) return converted;
+    return dflt;
+  }
+  // Tailwind-style: "purple-950", "blue-500", or bare "purple"
+  var m = v.toLowerCase().match(/^([a-z]+)(?:-\d+)?$/);
+  if (m && TAILWIND_COLORS[m[1]]) return TAILWIND_COLORS[m[1]];
+  return dflt;
+}
+
 function getThemeCSS() {
   try {
     var theme = Editor.currentTheme;
@@ -666,7 +694,7 @@ function getFolderTree() {
       fm = parseFrontmatter(content).frontmatter;
     }
     var hasProjectOrAreaType = (fm.type === 'project' || fm.type === 'area');
-    var bgColorDark = fm['bg-color-dark'] || '#3B82F6';
+    var bgColorDark = normalizeColor(fm['bg-color-dark']);
 
     var paras = note.paragraphs;
     var taskCount = 0;
