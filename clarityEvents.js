@@ -494,8 +494,10 @@ function renderMarkdownTable(lines) {
 
 // ─── Progress Pie (Things 3 style) ─────────────────────────
 // Outline circle with a filled pie slice inside, growing clockwise from 12 o'clock.
-function buildProgressPie(pct, color) {
-  var svg = '<svg class="cl-progress-ring" width="18" height="18" viewBox="0 0 18 18">';
+// The SVG uses a fixed 18x18 viewBox but scales via the `size` param (default 18).
+function buildProgressPie(pct, color, size) {
+  var s = size || 18;
+  var svg = '<svg class="cl-progress-ring" width="' + s + '" height="' + s + '" viewBox="0 0 18 18">';
   // Outline ring
   svg += '<circle cx="9" cy="9" r="7" fill="none" stroke="' + color + '" stroke-width="1.5"/>';
   // Pie slice inside
@@ -1189,7 +1191,7 @@ function renderNoteView() {
 
   var paras = nc.paragraphs || [];
   var fm = nc.frontmatter || {};
-  var bgColor = fm['bg-color-dark'] || '#3B82F6';
+  var bgColor = nc.bgColorDark || '#3B82F6';
 
   var taskCount = 0;
   var doneCount = 0;
@@ -1198,17 +1200,10 @@ function renderNoteView() {
     if (pt === 'open' || pt === 'done' || pt === 'cancelled') { taskCount++; if (pt === 'done') doneCount++; }
   }
   var pct = taskCount > 0 ? Math.round((doneCount / taskCount) * 100) : 0;
-  var circumference = 2 * Math.PI * 9;
-  var offset = circumference - (pct / 100) * circumference;
 
   var html = '<div class="cl-view-header">';
   html += '<div class="cl-view-title">';
-  html += '<svg class="cl-progress-ring" width="24" height="24" viewBox="0 0 24 24">';
-  html += '<circle cx="12" cy="12" r="9" fill="none" stroke="' + bgColor + '" stroke-opacity="0.2" stroke-width="2.5"/>';
-  if (pct > 0) {
-    html += '<circle cx="12" cy="12" r="9" fill="none" stroke="' + bgColor + '" stroke-width="2.5" stroke-dasharray="' + circumference.toFixed(1) + '" stroke-dashoffset="' + offset.toFixed(1) + '" transform="rotate(-90 12 12)" stroke-linecap="round"/>';
-  }
-  html += '</svg>';
+  html += buildProgressPie(pct, bgColor, 24);
   html += '<h1 class="cl-note-title-link" data-action="openInEditor" data-filename="' + esc(nc.filename) + '">' + esc(nc.title) + '</h1></div>';
 
   var folderPath = (nc.filename || '').replace(/\/[^/]+$/, '');
@@ -1231,13 +1226,18 @@ function renderNoteView() {
   html += '<div class="cl-task-list cl-note-content">';
   var skipUntilIndent = -1; // when > 0, skip children of a task at this indent level
   var sectionStack = []; // stack of { level, collapsed } for open <div class="cl-section-body">
+  var firstH1Skipped = false; // the top-level title duplicates the header, so skip it
   for (var pi = 0; pi < paras.length; pi++) {
     var p = paras[pi];
     if (pi === 0 && p.content === '---') {
       for (var fmi = 1; fmi < paras.length; fmi++) { if (paras[fmi].content === '---') { pi = fmi; break; } }
       continue;
     }
-    if (p.type === 'title' && p.headingLevel === 1 && pi <= 3) continue;
+    // Skip the first top-level heading since it duplicates the header title
+    if (!firstH1Skipped && p.type === 'title' && p.headingLevel === 1) {
+      firstH1Skipped = true;
+      continue;
+    }
 
     var pIndent = p.indentLevel || 0;
     // Fallback: detect indent from rawContent leading tabs

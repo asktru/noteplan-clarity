@@ -405,6 +405,7 @@ async function onMessageFromHTMLView(actionType, data) {
         await sendToHTMLWindow('NOTE_CONTENT', {
           filename: msg.filename, title: rcNote.title || '',
           paragraphs: rcResult, frontmatter: rcFm.frontmatter,
+          bgColorDark: normalizeColor(rcFm.frontmatter['bg-color-dark']),
         });
         break;
       }
