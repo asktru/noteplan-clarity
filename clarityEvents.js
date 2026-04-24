@@ -1889,6 +1889,24 @@ function saveExpandedTask() {
 }
 
 // ─── Date Picker ───────────────────────────────────────────
+// Position an absolutely/fixed-positioned picker below its anchor by default,
+// flipping above when the picker would overflow the viewport bottom AND there's
+// more room above. Must be called AFTER the picker is appended to the DOM so
+// its height is measurable.
+function positionPickerVertically(picker, anchor, margin) {
+  if (margin == null) margin = 4;
+  var rect = anchor.getBoundingClientRect();
+  var pickerHeight = picker.getBoundingClientRect().height;
+  var viewportHeight = window.innerHeight;
+  var spaceBelow = viewportHeight - rect.bottom - margin;
+  var spaceAbove = rect.top - margin;
+  if (pickerHeight > spaceBelow && spaceAbove > spaceBelow) {
+    picker.style.top = Math.max(margin, rect.top - pickerHeight - margin) + 'px';
+  } else {
+    picker.style.top = (rect.bottom + margin) + 'px';
+  }
+}
+
 function showDatePicker(anchor) {
   closePickers();
   var rect = anchor.getBoundingClientRect();
@@ -1915,6 +1933,7 @@ function showDatePicker(anchor) {
     '</div>';
 
   document.body.appendChild(picker);
+  positionPickerVertically(picker, anchor);
 
   picker.addEventListener('click', function(e) {
     var target = e.target.closest('[data-action]');
@@ -2028,6 +2047,7 @@ function showNotePicker(anchor) {
     '<div class="cl-picker-footer"><span style="opacity:0.35;font-size:11px;">\u21b5 select \u00b7 Esc close</span></div>';
 
   document.body.appendChild(picker);
+  positionPickerVertically(picker, anchor);
   var input = picker.querySelector('.cl-picker-input');
   input.addEventListener('input', function() {
     document.getElementById('cl-note-results').innerHTML = renderNoteResults(input.value);
