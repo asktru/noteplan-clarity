@@ -307,9 +307,11 @@ function getTasksForView(view) {
         if ((t.scheduledDate && t.scheduledDate > today) || (t.scheduledWeek && t.scheduledWeek > currentWeek)) match = true;
         break;
       case 'anytime':
-        if (!t.tags || t.tags.indexOf('#someday') === -1) {
-          if (!t.scheduledDate || t.scheduledDate <= today) {
-            if (!t.scheduledWeek || t.scheduledWeek <= currentWeek) match = true;
+        if (t.sourceType !== 'calendar') {
+          if (!t.tags || t.tags.indexOf('#someday') === -1) {
+            if (!t.scheduledDate || t.scheduledDate <= today) {
+              if (!t.scheduledWeek || t.scheduledWeek <= currentWeek) match = true;
+            }
           }
         }
         break;
@@ -519,12 +521,63 @@ function buildProgressPie(pct, color, size) {
 }
 
 // ─── Sidebar ───────────────────────────────────────────────
+function getViewIcon(id, size) {
+  var s = size || 18;
+  var attrs = 'width="' + s + '" height="' + s + '" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"';
+  switch (id) {
+    case 'inbox':
+      // Blue tray with curved chute
+      return '<svg ' + attrs + '>' +
+        '<path d="M4.2 4.2h15.6a1.4 1.4 0 0 1 1.4 1.4v9.2a3 3 0 0 1-3 3H5.8a3 3 0 0 1-3-3V5.6a1.4 1.4 0 0 1 1.4-1.4z" fill="#1E88E5"/>' +
+        '<path d="M3 13.2h5.2l1.3 2a1 1 0 0 0 .85.45h3.3a1 1 0 0 0 .85-.45l1.3-2H21v1.6a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z" fill="#1565C0"/>' +
+        '</svg>';
+    case 'today':
+      // Chunky 5-point star with inner shadow on lower half
+      return '<svg ' + attrs + '>' +
+        '<path d="M12 2.2l2.93 6.06 6.66.6a.5.5 0 0 1 .29.87l-5.04 4.43 1.52 6.55a.5.5 0 0 1-.74.54L12 17.85l-5.62 3.4a.5.5 0 0 1-.74-.54l1.52-6.55L2.12 9.73a.5.5 0 0 1 .29-.87l6.66-.6z" fill="#FFB300"/>' +
+        '<path d="M12 17.85l-5.62 3.4a.5.5 0 0 1-.74-.54l1.52-6.55L2.12 9.73a.5.5 0 0 1 .29-.87l6.66-.6L12 2.2z" fill="#fff" fill-opacity="0.18"/>' +
+        '</svg>';
+    case 'upcoming':
+      // Pink calendar with header band, binding pegs, highlighted day
+      return '<svg ' + attrs + '>' +
+        '<rect x="2.5" y="5" width="19" height="16" rx="2.5" fill="#EC407A"/>' +
+        '<path d="M5 5h14a2.5 2.5 0 0 1 2.5 2.5v2.2H2.5V7.5A2.5 2.5 0 0 1 5 5z" fill="#C2185B"/>' +
+        '<rect x="6.4" y="2.6" width="2.2" height="4.8" rx="1.1" fill="#7B1538"/>' +
+        '<rect x="15.4" y="2.6" width="2.2" height="4.8" rx="1.1" fill="#7B1538"/>' +
+        '<rect x="6.6" y="2.8" width="1.8" height="1.4" rx="0.9" fill="#fff" fill-opacity="0.35"/>' +
+        '<rect x="15.6" y="2.8" width="1.8" height="1.4" rx="0.9" fill="#fff" fill-opacity="0.35"/>' +
+        '<circle cx="12" cy="15" r="3" fill="#fff"/>' +
+        '<rect x="2.5" y="9.7" width="19" height="0.6" fill="#000" fill-opacity="0.12"/>' +
+        '</svg>';
+    case 'anytime':
+      // Three isometric stacked layers with shaded sides
+      return '<svg ' + attrs + '>' +
+        '<path d="M12 14.5l-9-4.25v1.5L12 16l9-4.25v-1.5z" fill="#00695C"/>' +
+        '<path d="M12 18l-9-4.25v1.5L12 19.5l9-4.25v-1.5z" fill="#00695C"/>' +
+        '<path d="M12 3L3 7.25 12 11.5l9-4.25z" fill="#4DB6AC"/>' +
+        '<path d="M12 7.5L3 11.75 12 16l9-4.25z" fill="#26A69A"/>' +
+        '<path d="M12 12L3 16.25 12 20.5l9-4.25z" fill="#00897B"/>' +
+        '</svg>';
+    case 'someday':
+      // Cardboard moving box: body, lid, packing tape, handle hole
+      return '<svg ' + attrs + '>' +
+        '<path d="M3 9.5h18v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="#A77855"/>' +
+        '<path d="M3.5 4.5h17a1 1 0 0 1 1 1V9.5h-19V5.5a1 1 0 0 1 1-1z" fill="#CB9970"/>' +
+        '<rect x="3" y="9.2" width="18" height="0.8" fill="#000" fill-opacity="0.2"/>' +
+        '<rect x="11" y="4.5" width="2" height="16" fill="#7A5238" fill-opacity="0.45"/>' +
+        '<rect x="9.4" y="12.6" width="5.2" height="1.8" rx="0.9" fill="#3E2615"/>' +
+        '<rect x="3.5" y="4.5" width="17" height="0.6" fill="#fff" fill-opacity="0.25"/>' +
+        '</svg>';
+  }
+  return '';
+}
+
 var SIDEBAR_VIEWS = [
-  { id: 'inbox', icon: '📥', label: 'Inbox' },
-  { id: 'today', icon: '⭐', label: 'Today' },
-  { id: 'upcoming', icon: '📅', label: 'Upcoming' },
-  { id: 'anytime', icon: '📋', label: 'Anytime' },
-  { id: 'someday', icon: '💤', label: 'Someday' },
+  { id: 'inbox', label: 'Inbox' },
+  { id: 'today', label: 'Today' },
+  { id: 'upcoming', label: 'Upcoming' },
+  { id: 'anytime', label: 'Anytime' },
+  { id: 'someday', label: 'Someday' },
 ];
 
 function renderSidebar() {
@@ -538,7 +591,7 @@ function renderSidebar() {
     var count = getViewCount(v.id);
     var active = State.currentView === v.id ? ' cl-nav-active' : '';
     html += '<div class="cl-nav-item' + active + '" data-view="' + v.id + '">';
-    html += '<span class="cl-nav-icon">' + v.icon + '</span>';
+    html += '<span class="cl-nav-icon">' + getViewIcon(v.id, 18) + '</span>';
     html += '<span class="cl-nav-label">' + v.label + '</span>';
     if (count > 0 && (v.id === 'inbox' || v.id === 'today')) {
       html += '<span class="cl-nav-count">' + count + '</span>';
@@ -624,7 +677,7 @@ function renderSidebarFooter() {
   for (var vi = 0; vi < SIDEBAR_VIEWS.length; vi++) {
     var v = SIDEBAR_VIEWS[vi];
     var checked = State.visibleViews[v.id] !== false;
-    html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleViewVisibility" data-view="' + v.id + '"' + (checked ? ' checked' : '') + '><span>' + v.icon + ' ' + v.label + '</span></label>';
+    html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleViewVisibility" data-view="' + v.id + '"' + (checked ? ' checked' : '') + '><span class="cl-settings-toggle-icon">' + getViewIcon(v.id, 16) + '</span><span>' + v.label + '</span></label>';
   }
   html += '</div>';
 
@@ -1032,7 +1085,7 @@ function renderCurrentView() {
 function renderInboxView() {
   var tasks = getFilteredTasks('inbox');
   var html = '<div class="cl-view-header">';
-  html += '<div class="cl-view-title"><span class="cl-view-icon">📥</span><h1>Inbox</h1>';
+  html += '<div class="cl-view-title"><span class="cl-view-icon">' + getViewIcon('inbox', 24) + '</span><h1>Inbox</h1>';
   html += '<span class="cl-view-count">' + tasks.length + '</span></div></div>';
   html += renderFilterBar(tasks);
 
@@ -1073,7 +1126,7 @@ function renderTodayView() {
   var tasks = getFilteredTasks('today');
   var today = State.today;
   var html = '<div class="cl-view-header">';
-  html += '<div class="cl-view-title"><span class="cl-view-icon">⭐</span><h1>Today</h1>';
+  html += '<div class="cl-view-title"><span class="cl-view-icon">' + getViewIcon('today', 24) + '</span><h1>Today</h1>';
   html += '<span class="cl-view-count">' + tasks.length + '</span></div>';
   html += renderGroupingToggle('today');
   html += '</div>';
@@ -1104,7 +1157,7 @@ function renderTodayView() {
 function renderUpcomingView() {
   var tasks = getFilteredTasks('upcoming');
   var html = '<div class="cl-view-header">';
-  html += '<div class="cl-view-title"><span class="cl-view-icon">📅</span><h1>Upcoming</h1></div></div>';
+  html += '<div class="cl-view-title"><span class="cl-view-icon">' + getViewIcon('upcoming', 24) + '</span><h1>Upcoming</h1></div></div>';
   html += renderFilterBar(tasks);
   html += renderQuickAdd('upcoming');
   html += '<div class="cl-task-list">';
@@ -1156,7 +1209,7 @@ function renderUpcomingView() {
 function renderAnytimeView() {
   var tasks = getFilteredTasks('anytime');
   var html = '<div class="cl-view-header">';
-  html += '<div class="cl-view-title"><span class="cl-view-icon">📋</span><h1>Anytime</h1>';
+  html += '<div class="cl-view-title"><span class="cl-view-icon">' + getViewIcon('anytime', 24) + '</span><h1>Anytime</h1>';
   html += '<span class="cl-view-count">' + tasks.length + '</span></div>';
   html += renderGroupingToggle('anytime');
   html += '</div>';
@@ -1172,7 +1225,7 @@ function renderAnytimeView() {
 function renderSomedayView() {
   var tasks = getFilteredTasks('someday');
   var html = '<div class="cl-view-header">';
-  html += '<div class="cl-view-title"><span class="cl-view-icon">💤</span><h1>Someday</h1>';
+  html += '<div class="cl-view-title"><span class="cl-view-icon">' + getViewIcon('someday', 24) + '</span><h1>Someday</h1>';
   html += '<span class="cl-view-count">' + tasks.length + '</span></div>';
   html += renderGroupingToggle('someday');
   html += '</div>';

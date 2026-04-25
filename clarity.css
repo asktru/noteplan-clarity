@@ -189,7 +189,26 @@ body.cl-resizing * { cursor: col-resize !important; }
   color: var(--cl-accent);
 }
 
-.cl-nav-icon { width: 20px; text-align: center; font-size: 14px; }
+.cl-nav-icon {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 14px;
+}
+.cl-nav-icon svg { display: block; }
+.cl-settings-toggle-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+.cl-settings-toggle-icon svg { display: block; }
 
 .cl-nav-label { flex: 1; }
 
@@ -243,7 +262,15 @@ body.cl-resizing * { cursor: col-resize !important; }
   margin-bottom: 16px;
 }
 .cl-view-title h1 { font-size: 22px; font-weight: 600; color: var(--cl-text); }
-.cl-view-icon { font-size: 20px; }
+.cl-view-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  font-size: 20px;
+}
+.cl-view-icon svg { display: block; }
 .cl-view-count { font-size: 13px; opacity: 0.4; }
 
 /* ─── Scrollbar ───────────────────────────────────────── */
