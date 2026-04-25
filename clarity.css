@@ -907,3 +907,88 @@ body.cl-resizing * { cursor: col-resize !important; }
 .cl-dragging .cl-task-row:not(.cl-drag-ghost) {
   transition: transform 0.15s ease;
 }
+
+/* ─── Loading state ───────────────────────────────────── */
+.cl-loading-overlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  height: 100%;
+  min-height: 200px;
+  padding: 60px 20px;
+  opacity: 0;
+  animation: cl-fade-in 0.3s ease 0.15s forwards;
+}
+.cl-spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2.5px solid var(--cl-border);
+  border-top-color: var(--cl-accent);
+  animation: cl-spin 0.8s linear infinite;
+}
+.cl-loading-label {
+  font-size: 12px;
+  opacity: 0.5;
+  letter-spacing: 0.2px;
+}
+@keyframes cl-spin { to { transform: rotate(360deg); } }
+@keyframes cl-fade-in { to { opacity: 1; } }
+
+.cl-skeleton-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  margin: 2px 0;
+}
+.cl-skeleton-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: var(--cl-border);
+  animation: cl-pulse 1.4s ease-in-out infinite;
+}
+.cl-skeleton-bar {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--cl-border);
+  width: 70%;
+  animation: cl-pulse 1.4s ease-in-out infinite;
+}
+.cl-skeleton-nav:nth-child(2) .cl-skeleton-dot,
+.cl-skeleton-nav:nth-child(2) .cl-skeleton-bar { animation-delay: 0.1s; }
+.cl-skeleton-nav:nth-child(3) .cl-skeleton-dot,
+.cl-skeleton-nav:nth-child(3) .cl-skeleton-bar { animation-delay: 0.2s; }
+.cl-skeleton-nav:nth-child(4) .cl-skeleton-dot,
+.cl-skeleton-nav:nth-child(4) .cl-skeleton-bar { animation-delay: 0.3s; }
+.cl-skeleton-nav:nth-child(5) .cl-skeleton-dot,
+.cl-skeleton-nav:nth-child(5) .cl-skeleton-bar { animation-delay: 0.4s; }
+@keyframes cl-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+/* ─── Refresh button ──────────────────────────────────── */
+.cl-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: 8px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--cl-text-faint);
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.15s, background 0.15s;
+}
+.cl-refresh-btn:hover { opacity: 1; background: var(--cl-hover); }
+.cl-refresh-btn.cl-spinning svg { animation: cl-spin 0.8s linear infinite; }

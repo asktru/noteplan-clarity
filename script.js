@@ -410,6 +410,51 @@ async function onMessageFromHTMLView(actionType, data) {
         break;
       }
 
+      case 'refreshProject': {
+        var rpFilename = msg.filename;
+        if (!rpFilename) break;
+        await CommandBar.onAsyncThread();
+        var rpNote = findNoteByFilename(rpFilename);
+        if (!rpNote) {
+          await CommandBar.onMainThread();
+          await sendToHTMLWindow('PROJECT_REFRESHED', { filename: rpFilename, missing: true });
+          break;
+        }
+        var rpTasks = [];
+        var rpFm = parseFrontmatter(rpNote.content || '').frontmatter;
+        var rpIsCalendar = getCalendarNoteInfo(rpNote);
+        var rpSourceType = rpIsCalendar.isCalendar ? 'calendar' : 'note';
+        var rpSourceDate = rpIsCalendar.isCalendar ? rpIsCalendar.date : null;
+        extractTasksFromNote(rpNote, rpTasks, rpSourceType, rpSourceDate);
+
+        var rpParas = rpNote.paragraphs;
+        var rpTaskCount = 0, rpDoneCount = 0, rpOpenCount = 0;
+        for (var rpi = 0; rpi < rpParas.length; rpi++) {
+          var rpt = rpParas[rpi].type;
+          if (rpt === 'open' || rpt === 'done' || rpt === 'cancelled') {
+            rpTaskCount++;
+            if (rpt === 'done') rpDoneCount++;
+            else if (rpt === 'open') rpOpenCount++;
+          }
+        }
+
+        await CommandBar.onMainThread();
+        await sendToHTMLWindow('PROJECT_REFRESHED', {
+          filename: rpFilename,
+          tasks: rpTasks,
+          noteMeta: {
+            filename: rpFilename,
+            title: rpNote.title || rpFilename.replace(/\.md$/, '').split('/').pop(),
+            taskCount: rpTaskCount,
+            doneCount: rpDoneCount,
+            openCount: rpOpenCount,
+            bgColorDark: normalizeColor(rpFm['bg-color-dark']),
+            hasProjectOrAreaType: (rpFm.type === 'project' || rpFm.type === 'area'),
+          },
+        });
+        break;
+      }
+
       case 'openNoteInEditor': {
         if (msg.filename) {
           await CommandBar.onMainThread();

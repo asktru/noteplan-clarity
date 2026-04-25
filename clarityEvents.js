@@ -264,6 +264,9 @@ function onMessageFromPlugin(type, data) {
       State.noteContent = data;
       if (State.currentView === 'note') renderCurrentView();
       break;
+    case 'PROJECT_REFRESHED':
+      handleProjectRefreshed(data);
+      break;
     case 'TASK_CREATED':
     case 'TASK_SAVED':
     case 'TASK_TOGGLED':
@@ -273,6 +276,49 @@ function onMessageFromPlugin(type, data) {
     default:
       console.log('Clarity WebView: unknown message type: ' + type);
   }
+}
+
+function handleProjectRefreshed(data) {
+  if (!data || !data.filename) return;
+  var fn = data.filename;
+  // Replace tasks for this note
+  var kept = [];
+  for (var i = 0; i < State.tasks.length; i++) {
+    if (State.tasks[i].noteFilename !== fn) kept.push(State.tasks[i]);
+  }
+  if (data.tasks && data.tasks.length) {
+    for (var ti = 0; ti < data.tasks.length; ti++) kept.push(data.tasks[ti]);
+  }
+  State.tasks = kept;
+
+  // Update note metadata in folder tree + flat note list
+  if (data.noteMeta) {
+    var nm = data.noteMeta;
+    for (var fi = 0; fi < State.folders.length; fi++) {
+      var notes = State.folders[fi].notes || [];
+      for (var ni = 0; ni < notes.length; ni++) {
+        if (notes[ni].filename === fn) {
+          notes[ni].title = nm.title;
+          notes[ni].taskCount = nm.taskCount;
+          notes[ni].doneCount = nm.doneCount;
+          notes[ni].openCount = nm.openCount;
+          notes[ni].bgColorDark = nm.bgColorDark;
+          notes[ni].hasProjectOrAreaType = nm.hasProjectOrAreaType;
+        }
+      }
+    }
+    for (var li = 0; li < State.notes.length; li++) {
+      if (State.notes[li].filename === fn) {
+        State.notes[li].title = nm.title;
+        State.notes[li].taskCount = nm.taskCount;
+        State.notes[li].doneCount = nm.doneCount;
+        State.notes[li].openCount = nm.openCount;
+        State.notes[li].bgColorDark = nm.bgColorDark;
+      }
+    }
+  }
+  renderSidebar();
+  renderCurrentView();
 }
 
 // ─── Helpers ───────────────────────────────────────────────
@@ -1257,7 +1303,11 @@ function renderNoteView() {
   var html = '<div class="cl-view-header">';
   html += '<div class="cl-view-title">';
   html += buildProgressPie(pct, bgColor, 24);
-  html += '<h1 class="cl-note-title-link" data-action="openInEditor" data-filename="' + esc(nc.filename) + '">' + esc(nc.title) + '</h1></div>';
+  html += '<h1 class="cl-note-title-link" data-action="openInEditor" data-filename="' + esc(nc.filename) + '">' + esc(nc.title) + '</h1>';
+  html += '<button class="cl-refresh-btn" data-action="refreshProject" data-filename="' + esc(nc.filename) + '" title="Refresh this project">' +
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+    '<path d="M21 12a9 9 0 1 1-3.5-7.1"/><path d="M21 4v5h-5"/></svg></button>';
+  html += '</div>';
 
   var folderPath = (nc.filename || '').replace(/\/[^/]+$/, '');
   html += '<div class="cl-note-breadcrumb">' + esc(folderPath) + ' &middot; ' + doneCount + '/' + taskCount + ' done</div>';
@@ -1528,6 +1578,14 @@ function attachMainEventListeners() {
           sendMessageToPlugin('openNoteInEditor', JSON.stringify({ filename: target.dataset.filename }));
         }
         break;
+      case 'refreshProject': {
+        var rfn = target.dataset.filename || State.currentNoteFilename;
+        if (!rfn) break;
+        target.classList.add('cl-spinning');
+        sendMessageToPlugin('refreshProject', JSON.stringify({ filename: rfn }));
+        sendMessageToPlugin('requestNoteContent', JSON.stringify({ filename: rfn }));
+        break;
+      }
       case 'dismissMoved':
         State.movedFromInbox = [];
         renderCurrentView();
@@ -2381,7 +2439,47 @@ document.addEventListener('keydown', function(e) {
 });
 
 // ─── Init ──────────────────────────────────────────────────
+function renderInitialLoading() {
+  var sidebar = document.getElementById('cl-sidebar');
+  var main = document.getElementById('cl-main');
+  if (sidebar) {
+    var inner = document.createElement('div');
+    inner.className = 'cl-sidebar-inner';
+    for (var i = 0; i < 5; i++) {
+      var row = document.createElement('div');
+      row.className = 'cl-skeleton-nav';
+      var dot = document.createElement('div'); dot.className = 'cl-skeleton-dot';
+      var bar = document.createElement('div'); bar.className = 'cl-skeleton-bar';
+      row.appendChild(dot); row.appendChild(bar);
+      inner.appendChild(row);
+    }
+    var div = document.createElement('div'); div.className = 'cl-nav-divider';
+    inner.appendChild(div);
+    for (var j = 0; j < 4; j++) {
+      var row2 = document.createElement('div');
+      row2.className = 'cl-skeleton-nav';
+      var dot2 = document.createElement('div'); dot2.className = 'cl-skeleton-dot';
+      var bar2 = document.createElement('div'); bar2.className = 'cl-skeleton-bar';
+      bar2.style.width = (50 + (j * 13) % 40) + '%';
+      row2.appendChild(dot2); row2.appendChild(bar2);
+      inner.appendChild(row2);
+    }
+    sidebar.replaceChildren(inner);
+  }
+  if (main) {
+    var overlay = document.createElement('div');
+    overlay.className = 'cl-loading-overlay';
+    var spin = document.createElement('div'); spin.className = 'cl-spinner';
+    var lbl = document.createElement('div'); lbl.className = 'cl-loading-label';
+    lbl.textContent = 'Loading your tasks\u2026';
+    overlay.appendChild(spin);
+    overlay.appendChild(lbl);
+    main.replaceChildren(overlay);
+  }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
+  renderInitialLoading();
   setTimeout(function() {
     sendMessageToPlugin('ready', '{}');
   }, 100);
