@@ -6,8 +6,8 @@
   "plugin.description": "Things 3-inspired task clarity layer. Smart views for Inbox, Today, Upcoming, Anytime, Someday with inline task editing.",
   "plugin.icon": "🔮",
   "plugin.author": "asktru",
-  "plugin.version": "1.2.0",
-  "plugin.lastUpdateInfo": "Sidebar view settings, resizable sidebar, Things-3 progress pies, collapsible headings, markdown tables",
+  "plugin.version": "1.3.0",
+  "plugin.lastUpdateInfo": "Things-style sidebar SVG icons, startup loading state, per-project refresh button, Anytime no longer pulls in Inbox items",
   "plugin.script": "script.js",
   "plugin.isRemote": "false",
   "plugin.dependsOn": [
