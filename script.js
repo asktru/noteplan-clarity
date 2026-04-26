@@ -267,6 +267,17 @@ async function onMessageFromHTMLView(actionType, data) {
         if (msg.scheduledDate) newContent += ' >' + msg.scheduledDate;
         else if (msg.scheduledWeek) newContent += ' >' + msg.scheduledWeek;
 
+        // Preserve system mentions the editor strips out (@repeat, @done, @due)
+        // so they round-trip through edits unchanged.
+        var preservedRe = /@(?:repeat|done|due)\([^)]*\)/g;
+        var origContent = sPara.content || '';
+        var preserved = origContent.match(preservedRe) || [];
+        for (var pmi = 0; pmi < preserved.length; pmi++) {
+          if (newContent.indexOf(preserved[pmi]) === -1) {
+            newContent += ' ' + preserved[pmi];
+          }
+        }
+
         sPara.content = newContent;
         sNote.updateParagraph(sPara);
 
