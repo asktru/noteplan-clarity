@@ -2416,6 +2416,140 @@ function addWeeks(weekStr, n) {
   return year + '-W' + String(week).padStart(2, '0');
 }
 
+// ─── Quick Jump (Cmd+/) ────────────────────────────────────
+// Score a note title against a query. Higher is better; 0 means no match.
+// Combines case-insensitive substring match and first-letter-of-each-word match.
+function quickJumpScore(note, query) {
+  if (!query) return 1;
+  var q = query.toLowerCase();
+  var title = (note.title || '').toLowerCase();
+  if (!title) return 0;
+
+  var score = 0;
+  // Exact prefix is best.
+  if (title.indexOf(q) === 0) score += 100;
+  else if (title.indexOf(q) >= 0) score += 50 - title.indexOf(q);
+
+  // First-letters-of-words match: e.g. "ehs" matches "Eat Healthy Stuff".
+  var words = title.split(/[\s\-_/]+/).filter(function(w) { return w.length > 0; });
+  var initials = '';
+  for (var w = 0; w < words.length; w++) initials += words[w].charAt(0);
+  if (initials.indexOf(q) === 0) score += 80;
+  else if (initials.indexOf(q) >= 0) score += 30;
+
+  return score;
+}
+
+function quickJumpResults(query) {
+  var notes = State.notes || [];
+  var scored = [];
+  for (var i = 0; i < notes.length; i++) {
+    var s = quickJumpScore(notes[i], query);
+    if (s > 0) scored.push({ note: notes[i], score: s });
+  }
+  scored.sort(function(a, b) {
+    if (b.score !== a.score) return b.score - a.score;
+    return (a.note.title || '').localeCompare(b.note.title || '');
+  });
+  return scored.slice(0, 12).map(function(x) { return x.note; });
+}
+
+function renderQuickJumpResults(container, results, selectedIndex) {
+  var html = '';
+  if (results.length === 0) {
+    html = '<div class="cl-jump-empty">No matching projects or areas</div>';
+  } else {
+    for (var i = 0; i < results.length; i++) {
+      var n = results[i];
+      var folderPath = (n.filename || '').replace(/\/[^/]+$/, '');
+      var color = n.bgColorDark || '#3B82F6';
+      var icon = n.noteType === 'area' ? buildAreaIcon(color, 16) : buildProgressPie(
+        n.taskCount > 0 ? Math.round((n.doneCount / n.taskCount) * 100) : 0, color, 16
+      );
+      var sel = i === selectedIndex ? ' cl-jump-result-active' : '';
+      html += '<div class="cl-jump-result' + sel + '" data-filename="' + esc(n.filename) + '" data-index="' + i + '">' +
+        '<span class="cl-jump-icon">' + icon + '</span>' +
+        '<span class="cl-jump-title">' + esc(n.title || '') + '</span>' +
+        '<span class="cl-jump-folder">' + esc(folderPath) + '</span>' +
+        '</div>';
+    }
+  }
+  container.innerHTML = html;
+}
+
+function openQuickJump() {
+  var existing = document.querySelector('.cl-jump-overlay');
+  if (existing) { existing.remove(); return; }
+
+  var overlay = document.createElement('div');
+  overlay.className = 'cl-jump-overlay';
+  overlay.innerHTML =
+    '<div class="cl-jump-modal">' +
+      '<input class="cl-jump-input" type="text" placeholder="Jump to project or area…" autocomplete="off" spellcheck="false">' +
+      '<div class="cl-jump-results"></div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+
+  var input = overlay.querySelector('.cl-jump-input');
+  var resultsEl = overlay.querySelector('.cl-jump-results');
+  var state = { results: quickJumpResults(''), selected: 0 };
+  renderQuickJumpResults(resultsEl, state.results, state.selected);
+
+  function close() { overlay.remove(); }
+  function jumpTo(filename) {
+    if (!filename) return;
+    close();
+    if (State.expandedTaskId) collapseTask();
+    var navItem = document.querySelector('.cl-nav-item[data-filename="' + filename + '"]');
+    if (navItem) {
+      navItem.click();
+      navItem.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  input.addEventListener('input', function() {
+    state.results = quickJumpResults(input.value);
+    state.selected = 0;
+    renderQuickJumpResults(resultsEl, state.results, state.selected);
+  });
+
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (state.results.length === 0) return;
+      state.selected = Math.min(state.selected + 1, state.results.length - 1);
+      renderQuickJumpResults(resultsEl, state.results, state.selected);
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (state.results.length === 0) return;
+      state.selected = Math.max(state.selected - 1, 0);
+      renderQuickJumpResults(resultsEl, state.results, state.selected);
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      var pick = state.results[state.selected];
+      if (pick) jumpTo(pick.filename);
+      return;
+    }
+  });
+
+  resultsEl.addEventListener('click', function(e) {
+    var row = e.target.closest('.cl-jump-result');
+    if (!row) return;
+    jumpTo(row.dataset.filename);
+  });
+
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) close();
+  });
+
+  setTimeout(function() { input.focus(); }, 0);
+}
+
 // ─── Keyboard Shortcuts ────────────────────────────────────
 document.addEventListener('keydown', function(e) {
   // Cmd+Enter: save expanded task
@@ -2486,8 +2620,17 @@ document.addEventListener('keydown', function(e) {
         e.preventDefault();
         if (State.expandedTaskId) collapseTask();
         navItem.click();
+        var sbInner = document.querySelector('.cl-sidebar-inner');
+        if (sbInner) sbInner.scrollTop = 0;
       }
     }
+    return;
+  }
+
+  // Cmd+/: open quick-jump palette
+  if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && e.key === '/') {
+    e.preventDefault();
+    openQuickJump();
     return;
   }
 
