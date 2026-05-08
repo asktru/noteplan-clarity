@@ -461,6 +461,7 @@ async function onMessageFromHTMLView(actionType, data) {
             openCount: rpOpenCount,
             bgColorDark: normalizeColor(rpFm['bg-color-dark']),
             hasProjectOrAreaType: (rpFm.type === 'project' || rpFm.type === 'area'),
+            noteType: rpFm.type === 'area' ? 'area' : (rpFm.type === 'project' ? 'project' : ''),
           },
         });
         break;
@@ -803,6 +804,7 @@ function getFolderTree() {
       doneCount: doneCount,
       openCount: openCount,
       hasProjectOrAreaType: hasProjectOrAreaType,
+      noteType: fm.type === 'area' ? 'area' : (fm.type === 'project' ? 'project' : ''),
       bgColorDark: bgColorDark,
     };
     folderMap[folderPath].notes.push(noteMeta);

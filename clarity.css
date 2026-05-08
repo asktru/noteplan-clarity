@@ -252,6 +252,7 @@ body.cl-resizing * { cursor: col-resize !important; }
 .cl-project-item { font-size: 12px; }
 .cl-project-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cl-progress-ring { flex-shrink: 0; }
+.cl-area-icon { flex-shrink: 0; }
 
 /* ─── View Header ─────────────────────────────────────── */
 .cl-view-header { padding: 20px 24px 0; }

@@ -304,6 +304,7 @@ function handleProjectRefreshed(data) {
           notes[ni].openCount = nm.openCount;
           notes[ni].bgColorDark = nm.bgColorDark;
           notes[ni].hasProjectOrAreaType = nm.hasProjectOrAreaType;
+          notes[ni].noteType = nm.noteType;
         }
       }
     }
@@ -314,6 +315,7 @@ function handleProjectRefreshed(data) {
         State.notes[li].doneCount = nm.doneCount;
         State.notes[li].openCount = nm.openCount;
         State.notes[li].bgColorDark = nm.bgColorDark;
+        State.notes[li].noteType = nm.noteType;
       }
     }
   }
@@ -566,6 +568,24 @@ function buildProgressPie(pct, color, size) {
   return svg;
 }
 
+// ─── Area Icon (Things 3 style isometric box) ──────────────
+// Three-faced isometric cube tinted by the area's color. No progress indication.
+function buildAreaIcon(color, size) {
+  var s = size || 18;
+  var c = color || '#3B82F6';
+  var svg = '<svg class="cl-area-icon" width="' + s + '" height="' + s + '" viewBox="0 0 18 18">';
+  // Top face (rhombus)
+  svg += '<path d="M9 2.6 L15.4 6.3 L9 10 L2.6 6.3 Z" fill="' + c + '" fill-opacity="0.95"/>';
+  // Left face
+  svg += '<path d="M2.6 6.3 L9 10 L9 15.6 L2.6 11.9 Z" fill="' + c + '" fill-opacity="0.55"/>';
+  // Right face
+  svg += '<path d="M15.4 6.3 L9 10 L9 15.6 L15.4 11.9 Z" fill="' + c + '" fill-opacity="0.78"/>';
+  // Subtle outline along top edges
+  svg += '<path d="M9 2.6 L15.4 6.3 L9 10 L2.6 6.3 Z" fill="none" stroke="' + c + '" stroke-width="0.6" stroke-opacity="0.9"/>';
+  svg += '</svg>';
+  return svg;
+}
+
 // ─── Sidebar ───────────────────────────────────────────────
 function getViewIcon(id, size) {
   var s = size || 18;
@@ -668,7 +688,11 @@ function renderSidebar() {
       var color = n.bgColorDark || '#3B82F6';
       var noteActive = (State.currentView === 'note' && State.currentNoteFilename === n.filename) ? ' cl-nav-active' : '';
       html += '<div class="cl-nav-item cl-project-item' + noteActive + '" data-view="note" data-filename="' + esc(n.filename) + '">';
-      html += buildProgressPie(pct, color);
+      if (n.noteType === 'area') {
+        html += buildAreaIcon(color, 18);
+      } else {
+        html += buildProgressPie(pct, color);
+      }
       html += '<span class="cl-project-title">' + esc(n.title) + '</span>';
       html += '</div>';
     }
@@ -1299,10 +1323,15 @@ function renderNoteView() {
     if (pt === 'open' || pt === 'done' || pt === 'cancelled') { taskCount++; if (pt === 'done') doneCount++; }
   }
   var pct = taskCount > 0 ? Math.round((doneCount / taskCount) * 100) : 0;
+  var isArea = (fm.type === 'area');
 
   var html = '<div class="cl-view-header">';
   html += '<div class="cl-view-title">';
-  html += buildProgressPie(pct, bgColor, 24);
+  if (isArea) {
+    html += buildAreaIcon(bgColor, 24);
+  } else {
+    html += buildProgressPie(pct, bgColor, 24);
+  }
   html += '<h1 class="cl-note-title-link" data-action="openInEditor" data-filename="' + esc(nc.filename) + '">' + esc(nc.title) + '</h1>';
   html += '<button class="cl-refresh-btn" data-action="refreshProject" data-filename="' + esc(nc.filename) + '" title="Refresh this project">' +
     '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
@@ -1310,7 +1339,7 @@ function renderNoteView() {
   html += '</div>';
 
   var folderPath = (nc.filename || '').replace(/\/[^/]+$/, '');
-  html += '<div class="cl-note-breadcrumb">' + esc(folderPath) + ' &middot; ' + doneCount + '/' + taskCount + ' done</div>';
+  html += '<div class="cl-note-breadcrumb">' + esc(folderPath) + (isArea ? '' : ' &middot; ' + doneCount + '/' + taskCount + ' done') + '</div>';
 
   html += '<div class="cl-note-filters">';
   html += '<div class="cl-filter-bar" style="padding:0;">';
@@ -1436,7 +1465,7 @@ function renderNoteView() {
         id: nc.filename + ':' + p.lineIndex, content: parsed.cleanContent, rawContent: p.content,
         type: isChecklist ? 'checklist' : 'task', status: status, priority: parsed.priority,
         scheduledDate: parsed.scheduledDate, scheduledWeek: parsed.scheduledWeek,
-        tags: parsed.tags, mentions: parsed.mentions, isDelegated: raw.startsWith('+'),
+        tags: parsed.tags, mentions: parsed.mentions, isDelegated: !isChecklist && raw.startsWith('+'),
         noteFilename: nc.filename, noteTitle: nc.title, folderPath: '', folderName: '',
         lineIndex: p.lineIndex, children: children,
       };
