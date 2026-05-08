@@ -906,6 +906,7 @@ function renderTaskRow(task, options) {
   var showSource = options.showSource !== false;
   var showStar = options.showStar || false;
   var isOverdue = options.isOverdue || false;
+  var alwaysShowDate = options.alwaysShowDate || false;
   var dimmed = options.dimmed || false;
 
   var classes = 'cl-task-row';
@@ -943,7 +944,7 @@ function renderTaskRow(task, options) {
   }
   if (isOverdue && task.scheduledDate) {
     metaParts.push('<span class="cl-overdue-date">' + task.scheduledDate + '</span>');
-  } else if (task.scheduledDate && task.scheduledDate !== State.today && !isOverdue) {
+  } else if (task.scheduledDate && (alwaysShowDate || task.scheduledDate !== State.today)) {
     metaParts.push(task.scheduledDate);
   }
   if (task.isDelegated && task.mentions.length > 0) {
@@ -1471,7 +1472,8 @@ function renderNoteView() {
       };
       var indent = pIndent * 20;
       if (indent > 0) html += '<div class="cl-indent-wrap" style="padding-left:' + indent + 'px;">';
-      html += renderTaskRow(taskObj, { showSource: false, lineIndex: p.lineIndex, indentLevel: pIndent, childCount: children.length });
+      var taskOverdue = (status === 'open' && taskObj.scheduledDate && taskObj.scheduledDate < State.today);
+      html += renderTaskRow(taskObj, { showSource: false, lineIndex: p.lineIndex, indentLevel: pIndent, childCount: children.length, showStar: true, isOverdue: taskOverdue, alwaysShowDate: true });
       if (indent > 0) html += '</div>';
     } else {
       var indent = pIndent * 20;
