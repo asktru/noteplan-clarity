@@ -277,6 +277,13 @@ function onMessageFromPlugin(type, data) {
     case 'TASK_DELETED':
       sendMessageToPlugin('ready', '{}');
       break;
+    case 'NOTE_FRONTMATTER_UPDATED':
+      if (State.noteContent && State.noteContent.filename === data.filename) {
+        State.noteContent.frontmatter = data.frontmatter || {};
+        State.noteContent.bgColorDark = data.bgColorDark || State.noteContent.bgColorDark;
+      }
+      sendMessageToPlugin('ready', '{}');
+      break;
     default:
       console.log('Clarity WebView: unknown message type: ' + type);
   }
@@ -1366,6 +1373,8 @@ function renderNoteView() {
   html += '<button class="cl-refresh-btn" data-action="refreshProject" data-filename="' + esc(nc.filename) + '" title="Refresh this project">' +
     '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
     '<path d="M21 12a9 9 0 1 1-3.5-7.1"/><path d="M21 4v5h-5"/></svg></button>';
+  html += '<button class="cl-refresh-btn cl-meta-btn" data-action="openNoteMetaModal" title="Edit project metadata">' +
+    '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>';
   html += '</div>';
 
   var folderPath = (nc.filename || '').replace(/\/[^/]+$/, '');
@@ -1661,6 +1670,9 @@ function attachMainEventListeners() {
         sendMessageToPlugin('openNoteInEditor', JSON.stringify({ filename: jfn }));
         break;
       }
+      case 'openNoteMetaModal':
+        openNoteMetaModal();
+        break;
       case 'refreshProject': {
         var rfn = target.dataset.filename || State.currentNoteFilename;
         if (!rfn) break;
@@ -2684,6 +2696,112 @@ function deleteTaskById(taskId) {
       sendMessageToPlugin('deleteTask', JSON.stringify({ filename: filename, lineIndex: lineIndex }));
     },
   });
+}
+
+// ─── Project / Area Metadata Modal ─────────────────────────
+function openNoteMetaModal() {
+  var nc = State.noteContent;
+  if (!nc) return;
+  var existing = document.querySelector('.cl-meta-overlay');
+  if (existing) { existing.remove(); return; }
+
+  var fm = nc.frontmatter || {};
+  var typeVal = fm.type === 'project' || fm.type === 'area' ? fm.type : '';
+  var dueVal = fm.due || '';
+  var reviewedVal = fm.reviewed || '';
+  var reviewVal = fm.review || '';
+
+  var overlay = document.createElement('div');
+  overlay.className = 'cl-meta-overlay';
+  overlay.innerHTML =
+    '<div class="cl-meta-modal">' +
+      '<div class="cl-meta-modal-title">Project metadata</div>' +
+      '<div class="cl-meta-row">' +
+        '<label class="cl-meta-label">Type</label>' +
+        '<select class="cl-meta-input" data-field="type">' +
+          '<option value=""' + (typeVal === '' ? ' selected' : '') + '>—</option>' +
+          '<option value="project"' + (typeVal === 'project' ? ' selected' : '') + '>Project</option>' +
+          '<option value="area"' + (typeVal === 'area' ? ' selected' : '') + '>Area</option>' +
+        '</select>' +
+      '</div>' +
+      '<div class="cl-meta-row">' +
+        '<label class="cl-meta-label">Deadline</label>' +
+        '<div class="cl-meta-inline">' +
+          '<input class="cl-meta-input" type="date" data-field="due" value="' + esc(dueVal) + '">' +
+          '<button class="cl-meta-link" type="button" data-action="metaClearDue">Clear</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="cl-meta-row">' +
+        '<label class="cl-meta-label">Last Review</label>' +
+        '<div class="cl-meta-inline">' +
+          '<span class="cl-meta-readonly" data-field="reviewed-display">' + esc(reviewedVal || '—') + '</span>' +
+          '<button class="cl-meta-link" type="button" data-action="metaMarkReviewed">Mark as reviewed</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="cl-meta-row">' +
+        '<label class="cl-meta-label">Review Schedule</label>' +
+        '<input class="cl-meta-input" type="text" data-field="review" placeholder="e.g. 1w, 2w, 1m" value="' + esc(reviewVal) + '">' +
+      '</div>' +
+      '<div class="cl-meta-actions">' +
+        '<button class="cl-meta-cancel" type="button">Cancel</button>' +
+        '<button class="cl-meta-save" type="button">Save</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+
+  // Track an in-modal draft so "Mark as reviewed" updates the displayed date.
+  var draft = { type: typeVal, due: dueVal, reviewed: reviewedVal, review: reviewVal };
+
+  function close() { overlay.remove(); }
+  function readInputs() {
+    var typeSel = overlay.querySelector('[data-field="type"]');
+    var dueIn = overlay.querySelector('[data-field="due"]');
+    var reviewIn = overlay.querySelector('[data-field="review"]');
+    if (typeSel) draft.type = typeSel.value;
+    if (dueIn) draft.due = dueIn.value;
+    if (reviewIn) draft.review = reviewIn.value.trim();
+  }
+  function save() {
+    readInputs();
+    var updates = {
+      type: draft.type || null,
+      due: draft.due || null,
+      reviewed: draft.reviewed || null,
+      review: draft.review || null,
+    };
+    sendMessageToPlugin('updateNoteFrontmatter', JSON.stringify({ filename: nc.filename, updates: updates }));
+    close();
+  }
+
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) close();
+    var target = e.target.closest('[data-action]');
+    if (!target) return;
+    var action = target.dataset.action;
+    if (action === 'metaClearDue') {
+      var dueIn = overlay.querySelector('[data-field="due"]');
+      if (dueIn) dueIn.value = '';
+      draft.due = '';
+    } else if (action === 'metaMarkReviewed') {
+      draft.reviewed = State.today;
+      var disp = overlay.querySelector('[data-field="reviewed-display"]');
+      if (disp) disp.textContent = State.today;
+    }
+  });
+
+  overlay.querySelector('.cl-meta-cancel').addEventListener('click', close);
+  overlay.querySelector('.cl-meta-save').addEventListener('click', save);
+  overlay.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+    else if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') {
+      e.preventDefault(); e.stopPropagation(); save();
+    }
+  });
+
+  setTimeout(function() {
+    var first = overlay.querySelector('[data-field="type"]');
+    if (first) first.focus();
+  }, 0);
 }
 
 // ─── Keyboard Shortcuts ────────────────────────────────────

@@ -1097,3 +1097,62 @@ body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
   background: var(--cl-red) !important;
   border-color: var(--cl-red) !important;
 }
+
+/* ─── Project / Area Metadata Modal ─────────────────── */
+.cl-meta-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 10000;
+  padding: 24px;
+}
+.cl-meta-modal {
+  background: var(--cl-bg);
+  border: 1px solid var(--cl-border);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+  padding: 20px 22px;
+  width: min(440px, 100%);
+  box-sizing: border-box;
+}
+.cl-meta-modal-title { font-size: 15px; font-weight: 600; margin-bottom: 14px; }
+.cl-meta-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.cl-meta-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.55; }
+.cl-meta-input {
+  font: inherit;
+  background: var(--cl-hover);
+  border: 1px solid var(--cl-border);
+  color: var(--cl-text);
+  padding: 6px 8px;
+  border-radius: 6px;
+  outline: none;
+  box-sizing: border-box;
+  width: 100%;
+}
+.cl-meta-input:focus { border-color: var(--cl-accent); }
+.cl-meta-inline { display: flex; align-items: center; gap: 8px; }
+.cl-meta-inline .cl-meta-input { flex: 1; width: auto; }
+.cl-meta-readonly { flex: 1; font-size: 13px; opacity: 0.8; }
+.cl-meta-link {
+  font: inherit;
+  background: transparent;
+  border: none;
+  color: var(--cl-accent);
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 12px;
+}
+.cl-meta-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.cl-meta-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.cl-meta-actions button {
+  font: inherit;
+  border: 1px solid var(--cl-border);
+  background: transparent;
+  color: var(--cl-text);
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.cl-meta-actions button:hover { background: var(--cl-hover); }
+.cl-meta-save { background: var(--cl-accent) !important; border-color: var(--cl-accent) !important; color: #fff !important; }
+.cl-meta-save:hover { filter: brightness(1.1); }

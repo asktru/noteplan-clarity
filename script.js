@@ -247,6 +247,21 @@ async function onMessageFromHTMLView(actionType, data) {
         break;
       }
 
+      case 'updateNoteFrontmatter': {
+        var fmNote = findNoteByFilename(msg.filename);
+        if (!fmNote) break;
+        var fmUpdates = msg.updates || {};
+        var newContent = applyFrontmatterUpdates(fmNote.content || '', fmUpdates);
+        fmNote.content = newContent;
+        var fmAfter = parseFrontmatter(newContent).frontmatter;
+        await sendToHTMLWindow('NOTE_FRONTMATTER_UPDATED', {
+          filename: msg.filename,
+          frontmatter: fmAfter,
+          bgColorDark: normalizeColor(fmAfter['bg-color-dark']),
+        });
+        break;
+      }
+
       case 'deleteTask': {
         var dNote = findNoteByFilename(msg.filename);
         if (!dNote) break;
@@ -604,6 +619,56 @@ function parseFrontmatter(content) {
     fm[key] = val;
   }
   return { frontmatter: fm, body: lines.slice(endIdx + 1).join('\n') };
+}
+
+// Apply a flat object of frontmatter updates to a note's raw content.
+// Values that are null/undefined/empty-string remove the key. Unknown keys are appended.
+// If no frontmatter block exists yet, one is created at the top.
+function applyFrontmatterUpdates(content, updates) {
+  var lines = (content || '').split('\n');
+  var hasFm = lines.length > 0 && lines[0].trim() === '---';
+  var endIdx = -1;
+  if (hasFm) {
+    for (var fi = 1; fi < lines.length; fi++) {
+      if (lines[fi].trim() === '---') { endIdx = fi; break; }
+    }
+  }
+  var keys = Object.keys(updates || {});
+  if (!hasFm || endIdx < 0) {
+    var newFm = ['---'];
+    for (var nk = 0; nk < keys.length; nk++) {
+      var nv = updates[keys[nk]];
+      if (nv != null && nv !== '') newFm.push(keys[nk] + ': ' + nv);
+    }
+    newFm.push('---');
+    return newFm.concat(lines).join('\n');
+  }
+  var seen = {};
+  for (var li = 1; li < endIdx; li++) {
+    var line = lines[li];
+    var colonIdx = line.indexOf(':');
+    if (colonIdx < 0) continue;
+    var k = line.substring(0, colonIdx).trim();
+    if (Object.prototype.hasOwnProperty.call(updates, k)) {
+      seen[k] = true;
+      var v = updates[k];
+      lines[li] = (v == null || v === '') ? null : (k + ': ' + v);
+    }
+  }
+  var inserts = [];
+  for (var ak = 0; ak < keys.length; ak++) {
+    var key = keys[ak];
+    var val = updates[key];
+    if (!seen[key] && val != null && val !== '') inserts.push(key + ': ' + val);
+  }
+  var rebuilt = [];
+  for (var ri = 0; ri < lines.length; ri++) {
+    if (ri === endIdx) {
+      for (var ii = 0; ii < inserts.length; ii++) rebuilt.push(inserts[ii]);
+    }
+    if (lines[ri] !== null) rebuilt.push(lines[ri]);
+  }
+  return rebuilt.join('\n');
 }
 
 // ─── Task Content Parsing ──────────────────────────────────
