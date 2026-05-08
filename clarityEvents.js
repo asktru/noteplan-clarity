@@ -1214,7 +1214,10 @@ function renderTodayView() {
   }
 
   if (overdue.length > 0) {
-    html += '<div class="cl-group-header cl-overdue-header">Overdue</div>';
+    html += '<div class="cl-group-header cl-overdue-header">' +
+      '<span>Overdue</span>' +
+      '<span class="cl-overdue-reschedule" data-action="rescheduleAllOverdue" title="Move all overdue tasks to today">Reschedule</span>' +
+      '</div>';
     for (var oi = 0; oi < overdue.length; oi++) {
       html += renderTaskRow(overdue[oi], { isOverdue: true, showSource: true });
     }
@@ -1616,6 +1619,19 @@ function attachMainEventListeners() {
         target.classList.add('cl-spinning');
         sendMessageToPlugin('refreshProject', JSON.stringify({ filename: rfn }));
         sendMessageToPlugin('requestNoteContent', JSON.stringify({ filename: rfn }));
+        break;
+      }
+      case 'rescheduleAllOverdue': {
+        var today = State.today;
+        var moved = 0;
+        for (var rai = 0; rai < State.tasks.length; rai++) {
+          var t = State.tasks[rai];
+          if (t.status === 'open' && t.scheduledDate && t.scheduledDate < today) {
+            rescheduleTaskById(t.id, today);
+            moved++;
+          }
+        }
+        if (moved > 0) renderCurrentView();
         break;
       }
       case 'dismissMoved':

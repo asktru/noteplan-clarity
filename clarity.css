@@ -376,7 +376,9 @@ body.cl-resizing * { cursor: col-resize !important; }
 .cl-group-header:first-child { margin-top: 0; }
 .cl-group-clickable { cursor: pointer; }
 .cl-group-clickable:hover { opacity: 0.6; text-decoration: underline; text-underline-offset: 2px; }
-.cl-overdue-header { color: var(--cl-red); opacity: 0.8; border-color: rgba(239, 68, 68, 0.15); }
+.cl-overdue-header { color: var(--cl-red); opacity: 0.8; border-color: rgba(239, 68, 68, 0.15); display: flex; align-items: baseline; justify-content: space-between; }
+.cl-overdue-reschedule { font-size: 11px; text-transform: none; letter-spacing: 0; cursor: pointer; opacity: 0.85; }
+.cl-overdue-reschedule:hover { text-decoration: underline; text-underline-offset: 2px; opacity: 1; }
 .cl-upcoming-date { font-weight: 600; text-transform: none; font-size: 13px; opacity: 0.8; }
 
 /* ─── Task Row ────────────────────────────────────────── */
