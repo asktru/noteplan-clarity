@@ -585,7 +585,9 @@ function parseFrontmatter(content) {
 
 // ─── Task Content Parsing ──────────────────────────────────
 function parseTaskContent(content) {
-  var result = { priority: 0, scheduledDate: null, scheduledWeek: null, tags: [], mentions: [], blockId: null, cleanContent: '' };
+  var result = { priority: 0, scheduledDate: null, scheduledWeek: null, tags: [], mentions: [], blockId: null, repeat: null, cleanContent: '' };
+  var repeatMatch = (content || '').match(/@repeat\(([^)]*)\)/);
+  if (repeatMatch) result.repeat = repeatMatch[1];
   var c = content || '';
 
   // Block ID: ^abc123
@@ -739,6 +741,7 @@ function extractTasksFromNote(note, tasks, sourceType, sourceDate) {
       tags: parsed.tags,
       mentions: parsed.mentions,
       blockId: parsed.blockId,
+      repeat: parsed.repeat,
       isDelegated: isDelegated,
       noteFilename: filename,
       noteTitle: noteTitle,

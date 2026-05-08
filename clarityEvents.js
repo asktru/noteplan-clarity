@@ -943,10 +943,20 @@ function renderTaskRow(task, options) {
   if (showSource && task.noteTitle && task.sourceType === 'note') {
     metaParts.push(esc(task.noteTitle));
   }
+  var repeatBadge = '';
+  if (task.repeat) {
+    repeatBadge = ' <span class="cl-repeat-badge" title="Repeats: ' + esc(task.repeat) + '">' +
+      '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.3L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.3L3 16"/><path d="M3 21v-5h5"/></svg>' +
+      '<span class="cl-repeat-text">' + esc(task.repeat) + '</span>' +
+      '</span>';
+  }
+  var badgeSep = repeatBadge ? '  ' : '';
   if (isOverdue && task.scheduledDate) {
-    metaParts.push('<span class="cl-overdue-date">' + task.scheduledDate + '</span>');
+    metaParts.push('<span class="cl-overdue-date">' + task.scheduledDate + '</span>' + badgeSep + repeatBadge);
   } else if (task.scheduledDate && (alwaysShowDate || task.scheduledDate !== State.today)) {
-    metaParts.push(task.scheduledDate);
+    metaParts.push(task.scheduledDate + badgeSep + repeatBadge);
+  } else if (repeatBadge) {
+    metaParts.push(repeatBadge);
   }
   if (task.isDelegated && task.mentions.length > 0) {
     metaParts.push('delegated to <span class="cl-mention-inline">' + esc(task.mentions[0]) + '</span>');
@@ -969,7 +979,7 @@ function renderTaskRow(task, options) {
     if (indicators.length > 0) metaParts = metaParts.concat(indicators);
   }
   if (metaParts.length > 0) {
-    html += '<div class="cl-task-meta">' + metaParts.join(' &middot; ') + '</div>';
+    html += '<div class="cl-task-meta">' + metaParts.join('  &middot; ') + '</div>';
   }
   html += '</div>';
 
@@ -1470,14 +1480,15 @@ function renderNoteView() {
         id: nc.filename + ':' + p.lineIndex, content: parsed.cleanContent, rawContent: p.content,
         type: isChecklist ? 'checklist' : 'task', status: status, priority: parsed.priority,
         scheduledDate: parsed.scheduledDate, scheduledWeek: parsed.scheduledWeek,
-        tags: parsed.tags, mentions: parsed.mentions, isDelegated: !isChecklist && raw.startsWith('+'),
+        tags: parsed.tags, mentions: parsed.mentions, repeat: parsed.repeat, isDelegated: !isChecklist && raw.startsWith('+'),
         noteFilename: nc.filename, noteTitle: nc.title, folderPath: '', folderName: '',
         lineIndex: p.lineIndex, children: children,
       };
       var indent = pIndent * 20;
       if (indent > 0) html += '<div class="cl-indent-wrap" style="padding-left:' + indent + 'px;">';
       var taskOverdue = (status === 'open' && taskObj.scheduledDate && taskObj.scheduledDate < State.today);
-      html += renderTaskRow(taskObj, { showSource: false, lineIndex: p.lineIndex, indentLevel: pIndent, childCount: children.length, showStar: true, isOverdue: taskOverdue, alwaysShowDate: true });
+      var taskFuture = (status === 'open' && taskObj.scheduledDate && taskObj.scheduledDate > State.today);
+      html += renderTaskRow(taskObj, { showSource: false, lineIndex: p.lineIndex, indentLevel: pIndent, childCount: children.length, showStar: true, isOverdue: taskOverdue, alwaysShowDate: true, dimmed: taskFuture });
       if (indent > 0) html += '</div>';
     } else {
       var indent = pIndent * 20;
@@ -1512,8 +1523,10 @@ function renderNoteView() {
 }
 
 function parseTaskContentClient(content) {
-  var result = { priority: 0, scheduledDate: null, scheduledWeek: null, tags: [], mentions: [], cleanContent: '' };
+  var result = { priority: 0, scheduledDate: null, scheduledWeek: null, tags: [], mentions: [], repeat: null, cleanContent: '' };
   var c = content || '';
+  var rm = c.match(/@repeat\(([^)]*)\)/);
+  if (rm) result.repeat = rm[1];
   if (c.startsWith('!!! ')) { result.priority = 3; c = c.substring(4); }
   else if (c.startsWith('!! ')) { result.priority = 2; c = c.substring(3); }
   else if (c.startsWith('! ')) { result.priority = 1; c = c.substring(2); }

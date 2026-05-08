@@ -436,6 +436,9 @@ body.cl-resizing * { cursor: col-resize !important; }
 .cl-child-icon { font-size: 11px; opacity: 0.5; }
 .cl-child-checklist { color: var(--cl-accent); opacity: 0.6; }
 .cl-overdue-date { color: var(--cl-red); }
+.cl-repeat-badge { display: inline-flex; align-items: center; gap: 2px; vertical-align: -1px; }
+.cl-repeat-badge svg { opacity: 0.85; }
+.cl-repeat-text { font-variant-numeric: tabular-nums; }
 
 .cl-mention-inline { color: var(--cl-accent); }
 .cl-tag-inline { color: var(--cl-purple); opacity: 0.8; }
