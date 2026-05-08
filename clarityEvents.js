@@ -2476,6 +2476,21 @@ document.addEventListener('keydown', function(e) {
     return;
   }
 
+  // Cmd+1..5: switch to default sidebar views (Things 3 style)
+  if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && /^[1-5]$/.test(e.key)) {
+    var viewMap = { '1': 'inbox', '2': 'today', '3': 'upcoming', '4': 'anytime', '5': 'someday' };
+    var targetView = viewMap[e.key];
+    if (targetView) {
+      var navItem = document.querySelector('.cl-nav-item[data-view="' + targetView + '"]');
+      if (navItem) {
+        e.preventDefault();
+        if (State.expandedTaskId) collapseTask();
+        navItem.click();
+      }
+    }
+    return;
+  }
+
   // Cmd+N: focus quick add
   if (e.metaKey && e.key === 'n') {
     e.preventDefault();
