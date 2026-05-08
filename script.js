@@ -109,7 +109,7 @@ function buildFullHTML() {
     '  <link rel="stylesheet" href="clarity.css">\n' +
     '  <style>' + themeCSS + '</style>\n' +
     '</head>\n<body>\n' +
-    '  <button class="cl-sidebar-toggle" id="cl-sidebar-toggle">\u2630</button>\n' +
+    '  <button class="cl-sidebar-toggle" id="cl-sidebar-toggle" aria-label="Toggle Clarity sidebar">\u2190</button>\n' +
     '  <div class="cl-sidebar-overlay" id="cl-sidebar-overlay"></div>\n' +
     '  <div id="cl-root"><div id="cl-sidebar"></div><div id="cl-resizer"></div><div id="cl-main"></div></div>\n' +
     '  <script>var receivingPluginID = \'' + PLUGIN_ID + '\';<\/script>\n' +
