@@ -1073,7 +1073,7 @@ function renderGroupedTasks(tasks, grouping, options) {
     var displayName = (grouping === 'date') ? formatDateHeader(name) : name;
     var group = groups[groupOrder[gi]];
     if (grouping === 'note' && group[0] && group[0].noteFilename) {
-      html += '<div class="cl-group-header cl-group-clickable" data-action="openInEditor" data-filename="' + esc(group[0].noteFilename) + '">' + esc(displayName) + '</div>';
+      html += '<div class="cl-group-header cl-group-clickable" data-action="jumpToProjectNote" data-filename="' + esc(group[0].noteFilename) + '">' + esc(displayName) + '</div>';
     } else {
       html += '<div class="cl-group-header">' + esc(displayName) + '</div>';
     }
@@ -1626,6 +1626,26 @@ function attachMainEventListeners() {
           sendMessageToPlugin('openNoteInEditor', JSON.stringify({ filename: target.dataset.filename }));
         }
         break;
+      case 'jumpToProjectNote': {
+        var jfn = target.dataset.filename;
+        if (!jfn) break;
+        var inSidebar = false;
+        for (var jpi = 0; jpi < State.notes.length; jpi++) {
+          if (State.notes[jpi].filename === jfn) { inSidebar = true; break; }
+        }
+        if (inSidebar) {
+          if (State.expandedTaskId) collapseTask();
+          var jNav = document.querySelector('.cl-nav-item[data-filename="' + jfn + '"]');
+          if (jNav) {
+            jNav.click();
+            jNav.scrollIntoView({ block: 'nearest' });
+            break;
+          }
+        }
+        // Fallback: not a Clarity-tracked project (e.g. calendar note) — open in editor.
+        sendMessageToPlugin('openNoteInEditor', JSON.stringify({ filename: jfn }));
+        break;
+      }
       case 'refreshProject': {
         var rfn = target.dataset.filename || State.currentNoteFilename;
         if (!rfn) break;
@@ -1871,7 +1891,7 @@ function renderTaskEditorHTML(task) {
   // Current location — click to open in split view
   if (task.noteFilename) {
     var noteLabel = draft.moveToFilename ? esc(draft.moveToLabel || 'Moved') : esc(task.noteTitle);
-    html += '<div class="cl-meta-chip" data-action="openInEditor" data-filename="' + esc(task.noteFilename) + '"><span class="cl-meta-icon">\uD83D\uDCC1</span>' + noteLabel + '</div>';
+    html += '<div class="cl-meta-chip" data-action="jumpToProjectNote" data-filename="' + esc(task.noteFilename) + '"><span class="cl-meta-icon">\uD83D\uDCC1</span>' + noteLabel + '</div>';
   }
   // Move to... button
   html += '<div class="cl-meta-chip cl-meta-add" data-action="openNotePicker">\u2192 Move to...</div>';
