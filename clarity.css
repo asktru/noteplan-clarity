@@ -893,7 +893,7 @@ body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
   .cl-pri { font-size: 9px; padding: 1px 4px; }
 
   .cl-group-toggle { flex-wrap: wrap; }
-  .cl-note-filters { flex-direction: column; gap: 8px; align-items: flex-start; }
+  .cl-note-filters { flex-direction: row; gap: 8px; align-items: center; justify-content: space-between; }
 
   /* Prevent iOS zoom on focus — inputs must be >= 16px */
   .cl-quick-add-input { font-size: 16px; }
