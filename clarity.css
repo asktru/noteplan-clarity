@@ -1056,3 +1056,44 @@ body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
 .cl-jump-title { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cl-jump-folder { font-size: 11px; opacity: 0.45; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
 .cl-jump-empty { padding: 16px; text-align: center; opacity: 0.5; font-size: 13px; }
+
+/* ─── Confirmation Modal ─────────────────────────────── */
+.cl-confirm-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 10000;
+  padding: 24px;
+}
+.cl-confirm-modal {
+  background: var(--cl-bg);
+  border: 1px solid var(--cl-border);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+  padding: 20px;
+  width: min(420px, 100%);
+  box-sizing: border-box;
+}
+.cl-confirm-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+.cl-confirm-message { font-size: 13px; opacity: 0.75; line-height: 1.45; margin-bottom: 16px; }
+.cl-confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.cl-confirm-actions button {
+  font: inherit;
+  border: 1px solid var(--cl-border);
+  background: transparent;
+  color: var(--cl-text);
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.cl-confirm-actions button:hover { background: var(--cl-hover); }
+.cl-confirm-ok {
+  background: var(--cl-accent) !important;
+  border-color: var(--cl-accent) !important;
+  color: #fff !important;
+}
+.cl-confirm-ok:hover { filter: brightness(1.1); }
+.cl-confirm-destructive {
+  background: var(--cl-red) !important;
+  border-color: var(--cl-red) !important;
+}

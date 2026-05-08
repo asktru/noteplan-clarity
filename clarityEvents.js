@@ -274,6 +274,7 @@ function onMessageFromPlugin(type, data) {
     case 'TASK_TOGGLED':
     case 'TASK_REORDERED':
     case 'TASK_RESCHEDULED':
+    case 'TASK_DELETED':
       sendMessageToPlugin('ready', '{}');
       break;
     default:
@@ -2613,6 +2614,78 @@ function openQuickJump() {
   setTimeout(function() { input.focus(); }, 0);
 }
 
+// ─── Confirmation Modal ────────────────────────────────────
+function openConfirmModal(opts) {
+  var existing = document.querySelector('.cl-confirm-overlay');
+  if (existing) existing.remove();
+
+  var title = opts.title || 'Are you sure?';
+  var message = opts.message || '';
+  var confirmLabel = opts.confirmLabel || 'Confirm';
+  var cancelLabel = opts.cancelLabel || 'Cancel';
+  var destructive = !!opts.destructive;
+
+  var overlay = document.createElement('div');
+  overlay.className = 'cl-confirm-overlay';
+  overlay.innerHTML =
+    '<div class="cl-confirm-modal">' +
+      '<div class="cl-confirm-title">' + esc(title) + '</div>' +
+      (message ? '<div class="cl-confirm-message">' + esc(message) + '</div>' : '') +
+      '<div class="cl-confirm-actions">' +
+        '<button class="cl-confirm-cancel" type="button">' + esc(cancelLabel) + '</button>' +
+        '<button class="cl-confirm-ok' + (destructive ? ' cl-confirm-destructive' : '') + '" type="button">' + esc(confirmLabel) + '</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+
+  var okBtn = overlay.querySelector('.cl-confirm-ok');
+  var cancelBtn = overlay.querySelector('.cl-confirm-cancel');
+
+  function close() { overlay.remove(); }
+  function confirm() { close(); if (typeof opts.onConfirm === 'function') opts.onConfirm(); }
+  function cancel() { close(); if (typeof opts.onCancel === 'function') opts.onCancel(); }
+
+  okBtn.addEventListener('click', confirm);
+  cancelBtn.addEventListener('click', cancel);
+  overlay.addEventListener('click', function(e) { if (e.target === overlay) cancel(); });
+  overlay.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); confirm(); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel(); }
+  });
+
+  setTimeout(function() { okBtn.focus(); }, 0);
+}
+
+function deleteTaskById(taskId) {
+  if (!taskId) return;
+  var task = null;
+  for (var i = 0; i < State.tasks.length; i++) {
+    if (State.tasks[i].id === taskId) { task = State.tasks[i]; break; }
+  }
+  // Fall back to parsing the id if the task isn't in State.tasks (e.g. pure note view).
+  var parts = taskId.split(':');
+  var filename = parts.slice(0, -1).join(':');
+  var lineIndex = parseInt(parts[parts.length - 1]);
+  if (isNaN(lineIndex)) return;
+  var preview = task ? task.content : '';
+
+  openConfirmModal({
+    title: 'Delete this task?',
+    message: preview ? '“' + preview + '” will be removed from its note. This cannot be undone from Clarity.' : 'The task will be removed from its note. This cannot be undone from Clarity.',
+    confirmLabel: 'Delete',
+    cancelLabel: 'Cancel',
+    destructive: true,
+    onConfirm: function() {
+      // Optimistic local removal.
+      State.tasks = State.tasks.filter(function(t) { return t.id !== taskId; });
+      if (State.expandedTaskId === taskId) collapseTask();
+      State.focusedTaskIndex = -1;
+      renderCurrentView();
+      sendMessageToPlugin('deleteTask', JSON.stringify({ filename: filename, lineIndex: lineIndex }));
+    },
+  });
+}
+
 // ─── Keyboard Shortcuts ────────────────────────────────────
 document.addEventListener('keydown', function(e) {
   // Cmd+Enter: save expanded task
@@ -2686,6 +2759,18 @@ document.addEventListener('keydown', function(e) {
         var sbInner = document.querySelector('.cl-sidebar-inner');
         if (sbInner) sbInner.scrollTop = 0;
       }
+    }
+    return;
+  }
+
+  // Cmd+Backspace / Cmd+Delete: delete the focused or expanded task
+  if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && (e.key === 'Backspace' || e.key === 'Delete')) {
+    var active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
+    var deleteId = State.expandedTaskId || getFocusedTaskId();
+    if (deleteId) {
+      e.preventDefault();
+      deleteTaskById(deleteId);
     }
     return;
   }

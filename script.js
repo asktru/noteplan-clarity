@@ -247,6 +247,25 @@ async function onMessageFromHTMLView(actionType, data) {
         break;
       }
 
+      case 'deleteTask': {
+        var dNote = findNoteByFilename(msg.filename);
+        if (!dNote) break;
+        var dPara = findParagraph(dNote, msg.lineIndex);
+        if (!dPara) break;
+        var dParas = dNote.paragraphs;
+        var dIndent = dPara.indentLevel || 0;
+        var dIndices = [msg.lineIndex];
+        for (var dci = msg.lineIndex + 1; dci < dParas.length; dci++) {
+          if ((dParas[dci].indentLevel || 0) <= dIndent) break;
+          dIndices.push(dci);
+        }
+        for (var ddi = dIndices.length - 1; ddi >= 0; ddi--) {
+          dNote.removeParagraphAtIndex(dIndices[ddi]);
+        }
+        await sendToHTMLWindow('TASK_DELETED', { id: msg.filename + ':' + msg.lineIndex });
+        break;
+      }
+
       case 'rescheduleTask': {
         var rNote = findNoteByFilename(msg.filename);
         if (!rNote) break;
