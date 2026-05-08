@@ -267,6 +267,24 @@ body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
 .cl-hidden { display: none; }
 
 .cl-project-item { font-size: 12px; }
+.cl-project-item .cl-project-title { flex: 1; min-width: 0; }
+
+/* ─── Deadline Flags (project metadata) ─────────────── */
+.cl-deadline { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; line-height: 1; }
+.cl-deadline-compact { margin-left: 6px; flex-shrink: 0; padding: 1px 5px; border-radius: 8px; background: rgba(255,255,255,0.05); }
+.cl-deadline-future { color: var(--cl-text-faint); }
+.cl-deadline-today { color: var(--cl-red); }
+.cl-deadline-overdue { color: var(--cl-red); }
+.cl-deadline-overdue.cl-deadline-compact { background: rgba(239, 68, 68, 0.12); }
+.cl-deadline-today.cl-deadline-compact { background: rgba(239, 68, 68, 0.12); padding-right: 3px; }
+.cl-note-deadline { margin: -6px 0 14px 34px; font-size: 12px; cursor: pointer; display: inline-block; }
+.cl-note-deadline:hover .cl-deadline-primary { text-decoration: underline; text-underline-offset: 2px; }
+.cl-deadline-verbose { gap: 6px; font-size: 12px; }
+.cl-deadline-verbose .cl-deadline-flag { opacity: 0.95; }
+.cl-deadline-verbose .cl-deadline-primary { color: var(--cl-text); font-weight: 600; }
+.cl-deadline-verbose .cl-deadline-countdown { margin-left: 8px; opacity: 0.45; }
+.cl-deadline-verbose.cl-deadline-overdue .cl-deadline-primary,
+.cl-deadline-verbose.cl-deadline-today .cl-deadline-primary { color: var(--cl-red); }
 .cl-project-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cl-progress-ring { flex-shrink: 0; }
 .cl-area-icon { flex-shrink: 0; }
@@ -866,6 +884,7 @@ body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
   .cl-moved-banner { margin: 0 14px 8px; }
   .cl-note-content { padding: 0 14px 16px; }
   .cl-note-breadcrumb { margin-left: 70px; }
+  .cl-note-deadline { margin-left: 70px; }
 
   .cl-task-row { padding: 6px 4px; gap: 8px; }
   .cl-task-title { font-size: 13px; }

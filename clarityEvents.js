@@ -316,6 +316,7 @@ function handleProjectRefreshed(data) {
           notes[ni].bgColorDark = nm.bgColorDark;
           notes[ni].hasProjectOrAreaType = nm.hasProjectOrAreaType;
           notes[ni].noteType = nm.noteType;
+          notes[ni].due = nm.due || null;
         }
       }
     }
@@ -327,6 +328,7 @@ function handleProjectRefreshed(data) {
         State.notes[li].openCount = nm.openCount;
         State.notes[li].bgColorDark = nm.bgColorDark;
         State.notes[li].noteType = nm.noteType;
+        State.notes[li].due = nm.due || null;
       }
     }
   }
@@ -579,6 +581,55 @@ function buildProgressPie(pct, color, size) {
   return svg;
 }
 
+// Parse a YYYY-MM-DD string as a local-time Date (avoids UTC offset surprises).
+function parseDateLocal(s) {
+  if (!s) return null;
+  var p = String(s).split('-');
+  if (p.length < 3) return null;
+  var y = parseInt(p[0], 10), m = parseInt(p[1], 10), d = parseInt(p[2], 10);
+  if (isNaN(y) || isNaN(m) || isNaN(d)) return null;
+  return new Date(y, m - 1, d);
+}
+
+// Days from State.today to dueStr (positive = future, 0 = today, negative = overdue).
+function daysUntilDue(dueStr) {
+  var due = parseDateLocal(dueStr);
+  var today = parseDateLocal(State.today);
+  if (!due || !today) return null;
+  return Math.round((due.getTime() - today.getTime()) / 86400000);
+}
+
+var DEADLINE_FLAG_SVG = '<svg class="cl-deadline-flag" width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M6 3a1 1 0 0 1 1 1v17a1 1 0 1 1-2 0V4a1 1 0 0 1 1-1zm2 1.5h11.2a.6.6 0 0 1 .49.94L17.5 9l2.19 3.56a.6.6 0 0 1-.51.94H8z"/></svg>';
+
+// Compact flag badge for sidebar rows (icon + day count, or icon-only when due today).
+function buildDeadlineBadgeCompact(dueStr) {
+  var diff = daysUntilDue(dueStr);
+  if (diff === null) return '';
+  var cls, text;
+  if (diff > 0) { cls = 'cl-deadline-future'; text = diff + 'd'; }
+  else if (diff === 0) { cls = 'cl-deadline-today'; text = ''; }
+  else { cls = 'cl-deadline-overdue'; text = (-diff) + 'd'; }
+  return '<span class="cl-deadline cl-deadline-compact ' + cls + '" title="Due ' + esc(dueStr) + '">' +
+    DEADLINE_FLAG_SVG + (text ? '<span class="cl-deadline-text">' + text + '</span>' : '') +
+    '</span>';
+}
+
+// Verbose flag for the project view header (Things 3 style):
+//   <flag> Deadline: <bright date>   <dim countdown>
+function buildDeadlineBadgeVerbose(dueStr) {
+  var diff = daysUntilDue(dueStr);
+  if (diff === null) return '';
+  var cls, suffix;
+  if (diff > 0) { cls = 'cl-deadline-future'; suffix = diff + ' day' + (diff === 1 ? '' : 's') + ' left'; }
+  else if (diff === 0) { cls = 'cl-deadline-today'; suffix = 'Today'; }
+  else { cls = 'cl-deadline-overdue'; suffix = (-diff) + ' day' + (diff === -1 ? '' : 's') + ' overdue'; }
+  return '<span class="cl-deadline cl-deadline-verbose ' + cls + '">' +
+    DEADLINE_FLAG_SVG +
+    '<span class="cl-deadline-primary">Deadline: ' + esc(dueStr) + '</span>' +
+    '<span class="cl-deadline-countdown">' + suffix + '</span>' +
+    '</span>';
+}
+
 // ─── Area Icon (Things 3 style isometric box) ──────────────
 // Three-faced isometric cube tinted by the area's color. No progress indication.
 function buildAreaIcon(color, size) {
@@ -709,6 +760,7 @@ function renderSidebar() {
         html += buildProgressPie(pct, color);
       }
       html += '<span class="cl-project-title">' + esc(n.title) + '</span>';
+      if (n.due) html += buildDeadlineBadgeCompact(n.due);
       html += '</div>';
     }
     html += '</div>'; // close area group
@@ -1379,6 +1431,9 @@ function renderNoteView() {
 
   var folderPath = (nc.filename || '').replace(/\/[^/]+$/, '');
   html += '<div class="cl-note-breadcrumb">' + esc(folderPath) + (isArea ? '' : ' &middot; ' + doneCount + '/' + taskCount + ' done') + '</div>';
+  if (fm.due) {
+    html += '<div class="cl-note-deadline" data-action="openNoteMetaModal" title="Edit deadline">' + buildDeadlineBadgeVerbose(fm.due) + '</div>';
+  }
 
   html += '<div class="cl-note-filters">';
   html += '<div class="cl-filter-bar" style="padding:0;">';
