@@ -128,11 +128,28 @@ body.cl-resizing * { cursor: col-resize !important; }
   border-radius: var(--cl-radius);
   padding: 10px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  z-index: 50;
+  z-index: 1001;
   max-height: 70vh;
   overflow-y: auto;
 }
 .cl-settings-popover.cl-popover-open { display: block; }
+
+/* Backdrop dim while the view-settings popover is open. The popover is anchored
+ * inside the sidebar, so we drop the sidebar's overflow clip and lift it above
+ * the body-level backdrop. */
+body.cl-settings-backdrop::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 1000;
+}
+body.cl-settings-backdrop #cl-sidebar { overflow: visible; z-index: 1001; }
+body.cl-settings-backdrop .cl-sidebar-footer { position: relative; z-index: 1002; }
+body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
+  border-color: var(--cl-accent);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
 .cl-settings-section { margin-bottom: 10px; }
 .cl-settings-section:last-child { margin-bottom: 0; }
 .cl-settings-section-title {

@@ -20,6 +20,7 @@ var State = {
   collapsedAreas: {},
   viewPrefs: {},
   hideEmptyProjects: false,
+  hideNonProjects: false,
   visibleViews: { inbox: true, today: true, upcoming: true, anytime: true, someday: true },
   settingsPopoverOpen: false,
 };
@@ -238,6 +239,7 @@ function onMessageFromPlugin(type, data) {
         try { State.viewPrefs = JSON.parse(data.viewPrefs); } catch (e) { State.viewPrefs = {}; }
       }
       State.hideEmptyProjects = !!data.hideEmptyProjects;
+      State.hideNonProjects = !!data.hideNonProjects;
       if (data.visibleViews) {
         try {
           var parsedViews = JSON.parse(data.visibleViews);
@@ -674,10 +676,14 @@ function renderSidebar() {
     var areaKey = folder.path;
     var collapsed = State.collapsedAreas && State.collapsedAreas[areaKey];
     var notes = folder.notes || [];
-    var visibleNotes = State.hideEmptyProjects
-      ? notes.filter(function(n) { return (n.openCount || 0) > 0; })
-      : notes;
-    if (State.hideEmptyProjects && visibleNotes.length === 0) continue;
+    var visibleNotes = notes;
+    if (State.hideEmptyProjects) {
+      visibleNotes = visibleNotes.filter(function(n) { return (n.openCount || 0) > 0; });
+    }
+    if (State.hideNonProjects) {
+      visibleNotes = visibleNotes.filter(function(n) { return n.hasProjectOrAreaType; });
+    }
+    if ((State.hideEmptyProjects || State.hideNonProjects) && visibleNotes.length === 0) continue;
     html += '<div class="cl-area-header" data-area="' + esc(areaKey) + '">';
     html += '<span class="cl-area-chevron' + (collapsed ? ' cl-collapsed' : '') + '">\u25B8</span>';
     html += esc(folder.name);
@@ -736,8 +742,9 @@ function renderSidebarFooter() {
 
   // Projects section
   html += '<div class="cl-settings-section">';
-  html += '<div class="cl-settings-section-title">Projects</div>';
-  html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleHideEmpty"' + (State.hideEmptyProjects ? ' checked' : '') + '><span>Hide projects without open tasks</span></label>';
+  html += '<div class="cl-settings-section-title">Projects &amp; Areas</div>';
+  html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleHideEmpty"' + (State.hideEmptyProjects ? ' checked' : '') + '><span>Hide notes without open tasks</span></label>';
+  html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleHideNonProjects"' + (State.hideNonProjects ? ' checked' : '') + '><span>Hide non-projects and non-areas</span></label>';
   html += '<button class="cl-settings-action" data-action="collapseAllAreas">Collapse all</button>';
   html += '<button class="cl-settings-action" data-action="expandAllAreas">Expand all</button>';
   html += '</div>';
@@ -783,11 +790,17 @@ function attachSidebarFooterHandlers() {
     switch (action) {
       case 'toggleSettingsPopover':
         State.settingsPopoverOpen = !State.settingsPopoverOpen;
+        document.body.classList.toggle('cl-settings-backdrop', State.settingsPopoverOpen);
         renderSidebar();
         break;
       case 'toggleHideEmpty':
         State.hideEmptyProjects = !!target.checked;
         sendMessageToPlugin('saveHideEmptyProjects', JSON.stringify({ hideEmptyProjects: State.hideEmptyProjects }));
+        renderSidebar();
+        break;
+      case 'toggleHideNonProjects':
+        State.hideNonProjects = !!target.checked;
+        sendMessageToPlugin('saveHideNonProjects', JSON.stringify({ hideNonProjects: State.hideNonProjects }));
         renderSidebar();
         break;
       case 'collapseAllAreas':
@@ -819,6 +832,7 @@ function attachSidebarFooterHandlers() {
       var f = document.querySelector('.cl-sidebar-footer');
       if (f && !f.contains(e.target)) {
         State.settingsPopoverOpen = false;
+        document.body.classList.remove('cl-settings-backdrop');
         document.removeEventListener('click', _settingsOutsideListener);
         _settingsOutsideListener = null;
         renderSidebar();

@@ -188,6 +188,9 @@ async function onMessageFromHTMLView(actionType, data) {
       case 'saveHideEmptyProjects':
         saveSetting('hideEmptyProjects', !!msg.hideEmptyProjects);
         break;
+      case 'saveHideNonProjects':
+        saveSetting('hideNonProjects', !!msg.hideNonProjects);
+        break;
       case 'saveSidebarWidth': {
         var w = parseInt(msg.width, 10);
         if (!isNaN(w) && w >= 140 && w <= 500) saveSetting('sidebarWidth', w);
@@ -526,6 +529,7 @@ async function handleReady() {
     viewPrefs: s.viewPrefs || '{}',
     lastNoteFilename: s.lastNoteFilename || null,
     hideEmptyProjects: !!s.hideEmptyProjects,
+    hideNonProjects: !!s.hideNonProjects,
     sidebarWidth: s.sidebarWidth || null,
     visibleViews: s.visibleViews || '{}',
   });
