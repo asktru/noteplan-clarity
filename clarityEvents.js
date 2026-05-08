@@ -271,6 +271,7 @@ function onMessageFromPlugin(type, data) {
     case 'TASK_SAVED':
     case 'TASK_TOGGLED':
     case 'TASK_REORDERED':
+    case 'TASK_RESCHEDULED':
       sendMessageToPlugin('ready', '{}');
       break;
     default:
@@ -1663,6 +1664,37 @@ function attachMainEventListeners() {
   });
 }
 
+// Reschedule a task by id without expanding its editor. dateStr is YYYY-MM-DD or null to clear.
+function rescheduleTaskById(taskId, dateStr) {
+  if (!taskId) return;
+  var parts = taskId.split(':');
+  var filename = parts.slice(0, -1).join(':');
+  var lineIndex = parseInt(parts[parts.length - 1]);
+  if (isNaN(lineIndex)) return;
+
+  // Optimistically update local state so the UI feels instant.
+  for (var i = 0; i < State.tasks.length; i++) {
+    if (State.tasks[i].id === taskId) {
+      State.tasks[i].scheduledDate = dateStr || null;
+      State.tasks[i].scheduledWeek = null;
+      break;
+    }
+  }
+  renderCurrentView();
+  sendMessageToPlugin('rescheduleTask', JSON.stringify({
+    filename: filename, lineIndex: lineIndex,
+    scheduledDate: dateStr || null, scheduledWeek: null,
+  }));
+}
+
+// Resolve the currently keyboard-focused task row to its task id, if any.
+function getFocusedTaskId() {
+  if (State.focusedTaskIndex < 0) return null;
+  var rows = document.querySelectorAll('.cl-task-row');
+  if (!rows[State.focusedTaskIndex]) return null;
+  return rows[State.focusedTaskIndex].dataset.taskId || null;
+}
+
 function toggleTask(taskId) {
   if (!taskId) return;
   for (var i = 0; i < State.tasks.length; i++) {
@@ -2399,6 +2431,22 @@ document.addEventListener('keydown', function(e) {
     if (State.expandedTaskId) { collapseTask(); return; }
   }
 
+  // Cmd+Shift+T: schedule for tomorrow
+  if (e.metaKey && e.shiftKey && (e.key === 'T' || e.key === 't')) {
+    var tomorrow = addDays(State.today, 1);
+    if (State.editDraft) {
+      e.preventDefault();
+      State.editDraft.scheduledDate = tomorrow;
+      State.editDraft.scheduledWeek = null;
+      State.editDraft.tags = State.editDraft.tags.filter(function(t) { return t !== '#someday'; });
+      updateDateChip();
+    } else {
+      var tid = getFocusedTaskId();
+      if (tid) { e.preventDefault(); rescheduleTaskById(tid, tomorrow); }
+    }
+    return;
+  }
+
   // Cmd+T: schedule for today
   if (e.metaKey && e.key === 't') {
     if (State.editDraft) {
@@ -2407,6 +2455,9 @@ document.addEventListener('keydown', function(e) {
       State.editDraft.scheduledWeek = null;
       State.editDraft.tags = State.editDraft.tags.filter(function(t) { return t !== '#someday'; });
       updateDateChip();
+    } else {
+      var tid = getFocusedTaskId();
+      if (tid) { e.preventDefault(); rescheduleTaskById(tid, State.today); }
     }
     return;
   }
@@ -2418,6 +2469,9 @@ document.addEventListener('keydown', function(e) {
       State.editDraft.scheduledDate = null;
       State.editDraft.scheduledWeek = null;
       updateDateChip();
+    } else {
+      var tid = getFocusedTaskId();
+      if (tid) { e.preventDefault(); rescheduleTaskById(tid, null); }
     }
     return;
   }

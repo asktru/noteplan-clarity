@@ -244,6 +244,25 @@ async function onMessageFromHTMLView(actionType, data) {
         break;
       }
 
+      case 'rescheduleTask': {
+        var rNote = findNoteByFilename(msg.filename);
+        if (!rNote) break;
+        var rPara = findParagraph(rNote, msg.lineIndex);
+        if (!rPara) break;
+        // Strip any existing >YYYY-MM-DD or >YYYY-Www schedule token, then append the new one.
+        var rContent = (rPara.content || '').replace(/\s*>\d{4}-(W\d{2}|\d{2}-\d{2})\b/g, '');
+        if (msg.scheduledDate) rContent = rContent.trimEnd() + ' >' + msg.scheduledDate;
+        else if (msg.scheduledWeek) rContent = rContent.trimEnd() + ' >' + msg.scheduledWeek;
+        rPara.content = rContent;
+        rNote.updateParagraph(rPara);
+        await sendToHTMLWindow('TASK_RESCHEDULED', {
+          id: msg.filename + ':' + msg.lineIndex,
+          scheduledDate: msg.scheduledDate || null,
+          scheduledWeek: msg.scheduledWeek || null,
+        });
+        break;
+      }
+
       case 'saveTask': {
         var sNote = findNoteByFilename(msg.filename);
         if (!sNote) break;
