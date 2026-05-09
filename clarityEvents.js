@@ -1081,10 +1081,10 @@ function renderTaskRow(task, options) {
   // Content area
   html += '<div class="cl-task-content">';
   html += '<div class="cl-task-title">';
-  html += '<span class="cl-task-text">' + renderInlineMarkdown(task.content) + '</span>';
   if (showStar && task.scheduledDate === State.today) {
-    html += ' <span class="cl-star">⭐</span>';
+    html += '<span class="cl-star">⭐</span> ';
   }
+  html += '<span class="cl-task-text">' + renderInlineMarkdown(task.content) + '</span>';
   html += '</div>';
 
   var metaParts = [];
