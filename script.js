@@ -524,6 +524,32 @@ async function onMessageFromHTMLView(actionType, data) {
         break;
       }
 
+      case 'archiveProject': {
+        var aFn = msg.filename;
+        if (!aFn) break;
+        var aNote = findNoteByFilename(aFn);
+        if (!aNote) {
+          await sendToHTMLWindow('PROJECT_ARCHIVED', { oldFilename: aFn, success: false, error: 'Note not found' });
+          break;
+        }
+        var origFolder = aFn.replace(/\/[^/]+$/, '');
+        if (origFolder === aFn) origFolder = '';
+        var todayStr = getTodayStr();
+        var targetFolder = '@Archive/' + todayStr + (origFolder ? '/' + origFolder : '');
+        var newFn = null;
+        try {
+          newFn = DataStore.moveNote(aFn, targetFolder);
+        } catch (e) {
+          console.log('Clarity: archiveProject moveNote threw: ' + String(e));
+        }
+        if (newFn) {
+          await sendToHTMLWindow('PROJECT_ARCHIVED', { oldFilename: aFn, newFilename: newFn, success: true });
+        } else {
+          await sendToHTMLWindow('PROJECT_ARCHIVED', { oldFilename: aFn, success: false, error: 'moveNote failed' });
+        }
+        break;
+      }
+
       case 'openNoteInEditor': {
         if (msg.filename) {
           await CommandBar.onMainThread();

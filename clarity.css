@@ -1035,6 +1035,58 @@ body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
 .cl-refresh-btn:hover { opacity: 1; background: var(--cl-hover); }
 .cl-refresh-btn.cl-spinning svg { animation: cl-spin 0.8s linear infinite; }
 
+/* ─── Project actions dropdown ───────────────────────── */
+.cl-project-menu-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.cl-project-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 180px;
+  background: var(--cl-bg);
+  border: 1px solid var(--cl-border);
+  border-radius: var(--cl-radius);
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  z-index: 1001;
+}
+.cl-project-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  color: var(--cl-text);
+  font-size: 13px;
+  font-family: inherit;
+  text-align: left;
+  border-radius: var(--cl-radius-sm);
+  cursor: pointer;
+}
+.cl-project-menu-item:hover { background: var(--cl-hover); }
+.cl-project-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+.cl-project-menu-icon svg { display: block; }
+.cl-project-menu-sep {
+  height: 1px;
+  background: var(--cl-border);
+  margin: 4px 0;
+}
+.cl-project-menu-destructive { color: #e57373; }
+.cl-project-menu-destructive:hover { background: rgba(229, 115, 115, 0.12); }
+.cl-project-menu-destructive .cl-project-menu-icon { opacity: 0.85; }
+
 /* ─── Quick Jump (Cmd+/) ─────────────────────────────── */
 .cl-jump-overlay {
   position: fixed; inset: 0;

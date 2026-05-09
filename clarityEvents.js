@@ -277,6 +277,19 @@ function onMessageFromPlugin(type, data) {
     case 'TASK_DELETED':
       sendMessageToPlugin('ready', '{}');
       break;
+    case 'PROJECT_ARCHIVED':
+      if (data && data.success) {
+        if (State.currentNoteFilename === data.oldFilename) {
+          State.currentView = 'inbox';
+          State.currentNoteFilename = null;
+          State.noteContent = null;
+          sendMessageToPlugin('saveView', JSON.stringify({ view: 'inbox', noteFilename: null }));
+        }
+        sendMessageToPlugin('ready', '{}');
+      } else {
+        console.log('Clarity: archive failed: ' + (data && data.error));
+      }
+      break;
     case 'NOTE_FRONTMATTER_UPDATED':
       if (State.noteContent && State.noteContent.filename === data.filename) {
         State.noteContent.frontmatter = data.frontmatter || {};
@@ -1422,11 +1435,10 @@ function renderNoteView() {
     html += buildProgressPie(pct, bgColor, 24);
   }
   html += '<h1 class="cl-note-title-link" data-action="openInEditor" data-filename="' + esc(nc.filename) + '">' + esc(nc.title) + '</h1>';
-  html += '<button class="cl-refresh-btn" data-action="refreshProject" data-filename="' + esc(nc.filename) + '" title="Refresh this project">' +
-    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
-    '<path d="M21 12a9 9 0 1 1-3.5-7.1"/><path d="M21 4v5h-5"/></svg></button>';
-  html += '<button class="cl-refresh-btn cl-meta-btn" data-action="openNoteMetaModal" title="Edit project metadata">' +
+  html += '<div class="cl-project-menu-wrap">';
+  html += '<button class="cl-refresh-btn cl-meta-btn" data-action="toggleProjectMenu" title="Project actions">' +
     '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button>';
+  html += '</div>';
   html += '</div>';
 
   var folderPath = (nc.filename || '').replace(/\/[^/]+$/, '');
@@ -1726,16 +1738,25 @@ function attachMainEventListeners() {
         break;
       }
       case 'openNoteMetaModal':
+        closeProjectMenu();
         openNoteMetaModal();
+        break;
+      case 'toggleProjectMenu':
+        toggleProjectMenu(target);
         break;
       case 'refreshProject': {
         var rfn = target.dataset.filename || State.currentNoteFilename;
         if (!rfn) break;
+        closeProjectMenu();
         target.classList.add('cl-spinning');
         sendMessageToPlugin('refreshProject', JSON.stringify({ filename: rfn }));
         sendMessageToPlugin('requestNoteContent', JSON.stringify({ filename: rfn }));
         break;
       }
+      case 'archiveProject':
+        closeProjectMenu();
+        confirmArchiveProject();
+        break;
       case 'rescheduleAllOverdue': {
         var today = State.today;
         var moved = 0;
@@ -2753,6 +2774,70 @@ function deleteTaskById(taskId) {
   });
 }
 
+// ─── Project Actions Dropdown ──────────────────────────────
+var _projectMenuOutsideListener = null;
+
+function closeProjectMenu() {
+  var existing = document.querySelector('.cl-project-menu');
+  if (existing) existing.remove();
+  if (_projectMenuOutsideListener) {
+    document.removeEventListener('mousedown', _projectMenuOutsideListener, true);
+    _projectMenuOutsideListener = null;
+  }
+}
+
+function toggleProjectMenu(button) {
+  if (document.querySelector('.cl-project-menu')) { closeProjectMenu(); return; }
+  var wrap = button.closest('.cl-project-menu-wrap');
+  if (!wrap) return;
+  var fn = State.currentNoteFilename || (State.noteContent && State.noteContent.filename) || '';
+  var menu = document.createElement('div');
+  menu.className = 'cl-project-menu';
+  menu.innerHTML =
+    '<button type="button" class="cl-project-menu-item" data-action="refreshProject" data-filename="' + esc(fn) + '">' +
+      '<span class="cl-project-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3.5-7.1"/><path d="M21 4v5h-5"/></svg></span>' +
+      '<span>Refresh</span>' +
+    '</button>' +
+    '<button type="button" class="cl-project-menu-item" data-action="openNoteMetaModal">' +
+      '<span class="cl-project-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></span>' +
+      '<span>Edit metadata…</span>' +
+    '</button>' +
+    '<div class="cl-project-menu-sep"></div>' +
+    '<button type="button" class="cl-project-menu-item cl-project-menu-destructive" data-action="archiveProject">' +
+      '<span class="cl-project-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8H3v13h18V8z"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg></span>' +
+      '<span>Move to archive…</span>' +
+    '</button>';
+  wrap.appendChild(menu);
+
+  _projectMenuOutsideListener = function(e) {
+    if (!menu.contains(e.target) && !button.contains(e.target)) closeProjectMenu();
+  };
+  setTimeout(function() {
+    document.addEventListener('mousedown', _projectMenuOutsideListener, true);
+  }, 0);
+}
+
+function confirmArchiveProject() {
+  var nc = State.noteContent;
+  var fn = (nc && nc.filename) || State.currentNoteFilename;
+  if (!fn) return;
+  var origFolder = fn.replace(/\/[^/]+$/, '');
+  if (origFolder === fn) origFolder = '';
+  var leaf = fn.split('/').pop();
+  var targetPath = '@Archive/' + State.today + (origFolder ? '/' + origFolder : '') + '/' + leaf;
+  var title = (nc && nc.title) || leaf.replace(/\.(md|txt)$/, '');
+  openConfirmModal({
+    title: 'Move to archive?',
+    message: '“' + title + '” will be moved to: ' + targetPath,
+    confirmLabel: 'Archive',
+    cancelLabel: 'Cancel',
+    destructive: true,
+    onConfirm: function() {
+      sendMessageToPlugin('archiveProject', JSON.stringify({ filename: fn }));
+    },
+  });
+}
+
 // ─── Project / Area Metadata Modal ─────────────────────────
 function openNoteMetaModal() {
   var nc = State.noteContent;
@@ -2781,9 +2866,12 @@ function openNoteMetaModal() {
       '</div>' +
       '<div class="cl-meta-row">' +
         '<label class="cl-meta-label">Deadline</label>' +
-        '<div class="cl-meta-inline">' +
-          '<input class="cl-meta-input" type="date" data-field="due" value="' + esc(dueVal) + '">' +
-          '<button class="cl-meta-link" type="button" data-action="metaClearDue">Clear</button>' +
+        '<div class="cl-meta-inline" data-field="due-row">' +
+          (dueVal
+            ? ('<input class="cl-meta-input" type="date" data-field="due" value="' + esc(dueVal) + '">' +
+               '<button class="cl-meta-link" type="button" data-action="metaClearDue">Clear</button>')
+            : ('<span class="cl-meta-readonly" data-field="due-display">—</span>' +
+               '<button class="cl-meta-link" type="button" data-action="metaSetDue">Set deadline</button>')) +
         '</div>' +
       '</div>' +
       '<div class="cl-meta-row">' +
@@ -2834,9 +2922,23 @@ function openNoteMetaModal() {
     if (!target) return;
     var action = target.dataset.action;
     if (action === 'metaClearDue') {
-      var dueIn = overlay.querySelector('[data-field="due"]');
-      if (dueIn) dueIn.value = '';
       draft.due = '';
+      var dueRow = overlay.querySelector('[data-field="due-row"]');
+      if (dueRow) {
+        dueRow.innerHTML =
+          '<span class="cl-meta-readonly" data-field="due-display">—</span>' +
+          '<button class="cl-meta-link" type="button" data-action="metaSetDue">Set deadline</button>';
+      }
+    } else if (action === 'metaSetDue') {
+      var dueRow2 = overlay.querySelector('[data-field="due-row"]');
+      if (dueRow2) {
+        dueRow2.innerHTML =
+          '<input class="cl-meta-input" type="date" data-field="due" value="' + esc(State.today) + '">' +
+          '<button class="cl-meta-link" type="button" data-action="metaClearDue">Clear</button>';
+        draft.due = State.today;
+        var newIn = dueRow2.querySelector('[data-field="due"]');
+        if (newIn) newIn.focus();
+      }
     } else if (action === 'metaMarkReviewed') {
       draft.reviewed = State.today;
       var disp = overlay.querySelector('[data-field="reviewed-display"]');
