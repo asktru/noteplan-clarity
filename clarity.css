@@ -1035,6 +1035,48 @@ body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
 .cl-refresh-btn:hover { opacity: 1; background: var(--cl-hover); }
 .cl-refresh-btn.cl-spinning svg { animation: cl-spin 0.8s linear infinite; }
 
+/* ─── Paused / Someday projects ──────────────────────── */
+.cl-project-muted .cl-project-title { opacity: 0.55; }
+.cl-icon-paused-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+.cl-icon-paused-wrap > svg:first-child {
+  display: block;
+}
+.cl-pause-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* ─── Someday view: project & area list ──────────────── */
+.cl-someday-projects { padding: 4px 16px 12px; }
+.cl-someday-projects-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.55;
+  margin-bottom: 6px;
+}
+.cl-someday-project {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: var(--cl-radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+}
+.cl-someday-project:hover { background: var(--cl-hover); }
+.cl-someday-project-icon { display: inline-flex; flex-shrink: 0; }
+.cl-someday-project-title { flex: 1; }
+.cl-someday-project-folder { font-size: 11px; opacity: 0.5; }
+
 /* ─── Project actions dropdown ───────────────────────── */
 .cl-project-menu-wrap {
   position: relative;

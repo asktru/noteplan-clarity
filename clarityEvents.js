@@ -21,6 +21,7 @@ var State = {
   viewPrefs: {},
   hideEmptyProjects: false,
   hideNonProjects: false,
+  hidePaused: false,
   visibleViews: { inbox: true, today: true, upcoming: true, anytime: true, someday: true },
   settingsPopoverOpen: false,
 };
@@ -240,6 +241,7 @@ function onMessageFromPlugin(type, data) {
       }
       State.hideEmptyProjects = !!data.hideEmptyProjects;
       State.hideNonProjects = !!data.hideNonProjects;
+      State.hidePaused = !!data.hidePaused;
       if (data.visibleViews) {
         try {
           var parsedViews = JSON.parse(data.visibleViews);
@@ -330,6 +332,7 @@ function handleProjectRefreshed(data) {
           notes[ni].hasProjectOrAreaType = nm.hasProjectOrAreaType;
           notes[ni].noteType = nm.noteType;
           notes[ni].due = nm.due || null;
+          notes[ni].status = nm.status || null;
         }
       }
     }
@@ -342,6 +345,7 @@ function handleProjectRefreshed(data) {
         State.notes[li].bgColorDark = nm.bgColorDark;
         State.notes[li].noteType = nm.noteType;
         State.notes[li].due = nm.due || null;
+        State.notes[li].status = nm.status || null;
       }
     }
   }
@@ -568,6 +572,37 @@ function renderMarkdownTable(lines) {
   return html;
 }
 
+// Color used for paused/someday projects/areas (overrides bgColorDark in icons).
+var PAUSED_COLOR = '#9CA3AF';
+
+// Two-bar pause indicator, sized to overlay an 18-viewBox icon.
+function buildPauseOverlay(size) {
+  var s = size || 18;
+  return '<svg class="cl-pause-overlay" width="' + s + '" height="' + s + '" viewBox="0 0 18 18" aria-hidden="true">' +
+    '<rect x="6" y="5.5" width="1.8" height="7" rx="0.4" fill="#fff" stroke="#374151" stroke-width="0.35"/>' +
+    '<rect x="10.2" y="5.5" width="1.8" height="7" rx="0.4" fill="#fff" stroke="#374151" stroke-width="0.35"/>' +
+    '</svg>';
+}
+
+// Render a project/area icon with muted color + pause overlay applied per status.
+function renderProjectIcon(noteLike, size) {
+  var s = size || 18;
+  var status = noteLike.status || '';
+  var muted = (status === 'paused' || status === 'someday');
+  var color = muted ? PAUSED_COLOR : (noteLike.bgColorDark || '#3B82F6');
+  var inner;
+  if (noteLike.noteType === 'area') {
+    inner = buildAreaIcon(color, s);
+  } else {
+    var pct = noteLike.taskCount > 0 ? Math.round((noteLike.doneCount / noteLike.taskCount) * 100) : 0;
+    inner = buildProgressPie(pct, color, s);
+  }
+  if (status === 'paused') {
+    return '<span class="cl-icon-paused-wrap" style="width:' + s + 'px;height:' + s + 'px">' + inner + buildPauseOverlay(s) + '</span>';
+  }
+  return inner;
+}
+
 // ─── Progress Pie (Things 3 style) ─────────────────────────
 // Outline circle with a filled pie slice inside, growing clockwise from 12 o'clock.
 // The SVG uses a fixed 18x18 viewBox but scales via the `size` param (default 18).
@@ -749,13 +784,18 @@ function renderSidebar() {
     var collapsed = State.collapsedAreas && State.collapsedAreas[areaKey];
     var notes = folder.notes || [];
     var visibleNotes = notes;
+    // status: 'someday' notes are always hidden from the sidebar (they live in the Someday view).
+    visibleNotes = visibleNotes.filter(function(n) { return n.status !== 'someday'; });
+    if (State.hidePaused) {
+      visibleNotes = visibleNotes.filter(function(n) { return n.status !== 'paused'; });
+    }
     if (State.hideEmptyProjects) {
       visibleNotes = visibleNotes.filter(function(n) { return (n.openCount || 0) > 0; });
     }
     if (State.hideNonProjects) {
       visibleNotes = visibleNotes.filter(function(n) { return n.hasProjectOrAreaType; });
     }
-    if ((State.hideEmptyProjects || State.hideNonProjects) && visibleNotes.length === 0) continue;
+    if (visibleNotes.length === 0) continue;
     html += '<div class="cl-area-header" data-area="' + esc(areaKey) + '">';
     html += '<span class="cl-area-chevron' + (collapsed ? ' cl-collapsed' : '') + '">\u25B8</span>';
     html += esc(folder.name);
@@ -763,15 +803,10 @@ function renderSidebar() {
     html += '<div class="cl-area-group' + (collapsed ? ' cl-hidden' : '') + '" data-area-group="' + esc(areaKey) + '">';
     for (var ni = 0; ni < visibleNotes.length; ni++) {
       var n = visibleNotes[ni];
-      var pct = n.taskCount > 0 ? Math.round((n.doneCount / n.taskCount) * 100) : 0;
-      var color = n.bgColorDark || '#3B82F6';
       var noteActive = (State.currentView === 'note' && State.currentNoteFilename === n.filename) ? ' cl-nav-active' : '';
-      html += '<div class="cl-nav-item cl-project-item' + noteActive + '" data-view="note" data-filename="' + esc(n.filename) + '">';
-      if (n.noteType === 'area') {
-        html += buildAreaIcon(color, 18);
-      } else {
-        html += buildProgressPie(pct, color);
-      }
+      var mutedCls = (n.status === 'paused' || n.status === 'someday') ? ' cl-project-muted' : '';
+      html += '<div class="cl-nav-item cl-project-item' + mutedCls + noteActive + '" data-view="note" data-filename="' + esc(n.filename) + '">';
+      html += renderProjectIcon(n, 18);
       html += '<span class="cl-project-title">' + esc(n.title) + '</span>';
       if (n.due) html += buildDeadlineBadgeCompact(n.due);
       html += '</div>';
@@ -818,6 +853,7 @@ function renderSidebarFooter() {
   html += '<div class="cl-settings-section-title">Projects &amp; Areas</div>';
   html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleHideEmpty"' + (State.hideEmptyProjects ? ' checked' : '') + '><span>Hide notes without open tasks</span></label>';
   html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleHideNonProjects"' + (State.hideNonProjects ? ' checked' : '') + '><span>Hide non-projects and non-areas</span></label>';
+  html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleHidePaused"' + (State.hidePaused ? ' checked' : '') + '><span>Hide paused</span></label>';
   html += '<button class="cl-settings-action" data-action="collapseAllAreas">Collapse all</button>';
   html += '<button class="cl-settings-action" data-action="expandAllAreas">Expand all</button>';
   html += '</div>';
@@ -869,6 +905,11 @@ function attachSidebarFooterHandlers() {
       case 'toggleHideEmpty':
         State.hideEmptyProjects = !!target.checked;
         sendMessageToPlugin('saveHideEmptyProjects', JSON.stringify({ hideEmptyProjects: State.hideEmptyProjects }));
+        renderSidebar();
+        break;
+      case 'toggleHidePaused':
+        State.hidePaused = !!target.checked;
+        sendMessageToPlugin('saveHidePaused', JSON.stringify({ hidePaused: State.hidePaused }));
         renderSidebar();
         break;
       case 'toggleHideNonProjects':
@@ -1396,13 +1437,35 @@ function renderAnytimeView() {
 // ─── Someday View ──────────────────────────────────────────
 function renderSomedayView() {
   var tasks = getFilteredTasks('someday');
+  var somedayNotes = [];
+  for (var sni = 0; sni < State.notes.length; sni++) {
+    if (State.notes[sni].status === 'someday') somedayNotes.push(State.notes[sni]);
+  }
+  var totalCount = tasks.length + somedayNotes.length;
+
   var html = '<div class="cl-view-header">';
   html += '<div class="cl-view-title"><span class="cl-view-icon">' + getViewIcon('someday', 24) + '</span><h1>Someday</h1>';
-  html += '<span class="cl-view-count">' + tasks.length + '</span></div>';
+  html += '<span class="cl-view-count">' + totalCount + '</span></div>';
   html += renderGroupingToggle('someday');
   html += '</div>';
   html += renderFilterBar(tasks);
   html += renderQuickAdd('someday');
+
+  if (somedayNotes.length) {
+    html += '<div class="cl-someday-projects">';
+    html += '<div class="cl-someday-projects-title">Projects &amp; Areas</div>';
+    for (var spi = 0; spi < somedayNotes.length; spi++) {
+      var sn = somedayNotes[spi];
+      var sfolder = (sn.filename || '').replace(/\/[^/]+$/, '');
+      html += '<div class="cl-someday-project" data-action="jumpToProjectNote" data-filename="' + esc(sn.filename) + '">' +
+        '<span class="cl-someday-project-icon">' + renderProjectIcon(sn, 18) + '</span>' +
+        '<span class="cl-someday-project-title">' + esc(sn.title || '') + '</span>' +
+        '<span class="cl-someday-project-folder">' + esc(sfolder) + '</span>' +
+      '</div>';
+    }
+    html += '</div>';
+  }
+
   html += '<div class="cl-task-list">';
   html += renderGroupedTasks(tasks, State.grouping, { dimmed: true });
   html += '</div>';
@@ -1416,7 +1479,6 @@ function renderNoteView() {
 
   var paras = nc.paragraphs || [];
   var fm = nc.frontmatter || {};
-  var bgColor = nc.bgColorDark || '#3B82F6';
 
   var taskCount = 0;
   var doneCount = 0;
@@ -1424,16 +1486,17 @@ function renderNoteView() {
     var pt = paras[ci].type;
     if (pt === 'open' || pt === 'done' || pt === 'cancelled') { taskCount++; if (pt === 'done') doneCount++; }
   }
-  var pct = taskCount > 0 ? Math.round((doneCount / taskCount) * 100) : 0;
   var isArea = (fm.type === 'area');
 
   var html = '<div class="cl-view-header">';
   html += '<div class="cl-view-title">';
-  if (isArea) {
-    html += buildAreaIcon(bgColor, 24);
-  } else {
-    html += buildProgressPie(pct, bgColor, 24);
-  }
+  html += renderProjectIcon({
+    noteType: isArea ? 'area' : 'project',
+    bgColorDark: nc.bgColorDark,
+    taskCount: taskCount,
+    doneCount: doneCount,
+    status: fm.status,
+  }, 24);
   html += '<h1 class="cl-note-title-link" data-action="openInEditor" data-filename="' + esc(nc.filename) + '">' + esc(nc.title) + '</h1>';
   html += '<div class="cl-project-menu-wrap">';
   html += '<button class="cl-refresh-btn cl-meta-btn" data-action="toggleProjectMenu" title="Project actions">' +
@@ -1732,6 +1795,20 @@ function attachMainEventListeners() {
             jNav.scrollIntoView({ block: 'nearest' });
             break;
           }
+          // Sidebar item is filtered out (e.g. status: someday). Open the Clarity note view directly.
+          saveCurrentViewPrefs();
+          State.currentView = 'note';
+          State.currentNoteFilename = jfn;
+          State.focusedTaskIndex = -1;
+          State.filters = { tag: null, mention: null, text: '', noteStatus: 'all' };
+          State.tasksOnly = false;
+          State.expandedTaskId = null;
+          State.editDraft = null;
+          sendMessageToPlugin('requestNoteContent', JSON.stringify({ filename: jfn }));
+          sendMessageToPlugin('saveView', JSON.stringify({ view: 'note', noteFilename: jfn }));
+          renderSidebar();
+          renderCurrentView();
+          break;
         }
         // Fallback: not a Clarity-tracked project (e.g. calendar note) — open in editor.
         sendMessageToPlugin('openNoteInEditor', JSON.stringify({ filename: jfn }));
@@ -2614,10 +2691,7 @@ function renderQuickJumpResults(container, results, selectedIndex) {
     for (var i = 0; i < results.length; i++) {
       var n = results[i];
       var folderPath = (n.filename || '').replace(/\/[^/]+$/, '');
-      var color = n.bgColorDark || '#3B82F6';
-      var icon = n.noteType === 'area' ? buildAreaIcon(color, 16) : buildProgressPie(
-        n.taskCount > 0 ? Math.round((n.doneCount / n.taskCount) * 100) : 0, color, 16
-      );
+      var icon = renderProjectIcon(n, 16);
       var sel = i === selectedIndex ? ' cl-jump-result-active' : '';
       html += '<div class="cl-jump-result' + sel + '" data-filename="' + esc(n.filename) + '" data-index="' + i + '">' +
         '<span class="cl-jump-icon">' + icon + '</span>' +
@@ -2847,6 +2921,7 @@ function openNoteMetaModal() {
 
   var fm = nc.frontmatter || {};
   var typeVal = fm.type === 'project' || fm.type === 'area' ? fm.type : '';
+  var statusVal = fm.status === 'paused' || fm.status === 'someday' ? fm.status : '';
   var dueVal = fm.due || '';
   var reviewedVal = fm.reviewed || '';
   var reviewVal = fm.review || '';
@@ -2862,6 +2937,14 @@ function openNoteMetaModal() {
           '<option value=""' + (typeVal === '' ? ' selected' : '') + '>—</option>' +
           '<option value="project"' + (typeVal === 'project' ? ' selected' : '') + '>Project</option>' +
           '<option value="area"' + (typeVal === 'area' ? ' selected' : '') + '>Area</option>' +
+        '</select>' +
+      '</div>' +
+      '<div class="cl-meta-row">' +
+        '<label class="cl-meta-label">Status</label>' +
+        '<select class="cl-meta-input" data-field="status">' +
+          '<option value=""' + (statusVal === '' ? ' selected' : '') + '>Active</option>' +
+          '<option value="paused"' + (statusVal === 'paused' ? ' selected' : '') + '>Paused</option>' +
+          '<option value="someday"' + (statusVal === 'someday' ? ' selected' : '') + '>Someday</option>' +
         '</select>' +
       '</div>' +
       '<div class="cl-meta-row">' +
@@ -2893,14 +2976,16 @@ function openNoteMetaModal() {
   document.body.appendChild(overlay);
 
   // Track an in-modal draft so "Mark as reviewed" updates the displayed date.
-  var draft = { type: typeVal, due: dueVal, reviewed: reviewedVal, review: reviewVal };
+  var draft = { type: typeVal, status: statusVal, due: dueVal, reviewed: reviewedVal, review: reviewVal };
 
   function close() { overlay.remove(); }
   function readInputs() {
     var typeSel = overlay.querySelector('[data-field="type"]');
+    var statusSel = overlay.querySelector('[data-field="status"]');
     var dueIn = overlay.querySelector('[data-field="due"]');
     var reviewIn = overlay.querySelector('[data-field="review"]');
     if (typeSel) draft.type = typeSel.value;
+    if (statusSel) draft.status = statusSel.value;
     if (dueIn) draft.due = dueIn.value;
     if (reviewIn) draft.review = reviewIn.value.trim();
   }
@@ -2908,6 +2993,7 @@ function openNoteMetaModal() {
     readInputs();
     var updates = {
       type: draft.type || null,
+      status: draft.status || null,
       due: draft.due || null,
       reviewed: draft.reviewed || null,
       review: draft.review || null,

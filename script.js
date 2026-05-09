@@ -191,6 +191,9 @@ async function onMessageFromHTMLView(actionType, data) {
       case 'saveHideNonProjects':
         saveSetting('hideNonProjects', !!msg.hideNonProjects);
         break;
+      case 'saveHidePaused':
+        saveSetting('hidePaused', !!msg.hidePaused);
+        break;
       case 'saveSidebarWidth': {
         var w = parseInt(msg.width, 10);
         if (!isNaN(w) && w >= 140 && w <= 500) saveSetting('sidebarWidth', w);
@@ -519,6 +522,7 @@ async function onMessageFromHTMLView(actionType, data) {
             hasProjectOrAreaType: (rpFm.type === 'project' || rpFm.type === 'area'),
             noteType: rpFm.type === 'area' ? 'area' : (rpFm.type === 'project' ? 'project' : ''),
             due: rpFm.due || null,
+            status: (rpFm.status === 'paused' || rpFm.status === 'someday') ? rpFm.status : null,
           },
         });
         break;
@@ -591,6 +595,7 @@ async function handleReady() {
     lastNoteFilename: s.lastNoteFilename || null,
     hideEmptyProjects: !!s.hideEmptyProjects,
     hideNonProjects: !!s.hideNonProjects,
+    hidePaused: !!s.hidePaused,
     sidebarWidth: s.sidebarWidth || null,
     visibleViews: s.visibleViews || '{}',
   });
@@ -944,6 +949,7 @@ function getFolderTree() {
       noteType: fm.type === 'area' ? 'area' : (fm.type === 'project' ? 'project' : ''),
       bgColorDark: bgColorDark,
       due: fm.due || null,
+      status: (fm.status === 'paused' || fm.status === 'someday') ? fm.status : null,
     };
     folderMap[folderPath].notes.push(noteMeta);
     noteList.push(noteMeta);
