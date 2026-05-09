@@ -194,6 +194,9 @@ async function onMessageFromHTMLView(actionType, data) {
       case 'saveHidePaused':
         saveSetting('hidePaused', !!msg.hidePaused);
         break;
+      case 'saveRecentNotes':
+        saveSetting('recentNotes', msg.recentNotes || '[]');
+        break;
       case 'saveSidebarWidth': {
         var w = parseInt(msg.width, 10);
         if (!isNaN(w) && w >= 140 && w <= 500) saveSetting('sidebarWidth', w);
@@ -615,6 +618,7 @@ async function handleReady() {
     hideEmptyProjects: !!s.hideEmptyProjects,
     hideNonProjects: !!s.hideNonProjects,
     hidePaused: !!s.hidePaused,
+    recentNotes: s.recentNotes || '[]',
     sidebarWidth: s.sidebarWidth || null,
     visibleViews: s.visibleViews || '{}',
   });

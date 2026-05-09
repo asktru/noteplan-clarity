@@ -24,7 +24,47 @@ var State = {
   hidePaused: false,
   visibleViews: { inbox: true, today: true, upcoming: true, anytime: true, someday: true },
   settingsPopoverOpen: false,
+  recentNotes: [], // MRU list of project/area filenames, most recent first
 };
+
+var MAX_RECENT_NOTES = 12;
+
+function pushRecentNote(filename) {
+  if (!filename) return;
+  var arr = (State.recentNotes || []).filter(function(f) { return f !== filename; });
+  arr.unshift(filename);
+  if (arr.length > MAX_RECENT_NOTES) arr = arr.slice(0, MAX_RECENT_NOTES);
+  State.recentNotes = arr;
+  sendMessageToPlugin('saveRecentNotes', JSON.stringify({ recentNotes: JSON.stringify(arr) }));
+}
+
+// Open a project/area in Clarity's note view. Prefers clicking the sidebar
+// item (so it scrolls into view + highlights), falls back to switching the
+// view directly when the note is filtered out of the sidebar.
+function navigateToProjectNote(filename) {
+  if (!filename) return;
+  if (State.expandedTaskId) collapseTask();
+  var navItem = document.querySelector('.cl-nav-item[data-filename="' + filename + '"]');
+  if (navItem) {
+    navItem.click();
+    navItem.scrollIntoView({ block: 'nearest' });
+    return;
+  }
+  // Sidebar item is hidden (e.g. status: someday/paused, or filtered by toggles).
+  saveCurrentViewPrefs();
+  State.currentView = 'note';
+  State.currentNoteFilename = filename;
+  State.focusedTaskIndex = -1;
+  State.filters = { tag: null, mention: null, text: '', noteStatus: 'all' };
+  State.tasksOnly = false;
+  State.expandedTaskId = null;
+  State.editDraft = null;
+  sendMessageToPlugin('requestNoteContent', JSON.stringify({ filename: filename }));
+  sendMessageToPlugin('saveView', JSON.stringify({ view: 'note', noteFilename: filename }));
+  pushRecentNote(filename);
+  renderSidebar();
+  renderCurrentView();
+}
 
 // ─── Drag & Drop (note view only) ─────────────────────────
 var dragState = null;
@@ -242,6 +282,12 @@ function onMessageFromPlugin(type, data) {
       State.hideEmptyProjects = !!data.hideEmptyProjects;
       State.hideNonProjects = !!data.hideNonProjects;
       State.hidePaused = !!data.hidePaused;
+      if (data.recentNotes) {
+        try {
+          var parsedRecents = JSON.parse(data.recentNotes);
+          if (Array.isArray(parsedRecents)) State.recentNotes = parsedRecents;
+        } catch (e) { State.recentNotes = []; }
+      }
       if (data.visibleViews) {
         try {
           var parsedViews = JSON.parse(data.visibleViews);
@@ -1036,6 +1082,7 @@ function handleNavClick(e) {
   if (view === 'note') {
     State.currentNoteFilename = item.dataset.filename || null;
     sendMessageToPlugin('requestNoteContent', JSON.stringify({ filename: State.currentNoteFilename }));
+    pushRecentNote(State.currentNoteFilename);
   }
 
   // Restore saved prefs for the view we're entering
@@ -1808,26 +1855,7 @@ function attachMainEventListeners() {
           if (State.notes[jpi].filename === jfn) { inSidebar = true; break; }
         }
         if (inSidebar) {
-          if (State.expandedTaskId) collapseTask();
-          var jNav = document.querySelector('.cl-nav-item[data-filename="' + jfn + '"]');
-          if (jNav) {
-            jNav.click();
-            jNav.scrollIntoView({ block: 'nearest' });
-            break;
-          }
-          // Sidebar item is filtered out (e.g. status: someday). Open the Clarity note view directly.
-          saveCurrentViewPrefs();
-          State.currentView = 'note';
-          State.currentNoteFilename = jfn;
-          State.focusedTaskIndex = -1;
-          State.filters = { tag: null, mention: null, text: '', noteStatus: 'all' };
-          State.tasksOnly = false;
-          State.expandedTaskId = null;
-          State.editDraft = null;
-          sendMessageToPlugin('requestNoteContent', JSON.stringify({ filename: jfn }));
-          sendMessageToPlugin('saveView', JSON.stringify({ view: 'note', noteFilename: jfn }));
-          renderSidebar();
-          renderCurrentView();
+          navigateToProjectNote(jfn);
           break;
         }
         // Fallback: not a Clarity-tracked project (e.g. calendar note) — open in editor.
@@ -2692,6 +2720,22 @@ function quickJumpScore(note, query) {
 
 function quickJumpResults(query) {
   var notes = State.notes || [];
+  if (!query) {
+    // Empty query: recents first (MRU), then remaining notes in sidebar order.
+    var byFilename = {};
+    for (var ni = 0; ni < notes.length; ni++) byFilename[notes[ni].filename] = notes[ni];
+    var ordered = [];
+    var seen = {};
+    var recents = State.recentNotes || [];
+    for (var ri = 0; ri < recents.length; ri++) {
+      var rn = byFilename[recents[ri]];
+      if (rn && !seen[rn.filename]) { ordered.push(rn); seen[rn.filename] = true; }
+    }
+    for (var si = 0; si < notes.length; si++) {
+      if (!seen[notes[si].filename]) { ordered.push(notes[si]); seen[notes[si].filename] = true; }
+    }
+    return ordered.slice(0, 12);
+  }
   var scored = [];
   for (var i = 0; i < notes.length; i++) {
     var s = quickJumpScore(notes[i], query);
@@ -2746,12 +2790,7 @@ function openQuickJump() {
   function jumpTo(filename) {
     if (!filename) return;
     close();
-    if (State.expandedTaskId) collapseTask();
-    var navItem = document.querySelector('.cl-nav-item[data-filename="' + filename + '"]');
-    if (navItem) {
-      navItem.click();
-      navItem.scrollIntoView({ block: 'nearest' });
-    }
+    navigateToProjectNote(filename);
   }
 
   input.addEventListener('input', function() {
