@@ -410,7 +410,26 @@ async function onMessageFromHTMLView(actionType, data) {
         if (msg.scheduledDate) ctContent += ' >' + msg.scheduledDate;
         var ctTags = msg.tags || [];
         for (var cti = 0; cti < ctTags.length; cti++) ctContent += ' ' + ctTags[cti];
-        ctNote.appendParagraph(ctContent, 'open');
+        if (msg.prepend) {
+          // Insert after the frontmatter block and the first H1 title, so the
+          // task lands at the top of the project body rather than the bottom.
+          var ctParas = ctNote.paragraphs;
+          var ctLines = (ctNote.content || '').split('\n');
+          var insertIdx = 0;
+          if (ctLines.length > 0 && ctLines[0] === '---') {
+            for (var ctFmI = 1; ctFmI < ctLines.length; ctFmI++) {
+              if (ctLines[ctFmI] === '---') { insertIdx = ctFmI + 1; break; }
+            }
+          }
+          while (insertIdx < ctParas.length && ctParas[insertIdx].type === 'empty') insertIdx++;
+          if (insertIdx < ctParas.length && ctParas[insertIdx].type === 'title' && ctParas[insertIdx].headingLevel === 1) {
+            insertIdx++;
+            while (insertIdx < ctParas.length && ctParas[insertIdx].type === 'empty') insertIdx++;
+          }
+          ctNote.insertParagraph(ctContent, insertIdx, 'open');
+        } else {
+          ctNote.appendParagraph(ctContent, 'open');
+        }
         await sendToHTMLWindow('TASK_CREATED', { filename: ctFilename });
         break;
       }

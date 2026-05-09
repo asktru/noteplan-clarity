@@ -1907,6 +1907,7 @@ function attachMainEventListeners() {
       var msg = { filename: targetFilename, content: content };
       if (view === 'today') msg.scheduledDate = State.today;
       if (view === 'someday') msg.tags = ['#someday'];
+      if (view === 'note') msg.prepend = true;
       sendMessageToPlugin('createTask', JSON.stringify(msg));
       e.target.value = '';
     }
