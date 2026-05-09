@@ -6,8 +6,8 @@
   "plugin.description": "Things 3-inspired task clarity layer. Smart views for Inbox, Today, Upcoming, Anytime, Someday with inline task editing.",
   "plugin.icon": "🔮",
   "plugin.author": "asktru",
-  "plugin.version": "1.4.0",
-  "plugin.lastUpdateInfo": "Project actions dropdown with Move-to-archive, project metadata modal with deadlines and review schedule, Things-style deadline badges, Cmd+/ quick-jump palette, Cmd+1..5 view shortcuts, Cmd+Delete to remove tasks, area icons, Reschedule link in Today's overdue section, mobile sidebar polish",
+  "plugin.version": "1.5.0",
+  "plugin.lastUpdateInfo": "Project status frontmatter (paused, someday, completed, canceled) with Things-style icons, recents-first quick-jump, folder filter pills in Today/Anytime/Someday, fixed priority group order, prepend new tasks to project, today-star moved before task title",
   "plugin.script": "script.js",
   "plugin.isRemote": "false",
   "plugin.dependsOn": [
