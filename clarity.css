@@ -1035,9 +1035,9 @@ body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
 .cl-refresh-btn:hover { opacity: 1; background: var(--cl-hover); }
 .cl-refresh-btn.cl-spinning svg { animation: cl-spin 0.8s linear infinite; }
 
-/* ─── Paused / Someday projects ──────────────────────── */
+/* ─── Project status icons (paused / someday / completed / canceled) ── */
 .cl-project-muted .cl-project-title { opacity: 0.55; }
-.cl-icon-paused-wrap {
+.cl-icon-stack {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -1045,10 +1045,10 @@ body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
   flex-shrink: 0;
   vertical-align: middle;
 }
-.cl-icon-paused-wrap > svg:first-child {
+.cl-icon-stack > svg:first-child {
   display: block;
 }
-.cl-pause-overlay {
+.cl-status-overlay {
   position: absolute;
   inset: 0;
   pointer-events: none;

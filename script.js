@@ -522,7 +522,7 @@ async function onMessageFromHTMLView(actionType, data) {
             hasProjectOrAreaType: (rpFm.type === 'project' || rpFm.type === 'area'),
             noteType: rpFm.type === 'area' ? 'area' : (rpFm.type === 'project' ? 'project' : ''),
             due: rpFm.due || null,
-            status: (rpFm.status === 'paused' || rpFm.status === 'someday') ? rpFm.status : null,
+            status: (rpFm.status === 'paused' || rpFm.status === 'someday' || rpFm.status === 'completed' || rpFm.status === 'canceled') ? rpFm.status : null,
           },
         });
         break;
@@ -949,7 +949,7 @@ function getFolderTree() {
       noteType: fm.type === 'area' ? 'area' : (fm.type === 'project' ? 'project' : ''),
       bgColorDark: bgColorDark,
       due: fm.due || null,
-      status: (fm.status === 'paused' || fm.status === 'someday') ? fm.status : null,
+      status: (fm.status === 'paused' || fm.status === 'someday' || fm.status === 'completed' || fm.status === 'canceled') ? fm.status : null,
     };
     folderMap[folderPath].notes.push(noteMeta);
     noteList.push(noteMeta);

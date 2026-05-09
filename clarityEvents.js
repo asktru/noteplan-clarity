@@ -575,32 +575,52 @@ function renderMarkdownTable(lines) {
 // Color used for paused/someday projects/areas (overrides bgColorDark in icons).
 var PAUSED_COLOR = '#9CA3AF';
 
-// Two-bar pause indicator, sized to overlay an 18-viewBox icon.
+// Status overlays sized to an 18-unit viewBox so they scale with the underlying icon.
 function buildPauseOverlay(size) {
   var s = size || 18;
-  return '<svg class="cl-pause-overlay" width="' + s + '" height="' + s + '" viewBox="0 0 18 18" aria-hidden="true">' +
+  return '<svg class="cl-status-overlay" width="' + s + '" height="' + s + '" viewBox="0 0 18 18" aria-hidden="true">' +
     '<rect x="6" y="5.5" width="1.8" height="7" rx="0.4" fill="#fff" stroke="#374151" stroke-width="0.35"/>' +
     '<rect x="10.2" y="5.5" width="1.8" height="7" rx="0.4" fill="#fff" stroke="#374151" stroke-width="0.35"/>' +
     '</svg>';
 }
 
-// Render a project/area icon with muted color + pause overlay applied per status.
+function buildCheckOverlay(size) {
+  var s = size || 18;
+  return '<svg class="cl-status-overlay" width="' + s + '" height="' + s + '" viewBox="0 0 18 18" aria-hidden="true">' +
+    '<path d="M6.6 9.3 L8.4 11.1 L11.6 7.6" fill="none" stroke="#1f2937" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '</svg>';
+}
+
+function buildXOverlay(size) {
+  var s = size || 18;
+  return '<svg class="cl-status-overlay" width="' + s + '" height="' + s + '" viewBox="0 0 18 18" aria-hidden="true">' +
+    '<path d="M7.2 7.2 L10.8 10.8 M10.8 7.2 L7.2 10.8" fill="none" stroke="#1f2937" stroke-width="1.5" stroke-linecap="round"/>' +
+    '</svg>';
+}
+
+// Render a project/area icon with the appropriate color and status overlay.
+//   paused / someday → muted gray (paused also gets a pause-bars overlay)
+//   completed / canceled (projects only) → keep project color, force a full pie, overlay check or X
 function renderProjectIcon(noteLike, size) {
   var s = size || 18;
   var status = noteLike.status || '';
+  var isArea = noteLike.noteType === 'area';
   var muted = (status === 'paused' || status === 'someday');
   var color = muted ? PAUSED_COLOR : (noteLike.bgColorDark || '#3B82F6');
   var inner;
-  if (noteLike.noteType === 'area') {
+  if (isArea) {
     inner = buildAreaIcon(color, s);
   } else {
-    var pct = noteLike.taskCount > 0 ? Math.round((noteLike.doneCount / noteLike.taskCount) * 100) : 0;
+    var forceFull = !isArea && (status === 'completed' || status === 'canceled');
+    var pct = forceFull ? 100 : (noteLike.taskCount > 0 ? Math.round((noteLike.doneCount / noteLike.taskCount) * 100) : 0);
     inner = buildProgressPie(pct, color, s);
   }
-  if (status === 'paused') {
-    return '<span class="cl-icon-paused-wrap" style="width:' + s + 'px;height:' + s + 'px">' + inner + buildPauseOverlay(s) + '</span>';
-  }
-  return inner;
+  var overlay = '';
+  if (status === 'paused') overlay = buildPauseOverlay(s);
+  else if (!isArea && status === 'completed') overlay = buildCheckOverlay(s);
+  else if (!isArea && status === 'canceled') overlay = buildXOverlay(s);
+  if (!overlay) return inner;
+  return '<span class="cl-icon-stack" style="width:' + s + 'px;height:' + s + 'px">' + inner + overlay + '</span>';
 }
 
 // ─── Progress Pie (Things 3 style) ─────────────────────────
@@ -2921,7 +2941,7 @@ function openNoteMetaModal() {
 
   var fm = nc.frontmatter || {};
   var typeVal = fm.type === 'project' || fm.type === 'area' ? fm.type : '';
-  var statusVal = fm.status === 'paused' || fm.status === 'someday' ? fm.status : '';
+  var statusVal = (fm.status === 'paused' || fm.status === 'someday' || fm.status === 'completed' || fm.status === 'canceled') ? fm.status : '';
   var dueVal = fm.due || '';
   var reviewedVal = fm.reviewed || '';
   var reviewVal = fm.review || '';
@@ -2945,6 +2965,10 @@ function openNoteMetaModal() {
           '<option value=""' + (statusVal === '' ? ' selected' : '') + '>Active</option>' +
           '<option value="paused"' + (statusVal === 'paused' ? ' selected' : '') + '>Paused</option>' +
           '<option value="someday"' + (statusVal === 'someday' ? ' selected' : '') + '>Someday</option>' +
+          (typeVal === 'project'
+            ? ('<option value="completed"' + (statusVal === 'completed' ? ' selected' : '') + '>Completed</option>' +
+               '<option value="canceled"' + (statusVal === 'canceled' ? ' selected' : '') + '>Canceled</option>')
+            : '') +
         '</select>' +
       '</div>' +
       '<div class="cl-meta-row">' +
