@@ -8,7 +8,7 @@ var State = {
   currentView: 'inbox',
   currentNoteFilename: null,
   expandedTaskId: null,
-  filters: { tag: null, mention: null, text: '', noteStatus: 'all' },
+  filters: { tag: null, folder: null, mention: null, text: '', noteStatus: 'all' },
   grouping: 'note',
   movedFromInbox: [],
   editDraft: null,
@@ -467,6 +467,9 @@ function getFilteredTasks(view) {
   var tasks = getTasksForView(view);
   if (State.filters.tag) {
     tasks = tasks.filter(function(t) { return t.tags && t.tags.indexOf(State.filters.tag) >= 0; });
+  }
+  if (State.filters.folder) {
+    tasks = tasks.filter(function(t) { return (t.folderName || '') === State.filters.folder; });
   }
   if (State.filters.mention) {
     tasks = tasks.filter(function(t) { return t.mentions && t.mentions.indexOf(State.filters.mention) >= 0; });
@@ -1033,7 +1036,7 @@ function saveCurrentViewPrefs() {
   if (State.currentView === 'note') {
     State.viewPrefs[key] = { noteStatus: State.filters.noteStatus, tasksOnly: State.tasksOnly };
   } else {
-    State.viewPrefs[key] = { tag: State.filters.tag, grouping: State.grouping };
+    State.viewPrefs[key] = { tag: State.filters.tag, folder: State.filters.folder, grouping: State.grouping };
   }
 }
 
@@ -1045,6 +1048,7 @@ function restoreViewPrefs(view, filename) {
     State.tasksOnly = (saved && saved.tasksOnly) || false;
   } else {
     State.filters.tag = (saved && saved.tag) || null;
+    State.filters.folder = (saved && saved.folder) || null;
     State.grouping = (saved && saved.grouping) || defaultGrouping(view);
   }
 }
@@ -1198,15 +1202,29 @@ function renderTaskRow(task, options) {
 }
 
 // ─── Filter Bar ────────────────────────────────────────────
-function renderFilterBar(tasks) {
-  var tags = extractUniqueTags(tasks);
-  if (tags.length === 0) return '';
+// `view`, when provided, makes the filter bar derive its tag/folder pills
+// from the unfiltered task set for that view, so users can switch between
+// active filters without having to clear them first.
+function renderFilterBar(tasks, view) {
+  var sourceTasks = view ? getTasksForView(view) : tasks;
+  var tags = extractUniqueTags(sourceTasks);
+  var folders = view ? extractUniqueFolders(sourceTasks) : [];
+  if (tags.length === 0 && folders.length < 2) return '';
   var html = '<div class="cl-filter-bar">';
   var activeTag = State.filters.tag;
-  html += '<span class="cl-filter-pill' + (!activeTag ? ' cl-filter-active' : '') + '" data-action="filterTag" data-tag="">All</span>';
+  var activeFolder = State.filters.folder;
+  var noFilter = !activeTag && !activeFolder;
+  html += '<span class="cl-filter-pill' + (noFilter ? ' cl-filter-active' : '') + '" data-action="clearTaskFilters">All</span>';
   for (var i = 0; i < tags.length; i++) {
     var active = (activeTag === tags[i]) ? ' cl-filter-active' : '';
     html += '<span class="cl-filter-pill' + active + '" data-action="filterTag" data-tag="' + esc(tags[i]) + '">' + esc(tags[i]) + '</span>';
+  }
+  if (folders.length >= 2) {
+    if (tags.length > 0) html += '<span class="cl-filter-divider"></span>';
+    for (var fi = 0; fi < folders.length; fi++) {
+      var fActive = (activeFolder === folders[fi]) ? ' cl-filter-active' : '';
+      html += '<span class="cl-filter-pill cl-filter-pill-folder' + fActive + '" data-action="filterFolder" data-folder="' + esc(folders[fi]) + '">' + esc(folders[fi]) + '</span>';
+    }
   }
   html += '</div>';
   return html;
@@ -1222,6 +1240,15 @@ function extractUniqueTags(tasks) {
     }
   }
   return Object.keys(tagMap).sort();
+}
+
+function extractUniqueFolders(tasks) {
+  var folderMap = {};
+  for (var i = 0; i < tasks.length; i++) {
+    var f = tasks[i].folderName;
+    if (f) folderMap[f] = true;
+  }
+  return Object.keys(folderMap).sort();
 }
 
 // ─── Grouping ──────────────────────────────────────────────
@@ -1260,7 +1287,10 @@ function renderGroupedTasks(tasks, grouping, options) {
     if (!groups[key]) { groups[key] = []; groupOrder.push(key); }
     groups[key].push(t);
   }
-  if (grouping === 'priority') groupOrder.reverse();
+  if (grouping === 'priority') {
+    var priRank = { '!!!': 3, '!!': 2, '!': 1, 'No Priority': 0 };
+    groupOrder.sort(function(a, b) { return (priRank[b] || 0) - (priRank[a] || 0); });
+  }
 
   var html = '';
   for (var gi = 0; gi < groupOrder.length; gi++) {
@@ -1407,7 +1437,7 @@ function renderTodayView() {
   html += '<span class="cl-view-count">' + tasks.length + '</span></div>';
   html += renderGroupingToggle('today');
   html += '</div>';
-  html += renderFilterBar(tasks);
+  html += renderFilterBar(tasks, 'today');
   html += renderQuickAdd('today');
   html += '<div class="cl-task-list">';
 
@@ -1493,7 +1523,7 @@ function renderAnytimeView() {
   html += '<span class="cl-view-count">' + tasks.length + '</span></div>';
   html += renderGroupingToggle('anytime');
   html += '</div>';
-  html += renderFilterBar(tasks);
+  html += renderFilterBar(tasks, 'anytime');
   html += renderQuickAdd('anytime');
   html += '<div class="cl-task-list">';
   html += renderGroupedTasks(tasks, State.grouping, { showStar: true });
@@ -1515,7 +1545,7 @@ function renderSomedayView() {
   html += '<span class="cl-view-count">' + totalCount + '</span></div>';
   html += renderGroupingToggle('someday');
   html += '</div>';
-  html += renderFilterBar(tasks);
+  html += renderFilterBar(tasks, 'someday');
   html += renderQuickAdd('someday');
 
   if (somedayNotes.length) {
@@ -1822,8 +1852,24 @@ function attachMainEventListeners() {
         var taskRow = target.closest('.cl-task-row');
         if (taskRow) toggleTask(taskRow.dataset.taskId);
         break;
-      case 'filterTag':
-        State.filters.tag = target.dataset.tag || null;
+      case 'filterTag': {
+        var newTag = target.dataset.tag || null;
+        // Clicking the active pill clears the tag filter without touching the folder filter.
+        State.filters.tag = (newTag && State.filters.tag === newTag) ? null : newTag;
+        saveCurrentViewPrefs(); persistViewPrefs();
+        renderCurrentView();
+        break;
+      }
+      case 'filterFolder': {
+        var newFolder = target.dataset.folder || null;
+        State.filters.folder = (newFolder && State.filters.folder === newFolder) ? null : newFolder;
+        saveCurrentViewPrefs(); persistViewPrefs();
+        renderCurrentView();
+        break;
+      }
+      case 'clearTaskFilters':
+        State.filters.tag = null;
+        State.filters.folder = null;
         saveCurrentViewPrefs(); persistViewPrefs();
         renderCurrentView();
         break;

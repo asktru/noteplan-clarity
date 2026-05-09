@@ -335,6 +335,14 @@ body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
   color: var(--cl-accent);
   opacity: 1;
 }
+.cl-filter-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--cl-border);
+  opacity: 0.5;
+  margin: 2px 4px;
+}
+.cl-filter-pill-folder { font-style: italic; }
 
 /* ─── Grouping Toggle ─────────────────────────────────── */
 .cl-group-toggle { display: flex; gap: 4px; align-items: center; margin-bottom: 12px; }
