@@ -306,6 +306,35 @@ async function onMessageFromHTMLView(actionType, data) {
         break;
       }
 
+      case 'setTaskTag': {
+        var stNote = findNoteByFilename(msg.filename);
+        if (!stNote) break;
+        var stPara = findParagraph(stNote, msg.lineIndex);
+        if (!stPara) break;
+        var rawTag = (msg.tag || '').trim();
+        if (!rawTag) break;
+        if (rawTag.charAt(0) !== '#') rawTag = '#' + rawTag;
+        var stEscaped = rawTag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Match the tag as a whole word (preceded by start/space, followed by end/space).
+        var stPattern = '(^|\\s)' + stEscaped + '(?=\\s|$)';
+        var stContent = stPara.content || '';
+        if (msg.add) {
+          if (!new RegExp(stPattern).test(stContent)) {
+            stContent = stContent.trimEnd() + ' ' + rawTag;
+          }
+        } else {
+          stContent = stContent.replace(new RegExp(stPattern, 'g'), '').replace(/\s{2,}/g, ' ').trim();
+        }
+        stPara.content = stContent;
+        stNote.updateParagraph(stPara);
+        await sendToHTMLWindow('TASK_TAG_UPDATED', {
+          id: msg.filename + ':' + msg.lineIndex,
+          tag: rawTag,
+          added: !!msg.add,
+        });
+        break;
+      }
+
       case 'saveTask': {
         var sNote = findNoteByFilename(msg.filename);
         if (!sNote) break;

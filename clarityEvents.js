@@ -323,6 +323,7 @@ function onMessageFromPlugin(type, data) {
     case 'TASK_REORDERED':
     case 'TASK_RESCHEDULED':
     case 'TASK_DELETED':
+    case 'TASK_TAG_UPDATED':
       sendMessageToPlugin('ready', '{}');
       break;
     case 'PROJECT_ARCHIVED':
@@ -1235,7 +1236,7 @@ function extractUniqueTags(tasks) {
   for (var i = 0; i < tasks.length; i++) {
     if (tasks[i].tags) {
       for (var j = 0; j < tasks[i].tags.length; j++) {
-        if (tasks[i].tags[j] !== '#someday') tagMap[tasks[i].tags[j]] = true;
+        if (tasks[i].tags[j] !== '#someday' && tasks[i].tags[j] !== '#evening') tagMap[tasks[i].tags[j]] = true;
       }
     }
   }
@@ -1442,10 +1443,14 @@ function renderTodayView() {
   html += '<div class="cl-task-list">';
 
   var overdue = [];
-  var todayTasks = [];
+  var dayTasks = [];
+  var eveningTasks = [];
   for (var i = 0; i < tasks.length; i++) {
-    if (tasks[i].scheduledDate && tasks[i].scheduledDate < today) overdue.push(tasks[i]);
-    else todayTasks.push(tasks[i]);
+    var t = tasks[i];
+    var isEvening = t.tags && t.tags.indexOf('#evening') >= 0;
+    if (t.scheduledDate && t.scheduledDate < today) overdue.push(t);
+    else if (isEvening) eveningTasks.push(t);
+    else dayTasks.push(t);
   }
 
   if (overdue.length > 0) {
@@ -1458,7 +1463,19 @@ function renderTodayView() {
     }
   }
 
-  html += renderGroupedTasks(todayTasks, State.grouping);
+  html += renderGroupedTasks(dayTasks, State.grouping);
+
+  if (eveningTasks.length > 0) {
+    html += '<div class="cl-group-header cl-evening-header">' +
+      '<svg class="cl-evening-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>' +
+      '<span>This Evening</span>' +
+      '</div>';
+    for (var ei = 0; ei < eveningTasks.length; ei++) {
+      html += renderTaskRow(eveningTasks[ei], { showSource: true });
+    }
+  }
+
   html += '</div>';
   return html;
 }
@@ -1986,6 +2003,31 @@ function attachMainEventListeners() {
       e.target.value = '';
     }
   });
+}
+
+// Add or remove a single tag on a task by id without expanding its editor.
+function toggleTaskTagById(taskId, tag, add) {
+  if (!taskId || !tag) return;
+  var parts = taskId.split(':');
+  var filename = parts.slice(0, -1).join(':');
+  var lineIndex = parseInt(parts[parts.length - 1]);
+  if (isNaN(lineIndex)) return;
+  for (var i = 0; i < State.tasks.length; i++) {
+    if (State.tasks[i].id === taskId) {
+      var tags = State.tasks[i].tags || [];
+      if (add) {
+        if (tags.indexOf(tag) < 0) tags = tags.concat([tag]);
+      } else {
+        tags = tags.filter(function(t) { return t !== tag; });
+      }
+      State.tasks[i].tags = tags;
+      break;
+    }
+  }
+  renderCurrentView();
+  sendMessageToPlugin('setTaskTag', JSON.stringify({
+    filename: filename, lineIndex: lineIndex, tag: tag, add: !!add,
+  }));
 }
 
 // Reschedule a task by id without expanding its editor. dateStr is YYYY-MM-DD or null to clear.
@@ -3179,11 +3221,15 @@ document.addEventListener('keydown', function(e) {
       e.preventDefault();
       State.editDraft.scheduledDate = tomorrow;
       State.editDraft.scheduledWeek = null;
-      State.editDraft.tags = State.editDraft.tags.filter(function(t) { return t !== '#someday'; });
+      State.editDraft.tags = State.editDraft.tags.filter(function(t) { return t !== '#someday' && t !== '#evening'; });
       updateDateChip();
     } else {
       var tid = getFocusedTaskId();
-      if (tid) { e.preventDefault(); rescheduleTaskById(tid, tomorrow); }
+      if (tid) {
+        e.preventDefault();
+        toggleTaskTagById(tid, '#evening', false);
+        rescheduleTaskById(tid, tomorrow);
+      }
     }
     return;
   }
@@ -3194,11 +3240,35 @@ document.addEventListener('keydown', function(e) {
       e.preventDefault();
       State.editDraft.scheduledDate = State.today;
       State.editDraft.scheduledWeek = null;
-      State.editDraft.tags = State.editDraft.tags.filter(function(t) { return t !== '#someday'; });
+      State.editDraft.tags = State.editDraft.tags.filter(function(t) { return t !== '#someday' && t !== '#evening'; });
       updateDateChip();
     } else {
       var tid = getFocusedTaskId();
-      if (tid) { e.preventDefault(); rescheduleTaskById(tid, State.today); }
+      if (tid) {
+        e.preventDefault();
+        toggleTaskTagById(tid, '#evening', false);
+        rescheduleTaskById(tid, State.today);
+      }
+    }
+    return;
+  }
+
+  // Cmd+E: tag focused task as evening (so it shows up in Today's "This Evening" section)
+  if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && (e.key === 'e' || e.key === 'E')) {
+    if (State.editDraft) {
+      e.preventDefault();
+      if (State.editDraft.tags.indexOf('#evening') < 0) State.editDraft.tags.push('#evening');
+      State.editDraft.scheduledDate = State.today;
+      State.editDraft.scheduledWeek = null;
+      updateDateChip();
+    } else {
+      var tid = getFocusedTaskId();
+      if (tid) {
+        e.preventDefault();
+        // Ensure the task is scheduled for today so it appears in Today's evening section.
+        rescheduleTaskById(tid, State.today);
+        toggleTaskTagById(tid, '#evening', true);
+      }
     }
     return;
   }
@@ -3209,10 +3279,15 @@ document.addEventListener('keydown', function(e) {
       e.preventDefault();
       State.editDraft.scheduledDate = null;
       State.editDraft.scheduledWeek = null;
+      State.editDraft.tags = State.editDraft.tags.filter(function(t) { return t !== '#evening'; });
       updateDateChip();
     } else {
       var tid = getFocusedTaskId();
-      if (tid) { e.preventDefault(); rescheduleTaskById(tid, null); }
+      if (tid) {
+        e.preventDefault();
+        toggleTaskTagById(tid, '#evening', false);
+        rescheduleTaskById(tid, null);
+      }
     }
     return;
   }

@@ -423,6 +423,8 @@ body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
 .cl-overdue-reschedule { font-size: 11px; text-transform: none; letter-spacing: 0; cursor: pointer; opacity: 0.85; }
 .cl-overdue-reschedule:hover { text-decoration: underline; text-underline-offset: 2px; opacity: 1; }
 .cl-upcoming-date { font-weight: 600; text-transform: none; font-size: 13px; opacity: 0.8; }
+.cl-evening-header { display: flex; align-items: center; gap: 6px; }
+.cl-evening-icon { display: inline-block; opacity: 0.8; vertical-align: middle; }
 
 /* ─── Task Row ────────────────────────────────────────── */
 .cl-task-row {
