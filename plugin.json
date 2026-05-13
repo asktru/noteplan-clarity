@@ -6,8 +6,8 @@
   "plugin.description": "Things 3-inspired task clarity layer. Smart views for Inbox, Today, Upcoming, Anytime, Someday with inline task editing.",
   "plugin.icon": "🔮",
   "plugin.author": "asktru",
-  "plugin.version": "1.5.0",
-  "plugin.lastUpdateInfo": "Project status frontmatter (paused, someday, completed, canceled) with Things-style icons, recents-first quick-jump, folder filter pills in Today/Anytime/Someday, fixed priority group order, prepend new tasks to project, today-star moved before task title",
+  "plugin.version": "1.6.0",
+  "plugin.lastUpdateInfo": "This Evening section in Today (#evening tag, Cmd+E shortcut), keyboard shortcuts cheatsheet (press ?), improved light-mode contrast for task circles and overlays, square checkbox in the expanded editor for checklist items",
   "plugin.script": "script.js",
   "plugin.isRemote": "false",
   "plugin.dependsOn": [
