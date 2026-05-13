@@ -938,6 +938,14 @@ function renderSidebarFooter() {
   }
   html += '</div>';
 
+  // Help section
+  html += '<div class="cl-settings-section">';
+  html += '<button class="cl-settings-action cl-settings-help" data-action="openShortcutsCheatsheet">' +
+    '<span>Keyboard shortcuts</span>' +
+    '<kbd class="cl-cheatsheet-kbd">?</kbd>' +
+    '</button>';
+  html += '</div>';
+
   html += '</div>'; // close popover
 
   // Strip button
@@ -1007,6 +1015,12 @@ function attachSidebarFooterHandlers() {
         renderSidebar();
         break;
       }
+      case 'openShortcutsCheatsheet':
+        State.settingsPopoverOpen = false;
+        document.body.classList.remove('cl-settings-backdrop');
+        renderSidebar();
+        openShortcutsCheatsheet();
+        break;
     }
   });
 
@@ -2925,6 +2939,76 @@ function openQuickJump() {
   setTimeout(function() { input.focus(); }, 0);
 }
 
+// ─── Keyboard Shortcuts Cheatsheet ─────────────────────────
+var SHORTCUTS_GROUPS = [
+  {
+    title: 'Navigation',
+    items: [
+      { keys: ['⌘1', '..', '⌘5'], label: 'Switch view (Inbox, Today, Upcoming, Anytime, Someday)' },
+      { keys: ['⌘/'], label: 'Quick-jump to a project or area' },
+      { keys: ['↑', '↓'], label: 'Move focus between tasks' },
+      { keys: ['Enter'], label: 'Open the focused task' },
+      { keys: ['Esc'], label: 'Close editor, picker, or palette' },
+    ],
+  },
+  {
+    title: 'Task actions',
+    items: [
+      { keys: ['Space'], label: 'Toggle the focused task done / open' },
+      { keys: ['⌘T'], label: 'Schedule for today' },
+      { keys: ['⌘⇧T'], label: 'Schedule for tomorrow' },
+      { keys: ['⌘E'], label: 'Add to "This Evening"' },
+      { keys: ['⌘O'], label: 'Clear schedule' },
+      { keys: ['⌘⌫'], label: 'Delete task (with confirmation)' },
+      { keys: ['⌘Enter'], label: 'Save the open task editor' },
+    ],
+  },
+  {
+    title: 'Other',
+    items: [
+      { keys: ['⌘N'], label: 'Focus the New Task input' },
+      { keys: ['?'], label: 'Show this cheatsheet' },
+    ],
+  },
+];
+
+function openShortcutsCheatsheet() {
+  var existing = document.querySelector('.cl-cheatsheet-overlay');
+  if (existing) { existing.remove(); return; }
+
+  var html = '<div class="cl-cheatsheet-modal">' +
+    '<div class="cl-cheatsheet-title">Keyboard shortcuts</div>';
+  for (var gi = 0; gi < SHORTCUTS_GROUPS.length; gi++) {
+    var g = SHORTCUTS_GROUPS[gi];
+    html += '<div class="cl-cheatsheet-section">';
+    html += '<div class="cl-cheatsheet-section-title">' + esc(g.title) + '</div>';
+    for (var ii = 0; ii < g.items.length; ii++) {
+      var it = g.items[ii];
+      var keysHtml = '';
+      for (var ki = 0; ki < it.keys.length; ki++) {
+        var k = it.keys[ki];
+        if (k === '..') keysHtml += '<span class="cl-cheatsheet-sep">…</span>';
+        else keysHtml += '<kbd class="cl-cheatsheet-kbd">' + esc(k) + '</kbd>';
+      }
+      html += '<div class="cl-cheatsheet-row">' +
+        '<div class="cl-cheatsheet-keys">' + keysHtml + '</div>' +
+        '<div class="cl-cheatsheet-label">' + esc(it.label) + '</div>' +
+        '</div>';
+    }
+    html += '</div>';
+  }
+  html += '<div class="cl-cheatsheet-foot">Press <kbd class="cl-cheatsheet-kbd">?</kbd> or <kbd class="cl-cheatsheet-kbd">Esc</kbd> to close</div>';
+  html += '</div>';
+
+  var overlay = document.createElement('div');
+  overlay.className = 'cl-cheatsheet-overlay';
+  overlay.innerHTML = html;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', function(e) {
+    if (e.target === overlay) overlay.remove();
+  });
+}
+
 // ─── Confirmation Modal ────────────────────────────────────
 function openConfirmModal(opts) {
   var existing = document.querySelector('.cl-confirm-overlay');
@@ -3208,11 +3292,22 @@ document.addEventListener('keydown', function(e) {
     return;
   }
 
-  // Escape: close picker or collapse editor
+  // Escape: close cheatsheet, picker, or collapse editor
   if (e.key === 'Escape') {
+    var cheat = document.querySelector('.cl-cheatsheet-overlay');
+    if (cheat) { cheat.remove(); return; }
     var picker = document.querySelector('.cl-picker');
     if (picker) { picker.remove(); return; }
     if (State.expandedTaskId) { collapseTask(); return; }
+  }
+
+  // ? (Shift+/): open keyboard shortcuts cheatsheet
+  if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    var activeForCheat = document.activeElement;
+    if (activeForCheat && (activeForCheat.tagName === 'INPUT' || activeForCheat.tagName === 'TEXTAREA')) return;
+    e.preventDefault();
+    openShortcutsCheatsheet();
+    return;
   }
 
   // Cmd+Shift+T: schedule for tomorrow

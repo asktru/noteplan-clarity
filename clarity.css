@@ -1224,6 +1224,90 @@ body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
   color: #fff !important;
 }
 .cl-confirm-ok:hover { filter: brightness(1.1); }
+
+/* ─── Keyboard Shortcuts Cheatsheet ──────────────────── */
+.cl-cheatsheet-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 10000;
+  padding: 24px;
+}
+.cl-cheatsheet-modal {
+  background: var(--cl-bg);
+  border: 1px solid var(--cl-border);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+  padding: 22px 24px;
+  width: min(520px, 100%);
+  max-height: 80vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+.cl-cheatsheet-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+.cl-cheatsheet-section { margin-bottom: 16px; }
+.cl-cheatsheet-section:last-of-type { margin-bottom: 8px; }
+.cl-cheatsheet-section-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--cl-text-faint);
+  margin-bottom: 6px;
+}
+.cl-cheatsheet-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 0;
+  font-size: 13px;
+}
+.cl-cheatsheet-keys {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  min-width: 100px;
+}
+.cl-cheatsheet-label {
+  flex: 1;
+  color: var(--cl-text);
+  opacity: 0.85;
+}
+.cl-cheatsheet-kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  padding: 2px 6px;
+  font: 600 11px / 1 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: var(--cl-text);
+  background: var(--cl-surface-2);
+  border: 1px solid var(--cl-border-strong);
+  border-radius: 4px;
+}
+.cl-cheatsheet-sep {
+  font-size: 11px;
+  color: var(--cl-text-faint);
+  padding: 0 2px;
+}
+.cl-cheatsheet-foot {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--cl-border);
+  font-size: 11px;
+  color: var(--cl-text-faint);
+  text-align: center;
+}
+.cl-settings-help {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+}
+.cl-settings-help .cl-cheatsheet-kbd { margin-left: 8px; }
 .cl-confirm-destructive {
   background: var(--cl-red) !important;
   border-color: var(--cl-red) !important;
