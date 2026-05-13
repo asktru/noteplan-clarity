@@ -2165,7 +2165,8 @@ function renderTaskEditorHTML(task) {
 
   // Title: view mode (rendered markdown) or edit mode (input)
   html += '<div class="cl-editor-row">';
-  html += '<div class="cl-cb" data-action="toggle"></div>';
+  var editorCbClass = task.type === 'checklist' ? 'cl-cb cl-cb-square' : 'cl-cb';
+  html += '<div class="' + editorCbClass + '" data-action="toggle"></div>';
   if (draft.activeField === 'title') {
     html += '<input class="cl-editor-title cl-editor-field-active" value="' + esc(draft.content) + '" data-field="title"/>';
   } else {
