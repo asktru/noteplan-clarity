@@ -776,10 +776,10 @@ function parseTaskContent(content) {
   var weekMatch = c.match(/\s*>(\d{4}-W\d{2})/);
   if (weekMatch) result.scheduledWeek = weekMatch[1];
 
-  var tagMatches = c.match(/#[\w\-\/]+/g);
+  var tagMatches = c.match(/#[\p{L}\p{N}_\-\/]+/gu);
   if (tagMatches) result.tags = tagMatches;
 
-  var mentionMatches = c.match(/@[\w\-]+(?:\([^)]*\))?/g);
+  var mentionMatches = c.match(/@[\p{L}\p{N}_\-]+(?:\([^)]*\))?/gu);
   if (mentionMatches) {
     for (var mi = 0; mi < mentionMatches.length; mi++) {
       var m = mentionMatches[mi];

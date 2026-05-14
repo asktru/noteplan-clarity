@@ -536,10 +536,11 @@ function renderInlineMarkdown(text) {
     return placeholder(' <span class="cl-block-id">*</span>');
   });
 
-  // Tags and mentions — now safe because URLs are placeholders
-  s = s.replace(/(#[\w\-\/]+)/g, '<span class="cl-tag-inline">$1</span>');
+  // Tags and mentions — now safe because URLs are placeholders.
+  // Use Unicode property escapes so non-ASCII letters (ä, é, ñ, Cyrillic, etc.) are accepted.
+  s = s.replace(/(#[\p{L}\p{N}_\-\/]+)/gu, '<span class="cl-tag-inline">$1</span>');
   // Mentions: only match @word when preceded by space or start (not inside emails)
-  s = s.replace(/(^|[\s(])(@(?!done|due|repeat)[\w\-]+)/g, function(m, pre, mention) {
+  s = s.replace(/(^|[\s(])(@(?!done|due|repeat)[\p{L}\p{N}_\-]+)/gu, function(m, pre, mention) {
     return pre + '<span class="cl-mention-inline">' + mention + '</span>';
   });
 
@@ -1816,9 +1817,9 @@ function parseTaskContentClient(content) {
   if (dm) result.scheduledDate = dm[1];
   var wm = c.match(/\s*>(\d{4}-W\d{2})/);
   if (wm) result.scheduledWeek = wm[1];
-  var tagMatches = c.match(/#[\w\-\/]+/g);
+  var tagMatches = c.match(/#[\p{L}\p{N}_\-\/]+/gu);
   if (tagMatches) result.tags = tagMatches;
-  var menMatches = c.match(/@[\w\-]+/g);
+  var menMatches = c.match(/@[\p{L}\p{N}_\-]+/gu);
   if (menMatches) {
     for (var i = 0; i < menMatches.length; i++) {
       if (!menMatches[i].startsWith('@done') && !menMatches[i].startsWith('@due') && !menMatches[i].startsWith('@repeat')) result.mentions.push(menMatches[i]);
@@ -2108,11 +2109,11 @@ function expandTask(taskId) {
   // Strip trailing tags from title — they'll be shown in the metadata bar
   var titleContent = task.content;
   var trailingTags = [];
-  var trailingMatch = titleContent.match(/(\s+#[\w\-\/]+)+$/);
+  var trailingMatch = titleContent.match(/(\s+#[\p{L}\p{N}_\-\/]+)+$/u);
   if (trailingMatch) {
     var trailingStr = trailingMatch[0];
     titleContent = titleContent.substring(0, titleContent.length - trailingStr.length);
-    var tagMatches = trailingStr.match(/#[\w\-\/]+/g);
+    var tagMatches = trailingStr.match(/#[\p{L}\p{N}_\-\/]+/gu);
     if (tagMatches) trailingTags = tagMatches;
   }
 
