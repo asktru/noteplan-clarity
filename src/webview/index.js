@@ -269,6 +269,10 @@ function dragEnd() {
 }
 
 // ─── Message Handling ──────────────────────────────────────
+// NotePlan's pluginToHTMLCommsBridge.js invokes onMessageFromPlugin from the
+// window scope. esbuild's IIFE wrapper hides our top-level declarations from
+// `window`, so we explicitly republish this entry point as a global.
+globalThis.onMessageFromPlugin = onMessageFromPlugin;
 function onMessageFromPlugin(type, data) {
   switch (type) {
     case 'INIT_DATA':
