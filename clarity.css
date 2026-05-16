@@ -572,6 +572,42 @@ body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
 }
 .cl-note-content { padding: 0 24px 20px; }
 
+/* ─── Review-Due Footer ──────────────────────────────── */
+.cl-review-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 16px 24px 24px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  font-size: 13px;
+}
+.cl-review-due-label {
+  font-weight: 600;
+  color: #F59E0B;
+}
+.cl-review-mark-btn {
+  appearance: none;
+  border: 1px solid rgba(245, 158, 11, 0.55);
+  background: rgba(245, 158, 11, 0.18);
+  color: var(--cl-text);
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+.cl-review-mark-btn:hover {
+  background: rgba(245, 158, 11, 0.28);
+}
+.cl-review-mark-btn:active {
+  background: rgba(245, 158, 11, 0.36);
+}
+
 /* ─── Markdown Tables ─────────────────────────────────── */
 .cl-note-table-wrap {
   margin: 10px 0;
@@ -901,6 +937,7 @@ body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
   .cl-task-list { padding: 0 14px 16px; }
   .cl-moved-banner { margin: 0 14px 8px; }
   .cl-note-content { padding: 0 14px 16px; }
+  .cl-review-footer { margin: 12px 14px 16px; }
   .cl-note-breadcrumb { margin-left: 70px; }
   .cl-note-deadline { margin-left: 70px; }
 

@@ -574,6 +574,9 @@ async function onMessageFromHTMLView(actionType, data) {
             noteType: rpFm.type === 'area' ? 'area' : (rpFm.type === 'project' ? 'project' : ''),
             due: rpFm.due || null,
             status: (rpFm.status === 'paused' || rpFm.status === 'someday' || rpFm.status === 'completed' || rpFm.status === 'canceled') ? rpFm.status : null,
+            reviewedDate: rpFm.reviewed || null,
+            reviewInterval: rpFm.review || null,
+            reviewDueDays: computeReviewDueDays(rpFm.reviewed, rpFm.review, getTodayStr()),
           },
         });
         break;
@@ -753,6 +756,57 @@ function applyFrontmatterUpdates(content, updates) {
     if (lines[ri] !== null) rebuilt.push(lines[ri]);
   }
   return rebuilt.join('\n');
+}
+
+// ─── Review Cadence (frontmatter) ──────────────────────────
+// Mirror of asktru.WeeklyReview's interval parser so review semantics stay in
+// sync. Returns days as a positive integer, or null when the cadence is
+// missing/invalid (we treat "no cadence" as "review not tracked", unlike
+// WeeklyReview which defaults to weekly).
+function intervalToDays(interval) {
+  if (!interval) return null;
+  var match = String(interval).match(/^(\d+)([dwmqy])$/i);
+  if (!match) return null;
+  var num = parseInt(match[1], 10);
+  switch (match[2].toLowerCase()) {
+    case 'd': return num;
+    case 'w': return num * 7;
+    case 'm': return num * 30;
+    case 'q': return num * 91;
+    case 'y': return num * 365;
+    default: return null;
+  }
+}
+
+// Add a cadence interval to a YYYY-MM-DD date string. Returns null for bad input.
+function addIntervalToDate(dateStr, interval) {
+  if (!dateStr) return null;
+  var days = intervalToDays(interval);
+  if (days == null) return null;
+  var d = new Date(dateStr + 'T00:00:00');
+  if (isNaN(d.getTime())) return null;
+  d.setDate(d.getDate() + days);
+  var y = d.getFullYear();
+  var m = String(d.getMonth() + 1).padStart(2, '0');
+  var dd = String(d.getDate()).padStart(2, '0');
+  return y + '-' + m + '-' + dd;
+}
+
+// Days from `todayStr` to the next review date for a note.
+//   null  → review not tracked (no review: cadence set, or cadence is invalid)
+//   <= 0  → due (negative = overdue by that many days)
+//   > 0   → due in N days
+// When `reviewInterval` is set but `reviewedStr` is empty, treat as due today.
+function computeReviewDueDays(reviewedStr, reviewInterval, todayStr) {
+  if (!reviewInterval || !intervalToDays(reviewInterval)) return null;
+  var nextStr = reviewedStr
+    ? addIntervalToDate(reviewedStr, reviewInterval)
+    : todayStr;
+  if (!nextStr) return null;
+  var next = new Date(nextStr + 'T00:00:00');
+  var today = new Date(todayStr + 'T00:00:00');
+  if (isNaN(next.getTime()) || isNaN(today.getTime())) return null;
+  return Math.round((next.getTime() - today.getTime()) / 86400000);
 }
 
 // ─── Task Content Parsing ──────────────────────────────────
@@ -1002,6 +1056,9 @@ function getFolderTree() {
       bgColorDark: bgColorDark,
       due: fm.due || null,
       status: (fm.status === 'paused' || fm.status === 'someday' || fm.status === 'completed' || fm.status === 'canceled') ? fm.status : null,
+      reviewedDate: fm.reviewed || null,
+      reviewInterval: fm.review || null,
+      reviewDueDays: computeReviewDueDays(fm.reviewed, fm.review, getTodayStr()),
     };
     folderMap[folderPath].notes.push(noteMeta);
     noteList.push(noteMeta);
