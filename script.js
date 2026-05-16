@@ -153,6 +153,33 @@ async function showClarity() {
   }
 }
 
+// ─── Show Current Note in Clarity ──────────────────────────
+// Plugin command: jump from the editor to Clarity's note view for the
+// currently open note. If Clarity isn't running yet, settings are pre-seeded
+// so the cold-open lands directly on the note. If Clarity is already running,
+// the SHOW_NOTE message takes care of navigation.
+async function showCurrentNoteInClarity() {
+  try {
+    var note = Editor && Editor.note;
+    var filename = note && note.filename;
+    if (!filename) {
+      await CommandBar.prompt('Show in Clarity', 'No note is currently open in the editor.');
+      return;
+    }
+    // Pre-seed settings so a cold open of Clarity lands on this note.
+    saveSetting('lastView', 'note');
+    saveSetting('lastNoteFilename', filename);
+    // Open (or focus) the Clarity window.
+    await showClarity();
+    // If Clarity was already open, INIT_DATA won't re-fire, so push a
+    // navigation message. Safe to send even on a cold open (it just becomes
+    // a no-op redundant nudge after INIT_DATA has already navigated).
+    await sendToHTMLWindow('SHOW_NOTE', { filename: filename });
+  } catch (err) {
+    console.log('showCurrentNoteInClarity error: ' + String(err));
+  }
+}
+
 // ─── Send to HTML ──────────────────────────────────────────
 async function sendToHTMLWindow(type, data) {
   try {

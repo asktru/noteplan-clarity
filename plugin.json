@@ -72,6 +72,12 @@
       }
     },
     {
+      "name": "Show in Clarity",
+      "alias": ["show in clarity", "clarity show", "open in clarity"],
+      "description": "Open the current note in the Clarity view",
+      "jsFunction": "showCurrentNoteInClarity"
+    },
+    {
       "name": "onMessageFromHTMLView",
       "description": "Callback for HTML window messages",
       "jsFunction": "onMessageFromHTMLView",

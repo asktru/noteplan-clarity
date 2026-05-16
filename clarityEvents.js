@@ -314,6 +314,14 @@ function onMessageFromPlugin(type, data) {
       State.noteContent = data;
       if (State.currentView === 'note') renderCurrentView();
       break;
+    case 'SHOW_NOTE':
+      // Triggered by the "Show in Clarity" plugin command. Navigate to the
+      // requested note, opening the note view (and pulling its content) even
+      // if the note is filtered out of the sidebar.
+      if (data && data.filename) {
+        navigateToProjectNote(data.filename);
+      }
+      break;
     case 'PROJECT_REFRESHED':
       handleProjectRefreshed(data);
       break;
@@ -1678,11 +1686,17 @@ function renderAnytimeView() {
 // ─── Someday View ──────────────────────────────────────────
 function renderSomedayView() {
   var tasks = getFilteredTasks('someday');
+  // Collect paused and someday project/area notes. Paused notes are otherwise
+  // hidden whenever the sidebar's "Hide paused" toggle is on; surfacing them
+  // here ensures they don't become invisible.
+  var pausedNotes = [];
   var somedayNotes = [];
   for (var sni = 0; sni < State.notes.length; sni++) {
-    if (State.notes[sni].status === 'someday') somedayNotes.push(State.notes[sni]);
+    var sn = State.notes[sni];
+    if (sn.status === 'someday') somedayNotes.push(sn);
+    else if (sn.status === 'paused') pausedNotes.push(sn);
   }
-  var totalCount = tasks.length + somedayNotes.length;
+  var totalCount = tasks.length + somedayNotes.length + pausedNotes.length;
 
   var html = '<div class="cl-view-header">';
   html += '<div class="cl-view-title"><span class="cl-view-icon">' + getViewIcon('someday', 24) + '</span><h1>Someday</h1>';
@@ -1692,18 +1706,25 @@ function renderSomedayView() {
   html += renderFilterBar(tasks, 'someday');
   html += renderQuickAdd('someday');
 
-  if (somedayNotes.length) {
-    html += '<div class="cl-someday-projects">';
-    html += '<div class="cl-someday-projects-title">Projects &amp; Areas</div>';
-    for (var spi = 0; spi < somedayNotes.length; spi++) {
-      var sn = somedayNotes[spi];
+  function renderProjectGroup(label, list) {
+    if (!list.length) return '';
+    var out = '<div class="cl-someday-projects-title">' + esc(label) + '</div>';
+    for (var spi = 0; spi < list.length; spi++) {
+      var sn = list[spi];
       var sfolder = (sn.filename || '').replace(/\/[^/]+$/, '');
-      html += '<div class="cl-someday-project" data-action="jumpToProjectNote" data-filename="' + esc(sn.filename) + '">' +
+      out += '<div class="cl-someday-project" data-action="jumpToProjectNote" data-filename="' + esc(sn.filename) + '">' +
         '<span class="cl-someday-project-icon">' + renderProjectIcon(sn, 18) + '</span>' +
         '<span class="cl-someday-project-title">' + esc(sn.title || '') + '</span>' +
         '<span class="cl-someday-project-folder">' + esc(sfolder) + '</span>' +
       '</div>';
     }
+    return out;
+  }
+
+  if (pausedNotes.length || somedayNotes.length) {
+    html += '<div class="cl-someday-projects">';
+    html += renderProjectGroup('Paused', pausedNotes);
+    html += renderProjectGroup('Someday', somedayNotes);
     html += '</div>';
   }
 

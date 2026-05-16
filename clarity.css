@@ -1118,6 +1118,8 @@ body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
   opacity: 0.55;
   margin-bottom: 6px;
 }
+/* Add breathing room between back-to-back sections (Paused + Someday). */
+.cl-someday-project + .cl-someday-projects-title { margin-top: 12px; }
 .cl-someday-project {
   display: flex;
   align-items: center;
