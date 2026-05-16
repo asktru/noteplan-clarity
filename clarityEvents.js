@@ -429,7 +429,271 @@
     return "";
   }
 
+  // src/webview/task-categorization.js
+  function getTasksForView(view) {
+    var today = State.today;
+    var currentWeek = State.currentWeek;
+    var result = [];
+    var seenBlockIds = {};
+    var needsDedup = view === "today" || view === "upcoming";
+    for (var i = 0; i < State.tasks.length; i++) {
+      var t = State.tasks[i];
+      if (t.status !== "open") continue;
+      if (t.isDelegated) continue;
+      var match = false;
+      switch (view) {
+        case "inbox":
+          if (t.sourceType === "calendar" && t.sourceDate && t.sourceDate <= today) match = true;
+          break;
+        case "today":
+          if (t.scheduledDate && t.scheduledDate <= today) match = true;
+          break;
+        case "upcoming":
+          if (t.scheduledDate && t.scheduledDate > today || t.scheduledWeek && t.scheduledWeek > currentWeek) match = true;
+          break;
+        case "anytime":
+          if (t.sourceType !== "calendar") {
+            if (!t.tags || t.tags.indexOf("#someday") === -1) {
+              if (!t.scheduledDate || t.scheduledDate <= today) {
+                if (!t.scheduledWeek || t.scheduledWeek <= currentWeek) match = true;
+              }
+            }
+          }
+          break;
+        case "someday":
+          if (t.tags && t.tags.indexOf("#someday") >= 0) match = true;
+          break;
+      }
+      if (match) {
+        if (needsDedup && t.blockId) {
+          if (seenBlockIds[t.blockId]) {
+            if (t.sourceType === "note" && seenBlockIds[t.blockId].sourceType === "calendar") {
+              var idx = result.indexOf(seenBlockIds[t.blockId]);
+              if (idx >= 0) result[idx] = t;
+              seenBlockIds[t.blockId] = t;
+            }
+            continue;
+          }
+          seenBlockIds[t.blockId] = t;
+        }
+        result.push(t);
+      }
+    }
+    return result;
+  }
+  function getFilteredTasks(view) {
+    var tasks = getTasksForView(view);
+    if (State.filters.tag) {
+      tasks = tasks.filter(function(t) {
+        return t.tags && t.tags.indexOf(State.filters.tag) >= 0;
+      });
+    }
+    if (State.filters.folder) {
+      tasks = tasks.filter(function(t) {
+        return (t.folderName || "") === State.filters.folder;
+      });
+    }
+    if (State.filters.mention) {
+      tasks = tasks.filter(function(t) {
+        return t.mentions && t.mentions.indexOf(State.filters.mention) >= 0;
+      });
+    }
+    if (State.filters.text) {
+      var q = State.filters.text.toLowerCase();
+      tasks = tasks.filter(function(t) {
+        return t.content.toLowerCase().indexOf(q) >= 0;
+      });
+    }
+    return tasks;
+  }
+  function getViewCount(view) {
+    return getTasksForView(view).length;
+  }
+
+  // src/webview/messages.js
+  function onMessageFromPlugin(type, data) {
+    switch (type) {
+      case "INIT_DATA":
+        State.tasks = data.tasks || [];
+        State.folders = data.folders || [];
+        State.notes = data.notes || [];
+        State.today = data.today || "";
+        State.currentWeek = data.currentWeek || "";
+        if (data.lastView) State.currentView = data.lastView;
+        if (data.lastNoteFilename && data.lastView === "note") State.currentNoteFilename = data.lastNoteFilename;
+        if (data.collapsedAreas) {
+          try {
+            State.collapsedAreas = JSON.parse(data.collapsedAreas);
+          } catch (e) {
+            State.collapsedAreas = {};
+          }
+        }
+        if (data.viewPrefs) {
+          try {
+            State.viewPrefs = JSON.parse(data.viewPrefs);
+          } catch (e) {
+            State.viewPrefs = {};
+          }
+        }
+        State.hideEmptyProjects = !!data.hideEmptyProjects;
+        State.hideNonProjects = !!data.hideNonProjects;
+        State.hidePaused = !!data.hidePaused;
+        if (data.recentNotes) {
+          try {
+            var parsedRecents = JSON.parse(data.recentNotes);
+            if (Array.isArray(parsedRecents)) State.recentNotes = parsedRecents;
+          } catch (e) {
+            State.recentNotes = [];
+          }
+        }
+        if (data.visibleViews) {
+          try {
+            var parsedViews = JSON.parse(data.visibleViews);
+            if (parsedViews && typeof parsedViews === "object") {
+              for (var vk in parsedViews) {
+                if (Object.prototype.hasOwnProperty.call(parsedViews, vk)) {
+                  State.visibleViews[vk] = !!parsedViews[vk];
+                }
+              }
+            }
+          } catch (e) {
+          }
+        }
+        applySidebarWidth(data.sidebarWidth);
+        restoreViewPrefs(State.currentView, State.currentNoteFilename);
+        renderSidebar();
+        if (State.currentView === "note" && State.currentNoteFilename) {
+          sendMessageToPlugin("requestNoteContent", JSON.stringify({ filename: State.currentNoteFilename }));
+        }
+        renderCurrentView();
+        break;
+      case "NOTE_CONTENT":
+        State.noteContent = data;
+        if (State.currentView === "note") renderCurrentView();
+        break;
+      case "SHOW_NOTE":
+        if (data && data.filename) {
+          navigateToProjectNote(data.filename);
+        }
+        break;
+      case "PROJECT_REFRESHED":
+        handleProjectRefreshed(data);
+        break;
+      case "TASK_CREATED":
+      case "TASK_SAVED":
+      case "TASK_TOGGLED":
+      case "TASK_REORDERED":
+      case "TASK_RESCHEDULED":
+      case "TASK_DELETED":
+      case "TASK_TAG_UPDATED":
+        sendMessageToPlugin("ready", "{}");
+        break;
+      case "PROJECT_ARCHIVED":
+        if (data && data.success) {
+          if (State.currentNoteFilename === data.oldFilename) {
+            State.currentView = "inbox";
+            State.currentNoteFilename = null;
+            State.noteContent = null;
+            sendMessageToPlugin("saveView", JSON.stringify({ view: "inbox", noteFilename: null }));
+          }
+          sendMessageToPlugin("ready", "{}");
+        } else {
+          console.log("Clarity: archive failed: " + (data && data.error));
+        }
+        break;
+      case "NOTE_FRONTMATTER_UPDATED":
+        if (State.noteContent && State.noteContent.filename === data.filename) {
+          State.noteContent.frontmatter = data.frontmatter || {};
+          State.noteContent.bgColorDark = data.bgColorDark || State.noteContent.bgColorDark;
+        }
+        (function() {
+          var fnFm = data.filename;
+          var newFm = data.frontmatter || {};
+          var newRdd = reviewDueDaysFromFm(newFm);
+          var newStatus = newFm.status === "paused" || newFm.status === "someday" || newFm.status === "completed" || newFm.status === "canceled" ? newFm.status : null;
+          var newType = newFm.type === "area" ? "area" : newFm.type === "project" ? "project" : "";
+          var newDue = newFm.due || null;
+          function apply(target) {
+            target.reviewedDate = newFm.reviewed || null;
+            target.reviewInterval = newFm.review || null;
+            target.reviewDueDays = newRdd;
+            target.status = newStatus;
+            target.noteType = newType;
+            target.due = newDue;
+            target.bgColorDark = data.bgColorDark || target.bgColorDark;
+          }
+          for (var fi = 0; fi < State.folders.length; fi++) {
+            var fns = State.folders[fi].notes || [];
+            for (var ni = 0; ni < fns.length; ni++) {
+              if (fns[ni].filename === fnFm) apply(fns[ni]);
+            }
+          }
+          for (var li = 0; li < State.notes.length; li++) {
+            if (State.notes[li].filename === fnFm) apply(State.notes[li]);
+          }
+        })();
+        renderSidebar();
+        renderCurrentView();
+        sendMessageToPlugin("ready", "{}");
+        break;
+      default:
+        console.log("Clarity WebView: unknown message type: " + type);
+    }
+  }
+  function handleProjectRefreshed(data) {
+    if (!data || !data.filename) return;
+    var fn = data.filename;
+    var kept = [];
+    for (var i = 0; i < State.tasks.length; i++) {
+      if (State.tasks[i].noteFilename !== fn) kept.push(State.tasks[i]);
+    }
+    if (data.tasks && data.tasks.length) {
+      for (var ti = 0; ti < data.tasks.length; ti++) kept.push(data.tasks[ti]);
+    }
+    State.tasks = kept;
+    if (data.noteMeta) {
+      var nm = data.noteMeta;
+      for (var fi = 0; fi < State.folders.length; fi++) {
+        var notes = State.folders[fi].notes || [];
+        for (var ni = 0; ni < notes.length; ni++) {
+          if (notes[ni].filename === fn) {
+            notes[ni].title = nm.title;
+            notes[ni].taskCount = nm.taskCount;
+            notes[ni].doneCount = nm.doneCount;
+            notes[ni].openCount = nm.openCount;
+            notes[ni].bgColorDark = nm.bgColorDark;
+            notes[ni].hasProjectOrAreaType = nm.hasProjectOrAreaType;
+            notes[ni].noteType = nm.noteType;
+            notes[ni].due = nm.due || null;
+            notes[ni].status = nm.status || null;
+            notes[ni].reviewedDate = nm.reviewedDate || null;
+            notes[ni].reviewInterval = nm.reviewInterval || null;
+            notes[ni].reviewDueDays = nm.reviewDueDays == null ? null : nm.reviewDueDays;
+          }
+        }
+      }
+      for (var li = 0; li < State.notes.length; li++) {
+        if (State.notes[li].filename === fn) {
+          State.notes[li].title = nm.title;
+          State.notes[li].taskCount = nm.taskCount;
+          State.notes[li].doneCount = nm.doneCount;
+          State.notes[li].openCount = nm.openCount;
+          State.notes[li].bgColorDark = nm.bgColorDark;
+          State.notes[li].noteType = nm.noteType;
+          State.notes[li].due = nm.due || null;
+          State.notes[li].status = nm.status || null;
+          State.notes[li].reviewedDate = nm.reviewedDate || null;
+          State.notes[li].reviewInterval = nm.reviewInterval || null;
+          State.notes[li].reviewDueDays = nm.reviewDueDays == null ? null : nm.reviewDueDays;
+        }
+      }
+    }
+    renderSidebar();
+    renderCurrentView();
+  }
+
   // src/webview/index.js
+  globalThis.onMessageFromPlugin = onMessageFromPlugin;
   function navigateToProjectNote(filename) {
     if (!filename) return;
     if (State.expandedTaskId) collapseTask();
@@ -633,266 +897,6 @@
       return;
     }
     dragCleanup();
-  }
-  globalThis.onMessageFromPlugin = onMessageFromPlugin;
-  function onMessageFromPlugin(type, data) {
-    switch (type) {
-      case "INIT_DATA":
-        State.tasks = data.tasks || [];
-        State.folders = data.folders || [];
-        State.notes = data.notes || [];
-        State.today = data.today || "";
-        State.currentWeek = data.currentWeek || "";
-        if (data.lastView) State.currentView = data.lastView;
-        if (data.lastNoteFilename && data.lastView === "note") State.currentNoteFilename = data.lastNoteFilename;
-        if (data.collapsedAreas) {
-          try {
-            State.collapsedAreas = JSON.parse(data.collapsedAreas);
-          } catch (e) {
-            State.collapsedAreas = {};
-          }
-        }
-        if (data.viewPrefs) {
-          try {
-            State.viewPrefs = JSON.parse(data.viewPrefs);
-          } catch (e) {
-            State.viewPrefs = {};
-          }
-        }
-        State.hideEmptyProjects = !!data.hideEmptyProjects;
-        State.hideNonProjects = !!data.hideNonProjects;
-        State.hidePaused = !!data.hidePaused;
-        if (data.recentNotes) {
-          try {
-            var parsedRecents = JSON.parse(data.recentNotes);
-            if (Array.isArray(parsedRecents)) State.recentNotes = parsedRecents;
-          } catch (e) {
-            State.recentNotes = [];
-          }
-        }
-        if (data.visibleViews) {
-          try {
-            var parsedViews = JSON.parse(data.visibleViews);
-            if (parsedViews && typeof parsedViews === "object") {
-              for (var vk in parsedViews) {
-                if (Object.prototype.hasOwnProperty.call(parsedViews, vk)) {
-                  State.visibleViews[vk] = !!parsedViews[vk];
-                }
-              }
-            }
-          } catch (e) {
-          }
-        }
-        applySidebarWidth(data.sidebarWidth);
-        restoreViewPrefs(State.currentView, State.currentNoteFilename);
-        renderSidebar();
-        if (State.currentView === "note" && State.currentNoteFilename) {
-          sendMessageToPlugin("requestNoteContent", JSON.stringify({ filename: State.currentNoteFilename }));
-        }
-        renderCurrentView();
-        break;
-      case "NOTE_CONTENT":
-        State.noteContent = data;
-        if (State.currentView === "note") renderCurrentView();
-        break;
-      case "SHOW_NOTE":
-        if (data && data.filename) {
-          navigateToProjectNote(data.filename);
-        }
-        break;
-      case "PROJECT_REFRESHED":
-        handleProjectRefreshed(data);
-        break;
-      case "TASK_CREATED":
-      case "TASK_SAVED":
-      case "TASK_TOGGLED":
-      case "TASK_REORDERED":
-      case "TASK_RESCHEDULED":
-      case "TASK_DELETED":
-      case "TASK_TAG_UPDATED":
-        sendMessageToPlugin("ready", "{}");
-        break;
-      case "PROJECT_ARCHIVED":
-        if (data && data.success) {
-          if (State.currentNoteFilename === data.oldFilename) {
-            State.currentView = "inbox";
-            State.currentNoteFilename = null;
-            State.noteContent = null;
-            sendMessageToPlugin("saveView", JSON.stringify({ view: "inbox", noteFilename: null }));
-          }
-          sendMessageToPlugin("ready", "{}");
-        } else {
-          console.log("Clarity: archive failed: " + (data && data.error));
-        }
-        break;
-      case "NOTE_FRONTMATTER_UPDATED":
-        if (State.noteContent && State.noteContent.filename === data.filename) {
-          State.noteContent.frontmatter = data.frontmatter || {};
-          State.noteContent.bgColorDark = data.bgColorDark || State.noteContent.bgColorDark;
-        }
-        (function() {
-          var fnFm = data.filename;
-          var newFm = data.frontmatter || {};
-          var newRdd = reviewDueDaysFromFm(newFm);
-          var newStatus = newFm.status === "paused" || newFm.status === "someday" || newFm.status === "completed" || newFm.status === "canceled" ? newFm.status : null;
-          var newType = newFm.type === "area" ? "area" : newFm.type === "project" ? "project" : "";
-          var newDue = newFm.due || null;
-          function apply(target) {
-            target.reviewedDate = newFm.reviewed || null;
-            target.reviewInterval = newFm.review || null;
-            target.reviewDueDays = newRdd;
-            target.status = newStatus;
-            target.noteType = newType;
-            target.due = newDue;
-            target.bgColorDark = data.bgColorDark || target.bgColorDark;
-          }
-          for (var fi = 0; fi < State.folders.length; fi++) {
-            var fns = State.folders[fi].notes || [];
-            for (var ni = 0; ni < fns.length; ni++) {
-              if (fns[ni].filename === fnFm) apply(fns[ni]);
-            }
-          }
-          for (var li = 0; li < State.notes.length; li++) {
-            if (State.notes[li].filename === fnFm) apply(State.notes[li]);
-          }
-        })();
-        renderSidebar();
-        renderCurrentView();
-        sendMessageToPlugin("ready", "{}");
-        break;
-      default:
-        console.log("Clarity WebView: unknown message type: " + type);
-    }
-  }
-  function handleProjectRefreshed(data) {
-    if (!data || !data.filename) return;
-    var fn = data.filename;
-    var kept = [];
-    for (var i = 0; i < State.tasks.length; i++) {
-      if (State.tasks[i].noteFilename !== fn) kept.push(State.tasks[i]);
-    }
-    if (data.tasks && data.tasks.length) {
-      for (var ti = 0; ti < data.tasks.length; ti++) kept.push(data.tasks[ti]);
-    }
-    State.tasks = kept;
-    if (data.noteMeta) {
-      var nm = data.noteMeta;
-      for (var fi = 0; fi < State.folders.length; fi++) {
-        var notes = State.folders[fi].notes || [];
-        for (var ni = 0; ni < notes.length; ni++) {
-          if (notes[ni].filename === fn) {
-            notes[ni].title = nm.title;
-            notes[ni].taskCount = nm.taskCount;
-            notes[ni].doneCount = nm.doneCount;
-            notes[ni].openCount = nm.openCount;
-            notes[ni].bgColorDark = nm.bgColorDark;
-            notes[ni].hasProjectOrAreaType = nm.hasProjectOrAreaType;
-            notes[ni].noteType = nm.noteType;
-            notes[ni].due = nm.due || null;
-            notes[ni].status = nm.status || null;
-            notes[ni].reviewedDate = nm.reviewedDate || null;
-            notes[ni].reviewInterval = nm.reviewInterval || null;
-            notes[ni].reviewDueDays = nm.reviewDueDays == null ? null : nm.reviewDueDays;
-          }
-        }
-      }
-      for (var li = 0; li < State.notes.length; li++) {
-        if (State.notes[li].filename === fn) {
-          State.notes[li].title = nm.title;
-          State.notes[li].taskCount = nm.taskCount;
-          State.notes[li].doneCount = nm.doneCount;
-          State.notes[li].openCount = nm.openCount;
-          State.notes[li].bgColorDark = nm.bgColorDark;
-          State.notes[li].noteType = nm.noteType;
-          State.notes[li].due = nm.due || null;
-          State.notes[li].status = nm.status || null;
-          State.notes[li].reviewedDate = nm.reviewedDate || null;
-          State.notes[li].reviewInterval = nm.reviewInterval || null;
-          State.notes[li].reviewDueDays = nm.reviewDueDays == null ? null : nm.reviewDueDays;
-        }
-      }
-    }
-    renderSidebar();
-    renderCurrentView();
-  }
-  function getTasksForView(view) {
-    var today = State.today;
-    var currentWeek = State.currentWeek;
-    var result = [];
-    var seenBlockIds = {};
-    var needsDedup = view === "today" || view === "upcoming";
-    for (var i = 0; i < State.tasks.length; i++) {
-      var t = State.tasks[i];
-      if (t.status !== "open") continue;
-      if (t.isDelegated) continue;
-      var match = false;
-      switch (view) {
-        case "inbox":
-          if (t.sourceType === "calendar" && t.sourceDate && t.sourceDate <= today) match = true;
-          break;
-        case "today":
-          if (t.scheduledDate && t.scheduledDate <= today) match = true;
-          break;
-        case "upcoming":
-          if (t.scheduledDate && t.scheduledDate > today || t.scheduledWeek && t.scheduledWeek > currentWeek) match = true;
-          break;
-        case "anytime":
-          if (t.sourceType !== "calendar") {
-            if (!t.tags || t.tags.indexOf("#someday") === -1) {
-              if (!t.scheduledDate || t.scheduledDate <= today) {
-                if (!t.scheduledWeek || t.scheduledWeek <= currentWeek) match = true;
-              }
-            }
-          }
-          break;
-        case "someday":
-          if (t.tags && t.tags.indexOf("#someday") >= 0) match = true;
-          break;
-      }
-      if (match) {
-        if (needsDedup && t.blockId) {
-          if (seenBlockIds[t.blockId]) {
-            if (t.sourceType === "note" && seenBlockIds[t.blockId].sourceType === "calendar") {
-              var idx = result.indexOf(seenBlockIds[t.blockId]);
-              if (idx >= 0) result[idx] = t;
-              seenBlockIds[t.blockId] = t;
-            }
-            continue;
-          }
-          seenBlockIds[t.blockId] = t;
-        }
-        result.push(t);
-      }
-    }
-    return result;
-  }
-  function getFilteredTasks(view) {
-    var tasks = getTasksForView(view);
-    if (State.filters.tag) {
-      tasks = tasks.filter(function(t) {
-        return t.tags && t.tags.indexOf(State.filters.tag) >= 0;
-      });
-    }
-    if (State.filters.folder) {
-      tasks = tasks.filter(function(t) {
-        return (t.folderName || "") === State.filters.folder;
-      });
-    }
-    if (State.filters.mention) {
-      tasks = tasks.filter(function(t) {
-        return t.mentions && t.mentions.indexOf(State.filters.mention) >= 0;
-      });
-    }
-    if (State.filters.text) {
-      var q = State.filters.text.toLowerCase();
-      tasks = tasks.filter(function(t) {
-        return t.content.toLowerCase().indexOf(q) >= 0;
-      });
-    }
-    return tasks;
-  }
-  function getViewCount(view) {
-    return getTasksForView(view).length;
   }
   var SIDEBAR_VIEWS = [
     { id: "inbox", label: "Inbox" },
