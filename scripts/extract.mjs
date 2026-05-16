@@ -10,7 +10,8 @@ const TARGET = new URL('../src/webview/index.js', import.meta.url);
 // previous round's ranges were dropped from this list once they merged.
 // Treat REMOVE as a one-shot checkpoint, not a permanent ledger.
 const REMOVE = [
-  [2761, 2810], // Sidebar Resize (moved to sidebar-resize.js)
+  [95, 289],    // Drag & Drop (moved to dnd.js + attached via attachDragListeners)
+  [2249, 2386], // Project/Area Metadata Modal (moved to note-meta-modal.js)
 ];
 
 const lines = readFileSync(TARGET, 'utf8').split('\n');

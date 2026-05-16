@@ -1062,37 +1062,20 @@
     });
   }
 
-  // src/webview/index.js
-  globalThis.onMessageFromPlugin = onMessageFromPlugin;
-  function navigateToProjectNote(filename) {
-    if (!filename) return;
-    if (State.expandedTaskId) collapseTask();
-    var navItem = document.querySelector('.cl-nav-item[data-filename="' + filename + '"]');
-    if (navItem) {
-      navItem.click();
-      navItem.scrollIntoView({ block: "nearest" });
-      return;
-    }
-    saveCurrentViewPrefs();
-    State.currentView = "note";
-    State.currentNoteFilename = filename;
-    State.focusedTaskIndex = -1;
-    State.filters = { tag: null, mention: null, text: "", noteStatus: "all" };
-    State.tasksOnly = false;
-    State.expandedTaskId = null;
-    State.editDraft = null;
-    sendMessageToPlugin("requestNoteContent", JSON.stringify({ filename }));
-    sendMessageToPlugin("saveView", JSON.stringify({ view: "note", noteFilename: filename }));
-    pushRecentNote(filename);
-    renderSidebar();
-    renderCurrentView();
-  }
+  // src/webview/dnd.js
   var dragState = null;
   var dragSuppressNextClick = false;
   var DRAG_LONG_PRESS_MS = 300;
   var DRAG_CANCEL_DISTANCE = 10;
   var DRAG_SCROLL_ZONE = 40;
   var DRAG_SCROLL_SPEED = 8;
+  function consumeDragClickSuppression() {
+    if (dragSuppressNextClick) {
+      dragSuppressNextClick = false;
+      return true;
+    }
+    return false;
+  }
   function dragGetTaskRow(el) {
     var row = el.closest(".cl-task-row");
     if (!row || row.dataset.lineIndex === void 0) return null;
@@ -1267,6 +1250,237 @@
       return;
     }
     dragCleanup();
+  }
+  function attachDragListeners(mainEl) {
+    if (!mainEl) return;
+    mainEl.addEventListener("mousedown", function(e) {
+      if (State.currentView !== "note") return;
+      if (e.button !== 0) return;
+      if (e.target.closest(".cl-cb") || e.target.closest(".cl-task-editor") || e.target.closest(".cl-quick-add")) return;
+      var row = dragGetTaskRow(e.target);
+      if (!row) return;
+      var startY = e.clientY;
+      var startX = e.clientX;
+      dragState = {
+        phase: "pending",
+        sourceEl: row,
+        sourceId: row.dataset.taskId,
+        sourceLineIndex: parseInt(row.dataset.lineIndex, 10),
+        childCount: parseInt(row.dataset.childCount, 10) || 0,
+        indentLevel: parseInt(row.dataset.indent, 10) || 0,
+        cloneEl: null,
+        indicatorEl: null,
+        startY,
+        startX,
+        currentY: startY,
+        currentTarget: null,
+        siblings: null,
+        scrollInterval: null,
+        timer: setTimeout(function() {
+          if (dragState && dragState.phase === "pending") {
+            e.preventDefault();
+            dragStart(row, startY, startX);
+          }
+        }, DRAG_LONG_PRESS_MS)
+      };
+    });
+    mainEl.addEventListener("mousemove", function(e) {
+      if (!dragState) return;
+      if (dragState.phase === "pending") {
+        var dx = e.clientX - dragState.startX;
+        var dy = e.clientY - dragState.startY;
+        if (Math.sqrt(dx * dx + dy * dy) > DRAG_CANCEL_DISTANCE) {
+          clearTimeout(dragState.timer);
+          dragState = null;
+        }
+        return;
+      }
+      if (dragState.phase === "dragging") {
+        e.preventDefault();
+        dragMove(e.clientY, e.clientX);
+      }
+    });
+    mainEl.addEventListener("mouseup", function() {
+      if (!dragState) return;
+      dragEnd();
+    });
+    mainEl.addEventListener("touchstart", function(e) {
+      if (State.currentView !== "note") return;
+      if (e.touches.length !== 1) return;
+      if (e.target.closest(".cl-cb") || e.target.closest(".cl-task-editor") || e.target.closest(".cl-quick-add")) return;
+      var row = dragGetTaskRow(e.target);
+      if (!row) return;
+      var touch = e.touches[0];
+      var startY = touch.clientY;
+      var startX = touch.clientX;
+      dragState = {
+        phase: "pending",
+        sourceEl: row,
+        sourceId: row.dataset.taskId,
+        sourceLineIndex: parseInt(row.dataset.lineIndex, 10),
+        childCount: parseInt(row.dataset.childCount, 10) || 0,
+        indentLevel: parseInt(row.dataset.indent, 10) || 0,
+        cloneEl: null,
+        indicatorEl: null,
+        startY,
+        startX,
+        currentY: startY,
+        currentTarget: null,
+        siblings: null,
+        scrollInterval: null,
+        timer: setTimeout(function() {
+          if (dragState && dragState.phase === "pending") {
+            dragStart(row, startY, startX);
+          }
+        }, DRAG_LONG_PRESS_MS)
+      };
+    }, { passive: true });
+    mainEl.addEventListener("touchmove", function(e) {
+      if (!dragState) return;
+      var touch = e.touches[0];
+      if (dragState.phase === "pending") {
+        var dx = touch.clientX - dragState.startX;
+        var dy = touch.clientY - dragState.startY;
+        if (Math.sqrt(dx * dx + dy * dy) > DRAG_CANCEL_DISTANCE) {
+          clearTimeout(dragState.timer);
+          dragState = null;
+        }
+        return;
+      }
+      if (dragState.phase === "dragging") {
+        e.preventDefault();
+        dragMove(touch.clientY, touch.clientX);
+      }
+    }, { passive: false });
+    mainEl.addEventListener("touchend", function() {
+      if (!dragState) return;
+      dragEnd();
+    });
+    mainEl.addEventListener("touchcancel", function() {
+      if (!dragState) return;
+      dragCancel();
+    });
+    document.addEventListener("keydown", function(e) {
+      if (e.key === "Escape" && dragState && dragState.phase === "dragging") {
+        e.preventDefault();
+        dragCancel();
+      }
+    });
+  }
+
+  // src/webview/note-meta-modal.js
+  function openNoteMetaModal() {
+    var nc = State.noteContent;
+    if (!nc) return;
+    var existing = document.querySelector(".cl-meta-overlay");
+    if (existing) {
+      existing.remove();
+      return;
+    }
+    var fm = nc.frontmatter || {};
+    var typeVal = fm.type === "project" || fm.type === "area" ? fm.type : "";
+    var statusVal = fm.status === "paused" || fm.status === "someday" || fm.status === "completed" || fm.status === "canceled" ? fm.status : "";
+    var dueVal = fm.due || "";
+    var reviewedVal = fm.reviewed || "";
+    var reviewVal = fm.review || "";
+    var overlay = document.createElement("div");
+    overlay.className = "cl-meta-overlay";
+    overlay.innerHTML = '<div class="cl-meta-modal"><div class="cl-meta-modal-title">Project metadata</div><div class="cl-meta-row"><label class="cl-meta-label">Type</label><select class="cl-meta-input" data-field="type"><option value=""' + (typeVal === "" ? " selected" : "") + '>\u2014</option><option value="project"' + (typeVal === "project" ? " selected" : "") + '>Project</option><option value="area"' + (typeVal === "area" ? " selected" : "") + '>Area</option></select></div><div class="cl-meta-row"><label class="cl-meta-label">Status</label><select class="cl-meta-input" data-field="status"><option value=""' + (statusVal === "" ? " selected" : "") + '>Active</option><option value="paused"' + (statusVal === "paused" ? " selected" : "") + '>Paused</option><option value="someday"' + (statusVal === "someday" ? " selected" : "") + ">Someday</option>" + (typeVal === "project" ? '<option value="completed"' + (statusVal === "completed" ? " selected" : "") + '>Completed</option><option value="canceled"' + (statusVal === "canceled" ? " selected" : "") + ">Canceled</option>" : "") + '</select></div><div class="cl-meta-row"><label class="cl-meta-label">Deadline</label><div class="cl-meta-inline" data-field="due-row">' + (dueVal ? '<input class="cl-meta-input" type="date" data-field="due" value="' + esc(dueVal) + '"><button class="cl-meta-link" type="button" data-action="metaClearDue">Clear</button>' : '<span class="cl-meta-readonly" data-field="due-display">\u2014</span><button class="cl-meta-link" type="button" data-action="metaSetDue">Set deadline</button>') + '</div></div><div class="cl-meta-row"><label class="cl-meta-label">Last Review</label><div class="cl-meta-inline"><span class="cl-meta-readonly" data-field="reviewed-display">' + esc(reviewedVal || "\u2014") + '</span><button class="cl-meta-link" type="button" data-action="metaMarkReviewed">Mark as reviewed</button></div></div><div class="cl-meta-row"><label class="cl-meta-label">Review Schedule</label><input class="cl-meta-input" type="text" data-field="review" placeholder="e.g. 1w, 2w, 1m" value="' + esc(reviewVal) + '"></div><div class="cl-meta-actions"><button class="cl-meta-cancel" type="button">Cancel</button><button class="cl-meta-save" type="button">Save</button></div></div>';
+    document.body.appendChild(overlay);
+    var draft = { type: typeVal, status: statusVal, due: dueVal, reviewed: reviewedVal, review: reviewVal };
+    function close() {
+      overlay.remove();
+    }
+    function readInputs() {
+      var typeSel = overlay.querySelector('[data-field="type"]');
+      var statusSel = overlay.querySelector('[data-field="status"]');
+      var dueIn = overlay.querySelector('[data-field="due"]');
+      var reviewIn = overlay.querySelector('[data-field="review"]');
+      if (typeSel) draft.type = typeSel.value;
+      if (statusSel) draft.status = statusSel.value;
+      if (dueIn) draft.due = dueIn.value;
+      if (reviewIn) draft.review = reviewIn.value.trim();
+    }
+    function save() {
+      readInputs();
+      var updates = {
+        type: draft.type || null,
+        status: draft.status || null,
+        due: draft.due || null,
+        reviewed: draft.reviewed || null,
+        review: draft.review || null
+      };
+      sendMessageToPlugin("updateNoteFrontmatter", JSON.stringify({ filename: nc.filename, updates }));
+      close();
+    }
+    overlay.addEventListener("click", function(e) {
+      if (e.target === overlay) close();
+      var target = e.target.closest("[data-action]");
+      if (!target) return;
+      var action = target.dataset.action;
+      if (action === "metaClearDue") {
+        draft.due = "";
+        var dueRow = overlay.querySelector('[data-field="due-row"]');
+        if (dueRow) {
+          dueRow.innerHTML = '<span class="cl-meta-readonly" data-field="due-display">\u2014</span><button class="cl-meta-link" type="button" data-action="metaSetDue">Set deadline</button>';
+        }
+      } else if (action === "metaSetDue") {
+        var dueRow2 = overlay.querySelector('[data-field="due-row"]');
+        if (dueRow2) {
+          dueRow2.innerHTML = '<input class="cl-meta-input" type="date" data-field="due" value="' + esc(State.today) + '"><button class="cl-meta-link" type="button" data-action="metaClearDue">Clear</button>';
+          draft.due = State.today;
+          var newIn = dueRow2.querySelector('[data-field="due"]');
+          if (newIn) newIn.focus();
+        }
+      } else if (action === "metaMarkReviewed") {
+        draft.reviewed = State.today;
+        var disp = overlay.querySelector('[data-field="reviewed-display"]');
+        if (disp) disp.textContent = State.today;
+      }
+    });
+    overlay.querySelector(".cl-meta-cancel").addEventListener("click", close);
+    overlay.querySelector(".cl-meta-save").addEventListener("click", save);
+    overlay.addEventListener("keydown", function(e) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        close();
+      } else if (e.key === "Enter" && e.target.tagName !== "TEXTAREA") {
+        e.preventDefault();
+        e.stopPropagation();
+        save();
+      }
+    });
+    setTimeout(function() {
+      var first = overlay.querySelector('[data-field="type"]');
+      if (first) first.focus();
+    }, 0);
+  }
+
+  // src/webview/index.js
+  globalThis.onMessageFromPlugin = onMessageFromPlugin;
+  function navigateToProjectNote(filename) {
+    if (!filename) return;
+    if (State.expandedTaskId) collapseTask();
+    var navItem = document.querySelector('.cl-nav-item[data-filename="' + filename + '"]');
+    if (navItem) {
+      navItem.click();
+      navItem.scrollIntoView({ block: "nearest" });
+      return;
+    }
+    saveCurrentViewPrefs();
+    State.currentView = "note";
+    State.currentNoteFilename = filename;
+    State.focusedTaskIndex = -1;
+    State.filters = { tag: null, mention: null, text: "", noteStatus: "all" };
+    State.tasksOnly = false;
+    State.expandedTaskId = null;
+    State.editDraft = null;
+    sendMessageToPlugin("requestNoteContent", JSON.stringify({ filename }));
+    sendMessageToPlugin("saveView", JSON.stringify({ view: "note", noteFilename: filename }));
+    pushRecentNote(filename);
+    renderSidebar();
+    renderCurrentView();
   }
   var SIDEBAR_VIEWS = [
     { id: "inbox", label: "Inbox" },
@@ -2197,8 +2411,7 @@
       }
     });
     main.addEventListener("click", function(e) {
-      if (dragSuppressNextClick) {
-        dragSuppressNextClick = false;
+      if (consumeDragClickSuppression()) {
         e.preventDefault();
         e.stopPropagation();
         return;
@@ -3074,93 +3287,6 @@
     var pickers = document.querySelectorAll(".cl-picker");
     for (var i = 0; i < pickers.length; i++) pickers[i].remove();
   }
-  function openNoteMetaModal() {
-    var nc = State.noteContent;
-    if (!nc) return;
-    var existing = document.querySelector(".cl-meta-overlay");
-    if (existing) {
-      existing.remove();
-      return;
-    }
-    var fm = nc.frontmatter || {};
-    var typeVal = fm.type === "project" || fm.type === "area" ? fm.type : "";
-    var statusVal = fm.status === "paused" || fm.status === "someday" || fm.status === "completed" || fm.status === "canceled" ? fm.status : "";
-    var dueVal = fm.due || "";
-    var reviewedVal = fm.reviewed || "";
-    var reviewVal = fm.review || "";
-    var overlay = document.createElement("div");
-    overlay.className = "cl-meta-overlay";
-    overlay.innerHTML = '<div class="cl-meta-modal"><div class="cl-meta-modal-title">Project metadata</div><div class="cl-meta-row"><label class="cl-meta-label">Type</label><select class="cl-meta-input" data-field="type"><option value=""' + (typeVal === "" ? " selected" : "") + '>\u2014</option><option value="project"' + (typeVal === "project" ? " selected" : "") + '>Project</option><option value="area"' + (typeVal === "area" ? " selected" : "") + '>Area</option></select></div><div class="cl-meta-row"><label class="cl-meta-label">Status</label><select class="cl-meta-input" data-field="status"><option value=""' + (statusVal === "" ? " selected" : "") + '>Active</option><option value="paused"' + (statusVal === "paused" ? " selected" : "") + '>Paused</option><option value="someday"' + (statusVal === "someday" ? " selected" : "") + ">Someday</option>" + (typeVal === "project" ? '<option value="completed"' + (statusVal === "completed" ? " selected" : "") + '>Completed</option><option value="canceled"' + (statusVal === "canceled" ? " selected" : "") + ">Canceled</option>" : "") + '</select></div><div class="cl-meta-row"><label class="cl-meta-label">Deadline</label><div class="cl-meta-inline" data-field="due-row">' + (dueVal ? '<input class="cl-meta-input" type="date" data-field="due" value="' + esc(dueVal) + '"><button class="cl-meta-link" type="button" data-action="metaClearDue">Clear</button>' : '<span class="cl-meta-readonly" data-field="due-display">\u2014</span><button class="cl-meta-link" type="button" data-action="metaSetDue">Set deadline</button>') + '</div></div><div class="cl-meta-row"><label class="cl-meta-label">Last Review</label><div class="cl-meta-inline"><span class="cl-meta-readonly" data-field="reviewed-display">' + esc(reviewedVal || "\u2014") + '</span><button class="cl-meta-link" type="button" data-action="metaMarkReviewed">Mark as reviewed</button></div></div><div class="cl-meta-row"><label class="cl-meta-label">Review Schedule</label><input class="cl-meta-input" type="text" data-field="review" placeholder="e.g. 1w, 2w, 1m" value="' + esc(reviewVal) + '"></div><div class="cl-meta-actions"><button class="cl-meta-cancel" type="button">Cancel</button><button class="cl-meta-save" type="button">Save</button></div></div>';
-    document.body.appendChild(overlay);
-    var draft = { type: typeVal, status: statusVal, due: dueVal, reviewed: reviewedVal, review: reviewVal };
-    function close() {
-      overlay.remove();
-    }
-    function readInputs() {
-      var typeSel = overlay.querySelector('[data-field="type"]');
-      var statusSel = overlay.querySelector('[data-field="status"]');
-      var dueIn = overlay.querySelector('[data-field="due"]');
-      var reviewIn = overlay.querySelector('[data-field="review"]');
-      if (typeSel) draft.type = typeSel.value;
-      if (statusSel) draft.status = statusSel.value;
-      if (dueIn) draft.due = dueIn.value;
-      if (reviewIn) draft.review = reviewIn.value.trim();
-    }
-    function save() {
-      readInputs();
-      var updates = {
-        type: draft.type || null,
-        status: draft.status || null,
-        due: draft.due || null,
-        reviewed: draft.reviewed || null,
-        review: draft.review || null
-      };
-      sendMessageToPlugin("updateNoteFrontmatter", JSON.stringify({ filename: nc.filename, updates }));
-      close();
-    }
-    overlay.addEventListener("click", function(e) {
-      if (e.target === overlay) close();
-      var target = e.target.closest("[data-action]");
-      if (!target) return;
-      var action = target.dataset.action;
-      if (action === "metaClearDue") {
-        draft.due = "";
-        var dueRow = overlay.querySelector('[data-field="due-row"]');
-        if (dueRow) {
-          dueRow.innerHTML = '<span class="cl-meta-readonly" data-field="due-display">\u2014</span><button class="cl-meta-link" type="button" data-action="metaSetDue">Set deadline</button>';
-        }
-      } else if (action === "metaSetDue") {
-        var dueRow2 = overlay.querySelector('[data-field="due-row"]');
-        if (dueRow2) {
-          dueRow2.innerHTML = '<input class="cl-meta-input" type="date" data-field="due" value="' + esc(State.today) + '"><button class="cl-meta-link" type="button" data-action="metaClearDue">Clear</button>';
-          draft.due = State.today;
-          var newIn = dueRow2.querySelector('[data-field="due"]');
-          if (newIn) newIn.focus();
-        }
-      } else if (action === "metaMarkReviewed") {
-        draft.reviewed = State.today;
-        var disp = overlay.querySelector('[data-field="reviewed-display"]');
-        if (disp) disp.textContent = State.today;
-      }
-    });
-    overlay.querySelector(".cl-meta-cancel").addEventListener("click", close);
-    overlay.querySelector(".cl-meta-save").addEventListener("click", save);
-    overlay.addEventListener("keydown", function(e) {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        close();
-      } else if (e.key === "Enter" && e.target.tagName !== "TEXTAREA") {
-        e.preventDefault();
-        e.stopPropagation();
-        save();
-      }
-    });
-    setTimeout(function() {
-      var first = overlay.querySelector('[data-field="type"]');
-      if (first) first.focus();
-    }, 0);
-  }
   document.addEventListener("keydown", function(e) {
     if (e.metaKey && e.key === "Enter") {
       if (State.expandedTaskId) {
@@ -3388,122 +3514,7 @@
     setTimeout(function() {
       sendMessageToPlugin("ready", "{}");
     }, 100);
-    var mainEl = document.getElementById("cl-main");
-    if (mainEl) {
-      mainEl.addEventListener("mousedown", function(e) {
-        if (State.currentView !== "note") return;
-        if (e.button !== 0) return;
-        if (e.target.closest(".cl-cb") || e.target.closest(".cl-task-editor") || e.target.closest(".cl-quick-add")) return;
-        var row = dragGetTaskRow(e.target);
-        if (!row) return;
-        var startY = e.clientY;
-        var startX = e.clientX;
-        dragState = {
-          phase: "pending",
-          sourceEl: row,
-          sourceId: row.dataset.taskId,
-          sourceLineIndex: parseInt(row.dataset.lineIndex, 10),
-          childCount: parseInt(row.dataset.childCount, 10) || 0,
-          indentLevel: parseInt(row.dataset.indent, 10) || 0,
-          cloneEl: null,
-          indicatorEl: null,
-          startY,
-          startX,
-          currentY: startY,
-          currentTarget: null,
-          siblings: null,
-          scrollInterval: null,
-          timer: setTimeout(function() {
-            if (dragState && dragState.phase === "pending") {
-              e.preventDefault();
-              dragStart(row, startY, startX);
-            }
-          }, DRAG_LONG_PRESS_MS)
-        };
-      });
-      mainEl.addEventListener("mousemove", function(e) {
-        if (!dragState) return;
-        if (dragState.phase === "pending") {
-          var dx = e.clientX - dragState.startX;
-          var dy = e.clientY - dragState.startY;
-          if (Math.sqrt(dx * dx + dy * dy) > DRAG_CANCEL_DISTANCE) {
-            clearTimeout(dragState.timer);
-            dragState = null;
-          }
-          return;
-        }
-        if (dragState.phase === "dragging") {
-          e.preventDefault();
-          dragMove(e.clientY, e.clientX);
-        }
-      });
-      mainEl.addEventListener("mouseup", function(e) {
-        if (!dragState) return;
-        dragEnd();
-      });
-      mainEl.addEventListener("touchstart", function(e) {
-        if (State.currentView !== "note") return;
-        if (e.touches.length !== 1) return;
-        if (e.target.closest(".cl-cb") || e.target.closest(".cl-task-editor") || e.target.closest(".cl-quick-add")) return;
-        var row = dragGetTaskRow(e.target);
-        if (!row) return;
-        var touch = e.touches[0];
-        var startY = touch.clientY;
-        var startX = touch.clientX;
-        dragState = {
-          phase: "pending",
-          sourceEl: row,
-          sourceId: row.dataset.taskId,
-          sourceLineIndex: parseInt(row.dataset.lineIndex, 10),
-          childCount: parseInt(row.dataset.childCount, 10) || 0,
-          indentLevel: parseInt(row.dataset.indent, 10) || 0,
-          cloneEl: null,
-          indicatorEl: null,
-          startY,
-          startX,
-          currentY: startY,
-          currentTarget: null,
-          siblings: null,
-          scrollInterval: null,
-          timer: setTimeout(function() {
-            if (dragState && dragState.phase === "pending") {
-              dragStart(row, startY, startX);
-            }
-          }, DRAG_LONG_PRESS_MS)
-        };
-      }, { passive: true });
-      mainEl.addEventListener("touchmove", function(e) {
-        if (!dragState) return;
-        var touch = e.touches[0];
-        if (dragState.phase === "pending") {
-          var dx = touch.clientX - dragState.startX;
-          var dy = touch.clientY - dragState.startY;
-          if (Math.sqrt(dx * dx + dy * dy) > DRAG_CANCEL_DISTANCE) {
-            clearTimeout(dragState.timer);
-            dragState = null;
-          }
-          return;
-        }
-        if (dragState.phase === "dragging") {
-          e.preventDefault();
-          dragMove(touch.clientY, touch.clientX);
-        }
-      }, { passive: false });
-      mainEl.addEventListener("touchend", function(e) {
-        if (!dragState) return;
-        dragEnd();
-      });
-      mainEl.addEventListener("touchcancel", function(e) {
-        if (!dragState) return;
-        dragCancel();
-      });
-    }
-    document.addEventListener("keydown", function(e) {
-      if (e.key === "Escape" && dragState && dragState.phase === "dragging") {
-        e.preventDefault();
-        dragCancel();
-      }
-    });
+    attachDragListeners(document.getElementById("cl-main"));
     var toggle = document.getElementById("cl-sidebar-toggle");
     var overlay = document.getElementById("cl-sidebar-overlay");
     if (toggle) {
