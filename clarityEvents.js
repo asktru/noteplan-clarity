@@ -3087,6 +3087,183 @@
     setupSidebarResizer();
   });
 
+  // src/webview/keyboard.js
+  document.addEventListener("keydown", function(e) {
+    if (e.metaKey && e.key === "Enter") {
+      if (State.expandedTaskId) {
+        e.preventDefault();
+        saveExpandedTask();
+      }
+      return;
+    }
+    if (e.key === "Escape") {
+      var cheat = document.querySelector(".cl-cheatsheet-overlay");
+      if (cheat) {
+        cheat.remove();
+        return;
+      }
+      var picker = document.querySelector(".cl-picker");
+      if (picker) {
+        picker.remove();
+        return;
+      }
+      if (State.expandedTaskId) {
+        collapseTask();
+        return;
+      }
+    }
+    if (e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      var activeForCheat = document.activeElement;
+      if (activeForCheat && (activeForCheat.tagName === "INPUT" || activeForCheat.tagName === "TEXTAREA")) return;
+      e.preventDefault();
+      openShortcutsCheatsheet();
+      return;
+    }
+    if (e.metaKey && e.shiftKey && (e.key === "T" || e.key === "t")) {
+      var tomorrow = addDays(State.today, 1);
+      if (State.editDraft) {
+        e.preventDefault();
+        State.editDraft.scheduledDate = tomorrow;
+        State.editDraft.scheduledWeek = null;
+        State.editDraft.tags = State.editDraft.tags.filter(function(t) {
+          return t !== "#someday" && t !== "#evening";
+        });
+        updateDateChip();
+      } else {
+        var tid = getFocusedTaskId();
+        if (tid) {
+          e.preventDefault();
+          toggleTaskTagById(tid, "#evening", false);
+          rescheduleTaskById(tid, tomorrow);
+        }
+      }
+      return;
+    }
+    if (e.metaKey && e.key === "t") {
+      if (State.editDraft) {
+        e.preventDefault();
+        State.editDraft.scheduledDate = State.today;
+        State.editDraft.scheduledWeek = null;
+        State.editDraft.tags = State.editDraft.tags.filter(function(t) {
+          return t !== "#someday" && t !== "#evening";
+        });
+        updateDateChip();
+      } else {
+        var tid = getFocusedTaskId();
+        if (tid) {
+          e.preventDefault();
+          toggleTaskTagById(tid, "#evening", false);
+          rescheduleTaskById(tid, State.today);
+        }
+      }
+      return;
+    }
+    if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && (e.key === "e" || e.key === "E")) {
+      if (State.editDraft) {
+        e.preventDefault();
+        if (State.editDraft.tags.indexOf("#evening") < 0) State.editDraft.tags.push("#evening");
+        State.editDraft.scheduledDate = State.today;
+        State.editDraft.scheduledWeek = null;
+        updateDateChip();
+      } else {
+        var tid = getFocusedTaskId();
+        if (tid) {
+          e.preventDefault();
+          rescheduleTaskById(tid, State.today);
+          toggleTaskTagById(tid, "#evening", true);
+        }
+      }
+      return;
+    }
+    if (e.metaKey && e.key === "o") {
+      if (State.editDraft) {
+        e.preventDefault();
+        State.editDraft.scheduledDate = null;
+        State.editDraft.scheduledWeek = null;
+        State.editDraft.tags = State.editDraft.tags.filter(function(t) {
+          return t !== "#evening";
+        });
+        updateDateChip();
+      } else {
+        var tid = getFocusedTaskId();
+        if (tid) {
+          e.preventDefault();
+          toggleTaskTagById(tid, "#evening", false);
+          rescheduleTaskById(tid, null);
+        }
+      }
+      return;
+    }
+    if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && /^[1-5]$/.test(e.key)) {
+      var viewMap = { "1": "inbox", "2": "today", "3": "upcoming", "4": "anytime", "5": "someday" };
+      var targetView = viewMap[e.key];
+      if (targetView) {
+        var navItem = document.querySelector('.cl-nav-item[data-view="' + targetView + '"]');
+        if (navItem) {
+          e.preventDefault();
+          if (State.expandedTaskId) collapseTask();
+          navItem.click();
+          var sbInner = document.querySelector(".cl-sidebar-inner");
+          if (sbInner) sbInner.scrollTop = 0;
+        }
+      }
+      return;
+    }
+    if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && (e.key === "Backspace" || e.key === "Delete")) {
+      var active = document.activeElement;
+      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
+      var deleteId = State.expandedTaskId || getFocusedTaskId();
+      if (deleteId) {
+        e.preventDefault();
+        deleteTaskById(deleteId);
+      }
+      return;
+    }
+    if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && e.key === "/") {
+      e.preventDefault();
+      openQuickJump();
+      return;
+    }
+    if (e.metaKey && e.key === "n") {
+      e.preventDefault();
+      var quickAdd = document.querySelector(".cl-quick-add-input");
+      if (quickAdd) quickAdd.focus();
+      return;
+    }
+    if (!State.expandedTaskId && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+      var arrowActive = document.activeElement;
+      if (arrowActive && (arrowActive.tagName === "INPUT" || arrowActive.tagName === "TEXTAREA")) return;
+      e.preventDefault();
+      var rows = document.querySelectorAll(".cl-task-row");
+      if (rows.length === 0) return;
+      if (e.key === "ArrowDown") State.focusedTaskIndex = Math.min(State.focusedTaskIndex + 1, rows.length - 1);
+      else State.focusedTaskIndex = Math.max(State.focusedTaskIndex - 1, 0);
+      for (var ri = 0; ri < rows.length; ri++) rows[ri].classList.remove("cl-focused");
+      if (rows[State.focusedTaskIndex]) {
+        rows[State.focusedTaskIndex].classList.add("cl-focused");
+        rows[State.focusedTaskIndex].scrollIntoView({ block: "nearest" });
+      }
+    }
+    if (e.key === "Enter" && !State.expandedTaskId) {
+      var enterActive = document.activeElement;
+      if (enterActive && (enterActive.tagName === "INPUT" || enterActive.tagName === "TEXTAREA")) return;
+      var enterRows = document.querySelectorAll(".cl-task-row");
+      if (State.focusedTaskIndex >= 0 && enterRows[State.focusedTaskIndex]) {
+        e.preventDefault();
+        expandTask(enterRows[State.focusedTaskIndex].dataset.taskId);
+      }
+    }
+    if (e.key === " " && !State.expandedTaskId) {
+      var spaceActive = document.activeElement;
+      if (spaceActive && (spaceActive.tagName === "INPUT" || spaceActive.tagName === "TEXTAREA")) return;
+      var spaceRows = document.querySelectorAll(".cl-task-row");
+      if (State.focusedTaskIndex >= 0 && spaceRows[State.focusedTaskIndex]) {
+        e.preventDefault();
+        toggleTask(spaceRows[State.focusedTaskIndex].dataset.taskId);
+      }
+    }
+  });
+
   // src/webview/index.js
   globalThis.onMessageFromPlugin = onMessageFromPlugin;
   function navigateToProjectNote(filename) {
@@ -3372,180 +3549,5 @@
     var lineIndex = parseInt(parts[parts.length - 1]);
     sendMessageToPlugin("toggleTask", JSON.stringify({ filename, lineIndex }));
   }
-  document.addEventListener("keydown", function(e) {
-    if (e.metaKey && e.key === "Enter") {
-      if (State.expandedTaskId) {
-        e.preventDefault();
-        saveExpandedTask();
-      }
-      return;
-    }
-    if (e.key === "Escape") {
-      var cheat = document.querySelector(".cl-cheatsheet-overlay");
-      if (cheat) {
-        cheat.remove();
-        return;
-      }
-      var picker = document.querySelector(".cl-picker");
-      if (picker) {
-        picker.remove();
-        return;
-      }
-      if (State.expandedTaskId) {
-        collapseTask();
-        return;
-      }
-    }
-    if (e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey) {
-      var activeForCheat = document.activeElement;
-      if (activeForCheat && (activeForCheat.tagName === "INPUT" || activeForCheat.tagName === "TEXTAREA")) return;
-      e.preventDefault();
-      openShortcutsCheatsheet();
-      return;
-    }
-    if (e.metaKey && e.shiftKey && (e.key === "T" || e.key === "t")) {
-      var tomorrow = addDays(State.today, 1);
-      if (State.editDraft) {
-        e.preventDefault();
-        State.editDraft.scheduledDate = tomorrow;
-        State.editDraft.scheduledWeek = null;
-        State.editDraft.tags = State.editDraft.tags.filter(function(t) {
-          return t !== "#someday" && t !== "#evening";
-        });
-        updateDateChip();
-      } else {
-        var tid = getFocusedTaskId();
-        if (tid) {
-          e.preventDefault();
-          toggleTaskTagById(tid, "#evening", false);
-          rescheduleTaskById(tid, tomorrow);
-        }
-      }
-      return;
-    }
-    if (e.metaKey && e.key === "t") {
-      if (State.editDraft) {
-        e.preventDefault();
-        State.editDraft.scheduledDate = State.today;
-        State.editDraft.scheduledWeek = null;
-        State.editDraft.tags = State.editDraft.tags.filter(function(t) {
-          return t !== "#someday" && t !== "#evening";
-        });
-        updateDateChip();
-      } else {
-        var tid = getFocusedTaskId();
-        if (tid) {
-          e.preventDefault();
-          toggleTaskTagById(tid, "#evening", false);
-          rescheduleTaskById(tid, State.today);
-        }
-      }
-      return;
-    }
-    if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && (e.key === "e" || e.key === "E")) {
-      if (State.editDraft) {
-        e.preventDefault();
-        if (State.editDraft.tags.indexOf("#evening") < 0) State.editDraft.tags.push("#evening");
-        State.editDraft.scheduledDate = State.today;
-        State.editDraft.scheduledWeek = null;
-        updateDateChip();
-      } else {
-        var tid = getFocusedTaskId();
-        if (tid) {
-          e.preventDefault();
-          rescheduleTaskById(tid, State.today);
-          toggleTaskTagById(tid, "#evening", true);
-        }
-      }
-      return;
-    }
-    if (e.metaKey && e.key === "o") {
-      if (State.editDraft) {
-        e.preventDefault();
-        State.editDraft.scheduledDate = null;
-        State.editDraft.scheduledWeek = null;
-        State.editDraft.tags = State.editDraft.tags.filter(function(t) {
-          return t !== "#evening";
-        });
-        updateDateChip();
-      } else {
-        var tid = getFocusedTaskId();
-        if (tid) {
-          e.preventDefault();
-          toggleTaskTagById(tid, "#evening", false);
-          rescheduleTaskById(tid, null);
-        }
-      }
-      return;
-    }
-    if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && /^[1-5]$/.test(e.key)) {
-      var viewMap = { "1": "inbox", "2": "today", "3": "upcoming", "4": "anytime", "5": "someday" };
-      var targetView = viewMap[e.key];
-      if (targetView) {
-        var navItem = document.querySelector('.cl-nav-item[data-view="' + targetView + '"]');
-        if (navItem) {
-          e.preventDefault();
-          if (State.expandedTaskId) collapseTask();
-          navItem.click();
-          var sbInner = document.querySelector(".cl-sidebar-inner");
-          if (sbInner) sbInner.scrollTop = 0;
-        }
-      }
-      return;
-    }
-    if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && (e.key === "Backspace" || e.key === "Delete")) {
-      var active = document.activeElement;
-      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
-      var deleteId = State.expandedTaskId || getFocusedTaskId();
-      if (deleteId) {
-        e.preventDefault();
-        deleteTaskById(deleteId);
-      }
-      return;
-    }
-    if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && e.key === "/") {
-      e.preventDefault();
-      openQuickJump();
-      return;
-    }
-    if (e.metaKey && e.key === "n") {
-      e.preventDefault();
-      var quickAdd = document.querySelector(".cl-quick-add-input");
-      if (quickAdd) quickAdd.focus();
-      return;
-    }
-    if (!State.expandedTaskId && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
-      var active = document.activeElement;
-      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
-      e.preventDefault();
-      var rows = document.querySelectorAll(".cl-task-row");
-      if (rows.length === 0) return;
-      if (e.key === "ArrowDown") State.focusedTaskIndex = Math.min(State.focusedTaskIndex + 1, rows.length - 1);
-      else State.focusedTaskIndex = Math.max(State.focusedTaskIndex - 1, 0);
-      for (var ri = 0; ri < rows.length; ri++) rows[ri].classList.remove("cl-focused");
-      if (rows[State.focusedTaskIndex]) {
-        rows[State.focusedTaskIndex].classList.add("cl-focused");
-        rows[State.focusedTaskIndex].scrollIntoView({ block: "nearest" });
-      }
-    }
-    if (e.key === "Enter" && !State.expandedTaskId) {
-      var active = document.activeElement;
-      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
-      var rows = document.querySelectorAll(".cl-task-row");
-      if (State.focusedTaskIndex >= 0 && rows[State.focusedTaskIndex]) {
-        e.preventDefault();
-        expandTask(rows[State.focusedTaskIndex].dataset.taskId);
-      }
-    }
-    if (e.key === " " && !State.expandedTaskId) {
-      var active = document.activeElement;
-      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
-      var rows = document.querySelectorAll(".cl-task-row");
-      if (State.focusedTaskIndex >= 0 && rows[State.focusedTaskIndex]) {
-        e.preventDefault();
-        toggleTask(rows[State.focusedTaskIndex].dataset.taskId);
-      }
-    }
-  });
 })();
 //# sourceMappingURL=clarityEvents.js.map
