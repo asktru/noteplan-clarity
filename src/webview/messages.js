@@ -8,11 +8,11 @@ import { State } from './state.js';
 import { reviewDueDaysFromFm } from './review.js';
 import {
   navigateToProjectNote,
-  applySidebarWidth,
   restoreViewPrefs,
   renderSidebar,
   renderCurrentView,
 } from './index.js';
+import { applySidebarWidth } from './sidebar-resize.js';
 
 export function onMessageFromPlugin(type, data) {
   switch (type) {
