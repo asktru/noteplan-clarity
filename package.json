@@ -1,0 +1,13 @@
+{
+  "name": "asktru.clarity",
+  "version": "1.6.0",
+  "private": true,
+  "description": "Build pipeline for the Clarity NotePlan plugin webview bundle.",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}

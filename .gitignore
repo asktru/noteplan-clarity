@@ -1,2 +1,4 @@
 .*.html
 _MCP-console.log
+node_modules/
+clarityEvents.js.map
