@@ -8,10 +8,10 @@ import { State } from './state.js';
 import { reviewDueDaysFromFm } from './review.js';
 import {
   navigateToProjectNote,
-  restoreViewPrefs,
   renderSidebar,
   renderCurrentView,
 } from './index.js';
+import { restoreViewPrefs } from './view-prefs.js';
 import { applySidebarWidth } from './sidebar-resize.js';
 
 export function onMessageFromPlugin(type, data) {

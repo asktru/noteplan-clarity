@@ -510,6 +510,39 @@
     return getTasksForView(view).length;
   }
 
+  // src/webview/view-prefs.js
+  function viewPrefsKey(view, filename) {
+    return view === "note" ? "note:" + (filename || "") : view;
+  }
+  function saveCurrentViewPrefs() {
+    var key = viewPrefsKey(State.currentView, State.currentNoteFilename);
+    if (State.currentView === "note") {
+      State.viewPrefs[key] = { noteStatus: State.filters.noteStatus, tasksOnly: State.tasksOnly };
+    } else {
+      State.viewPrefs[key] = { tag: State.filters.tag, folder: State.filters.folder, grouping: State.grouping };
+    }
+  }
+  function restoreViewPrefs(view, filename) {
+    var key = viewPrefsKey(view, filename);
+    var saved = State.viewPrefs[key];
+    if (view === "note") {
+      State.filters.noteStatus = saved && saved.noteStatus || "all";
+      State.tasksOnly = saved && saved.tasksOnly || false;
+    } else {
+      State.filters.tag = saved && saved.tag || null;
+      State.filters.folder = saved && saved.folder || null;
+      State.grouping = saved && saved.grouping || defaultGrouping(view);
+    }
+  }
+  function defaultGrouping(view) {
+    if (view === "inbox") return "date";
+    if (view === "anytime") return "folder";
+    return "note";
+  }
+  function persistViewPrefs() {
+    sendMessageToPlugin("saveViewPrefs", JSON.stringify({ viewPrefs: JSON.stringify(State.viewPrefs) }));
+  }
+
   // src/webview/sidebar-resize.js
   var SIDEBAR_MIN_WIDTH = 140;
   var SIDEBAR_MAX_WIDTH = 500;
@@ -1457,6 +1490,210 @@
     }, 0);
   }
 
+  // src/webview/task-list.js
+  function renderTaskRow(task, options) {
+    options = options || {};
+    var showSource = options.showSource !== false;
+    var showStar = options.showStar || false;
+    var isOverdue = options.isOverdue || false;
+    var alwaysShowDate = options.alwaysShowDate || false;
+    var dimmed = options.dimmed || false;
+    var classes = "cl-task-row";
+    if (task.status === "done") classes += " cl-done";
+    if (task.status === "cancelled") classes += " cl-cancelled";
+    if (isOverdue) classes += " cl-overdue";
+    if (dimmed) classes += " cl-dimmed";
+    var dragAttrs = "";
+    if (options.lineIndex !== void 0) {
+      dragAttrs = ' data-line-index="' + options.lineIndex + '" data-indent="' + (options.indentLevel || 0) + '" data-child-count="' + (options.childCount || 0) + '"';
+    }
+    var html = '<div class="' + classes + '" data-task-id="' + esc(task.id) + '"' + dragAttrs + ">";
+    var cbClass = task.type === "checklist" ? "cl-cb cl-cb-square" : "cl-cb";
+    if (task.status === "done") cbClass += " cl-cb-done";
+    else if (task.status === "cancelled") cbClass += " cl-cb-cancelled";
+    if (task.isDelegated) cbClass += " cl-cb-delegated";
+    if (isOverdue && task.status === "open") cbClass += " cl-cb-overdue";
+    html += '<div class="' + cbClass + '" data-action="toggle"></div>';
+    html += '<div class="cl-task-content">';
+    html += '<div class="cl-task-title">';
+    if (showStar && task.scheduledDate === State.today) {
+      html += '<span class="cl-star">\u2B50</span> ';
+    }
+    html += '<span class="cl-task-text">' + renderInlineMarkdown(task.content) + "</span>";
+    html += "</div>";
+    var metaParts = [];
+    if (showSource && task.noteTitle && task.sourceType === "note") {
+      metaParts.push(esc(task.noteTitle));
+    }
+    var repeatBadge = "";
+    if (task.repeat) {
+      repeatBadge = ' <span class="cl-repeat-badge" title="Repeats: ' + esc(task.repeat) + '"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.3L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.3L3 16"/><path d="M3 21v-5h5"/></svg><span class="cl-repeat-text">' + esc(task.repeat) + "</span></span>";
+    }
+    var badgeSep = repeatBadge ? "  " : "";
+    if (isOverdue && task.scheduledDate) {
+      metaParts.push('<span class="cl-overdue-date">' + task.scheduledDate + "</span>" + badgeSep + repeatBadge);
+    } else if (task.scheduledDate && (alwaysShowDate || task.scheduledDate !== State.today)) {
+      metaParts.push(task.scheduledDate + badgeSep + repeatBadge);
+    } else if (repeatBadge) {
+      metaParts.push(repeatBadge);
+    }
+    if (task.isDelegated && task.mentions.length > 0) {
+      metaParts.push('delegated to <span class="cl-mention-inline">' + esc(task.mentions[0]) + "</span>");
+    }
+    if (task.children && task.children.length > 0) {
+      var hasNotes = false;
+      var clCount = 0;
+      var clDone = 0;
+      var subCount = 0;
+      for (var ci = 0; ci < task.children.length; ci++) {
+        if (task.children[ci].type === "note") hasNotes = true;
+        else if (task.children[ci].type === "checklist") {
+          clCount++;
+          if (task.children[ci].status === "done") clDone++;
+        } else if (task.children[ci].type === "task") subCount++;
+      }
+      var indicators = [];
+      if (hasNotes) indicators.push('<span class="cl-child-icon" title="Has notes">\u2261</span>');
+      if (clCount > 0) indicators.push('<span class="cl-child-icon cl-child-checklist" title="Checklist">\u2611 ' + clDone + "/" + clCount + "</span>");
+      if (subCount > 0) indicators.push('<span class="cl-child-icon" title="Sub-tasks">\u2937 ' + subCount + "</span>");
+      if (indicators.length > 0) metaParts = metaParts.concat(indicators);
+    }
+    if (metaParts.length > 0) {
+      html += '<div class="cl-task-meta">' + metaParts.join("  &middot; ") + "</div>";
+    }
+    html += "</div>";
+    var badges = "";
+    if (task.priority > 0) {
+      var priLabels = ["", "!", "!!", "!!!"];
+      badges += '<span class="cl-pri cl-pri-' + task.priority + '">' + priLabels[task.priority] + "</span>";
+    }
+    if (task.tags) {
+      for (var ti = 0; ti < task.tags.length; ti++) {
+        if (task.tags[ti] !== "#someday") {
+          badges += '<span class="cl-tag-pill">' + esc(task.tags[ti]) + "</span>";
+        }
+      }
+    }
+    if (badges) html += '<div class="cl-task-badges">' + badges + "</div>";
+    html += "</div>";
+    return html;
+  }
+  function renderFilterBar(tasks, view) {
+    var sourceTasks = view ? getTasksForView(view) : tasks;
+    var tags = extractUniqueTags(sourceTasks);
+    var folders = view ? extractUniqueFolders(sourceTasks) : [];
+    if (tags.length === 0 && folders.length < 2) return "";
+    var html = '<div class="cl-filter-bar">';
+    var activeTag = State.filters.tag;
+    var activeFolder = State.filters.folder;
+    var noFilter = !activeTag && !activeFolder;
+    html += '<span class="cl-filter-pill' + (noFilter ? " cl-filter-active" : "") + '" data-action="clearTaskFilters">All</span>';
+    for (var i = 0; i < tags.length; i++) {
+      var active = activeTag === tags[i] ? " cl-filter-active" : "";
+      html += '<span class="cl-filter-pill' + active + '" data-action="filterTag" data-tag="' + esc(tags[i]) + '">' + esc(tags[i]) + "</span>";
+    }
+    if (folders.length >= 2) {
+      if (tags.length > 0) html += '<span class="cl-filter-divider"></span>';
+      for (var fi = 0; fi < folders.length; fi++) {
+        var fActive = activeFolder === folders[fi] ? " cl-filter-active" : "";
+        html += '<span class="cl-filter-pill cl-filter-pill-folder' + fActive + '" data-action="filterFolder" data-folder="' + esc(folders[fi]) + '">' + esc(folders[fi]) + "</span>";
+      }
+    }
+    html += "</div>";
+    return html;
+  }
+  function extractUniqueTags(tasks) {
+    var tagMap = {};
+    for (var i = 0; i < tasks.length; i++) {
+      if (tasks[i].tags) {
+        for (var j = 0; j < tasks[i].tags.length; j++) {
+          if (tasks[i].tags[j] !== "#someday" && tasks[i].tags[j] !== "#evening") tagMap[tasks[i].tags[j]] = true;
+        }
+      }
+    }
+    return Object.keys(tagMap).sort();
+  }
+  function extractUniqueFolders(tasks) {
+    var folderMap = {};
+    for (var i = 0; i < tasks.length; i++) {
+      var f = tasks[i].folderName;
+      if (f) folderMap[f] = true;
+    }
+    return Object.keys(folderMap).sort();
+  }
+  function renderGroupingToggle(view) {
+    var options = [];
+    if (view === "today") options = ["note", "folder", "priority"];
+    else if (view === "anytime" || view === "someday") options = ["folder", "note", "priority"];
+    else return "";
+    var html = '<div class="cl-group-toggle">';
+    html += '<span class="cl-group-label">Group:</span>';
+    for (var i = 0; i < options.length; i++) {
+      var active = State.grouping === options[i] ? " cl-group-btn-active" : "";
+      html += '<span class="cl-group-btn' + active + '" data-action="setGrouping" data-grouping="' + options[i] + '">' + capitalize(options[i]) + "</span>";
+    }
+    html += "</div>";
+    return html;
+  }
+  function renderGroupedTasks(tasks, grouping, options) {
+    options = options || {};
+    var groups = {};
+    var groupOrder = [];
+    for (var i = 0; i < tasks.length; i++) {
+      var t = tasks[i];
+      var key;
+      switch (grouping) {
+        case "folder":
+          key = t.folderName || "Other";
+          break;
+        case "note":
+          key = t.noteTitle || "Daily Note";
+          break;
+        case "priority":
+          var priNames = ["No Priority", "!", "!!", "!!!"];
+          key = priNames[t.priority] || "No Priority";
+          break;
+        case "date":
+          key = t.sourceDate || t.scheduledDate || "No Date";
+          break;
+        default:
+          key = t.noteTitle || "Other";
+      }
+      if (!groups[key]) {
+        groups[key] = [];
+        groupOrder.push(key);
+      }
+      groups[key].push(t);
+    }
+    if (grouping === "priority") {
+      var priRank = { "!!!": 3, "!!": 2, "!": 1, "No Priority": 0 };
+      groupOrder.sort(function(a, b) {
+        return (priRank[b] || 0) - (priRank[a] || 0);
+      });
+    }
+    var html = "";
+    for (var gi = 0; gi < groupOrder.length; gi++) {
+      var name = groupOrder[gi];
+      var displayName = grouping === "date" ? formatDateHeader(name) : name;
+      var group = groups[groupOrder[gi]];
+      if (grouping === "note" && group[0] && group[0].noteFilename) {
+        html += '<div class="cl-group-header cl-group-clickable" data-action="jumpToProjectNote" data-filename="' + esc(group[0].noteFilename) + '">' + esc(displayName) + "</div>";
+      } else {
+        html += '<div class="cl-group-header">' + esc(displayName) + "</div>";
+      }
+      for (var ti = 0; ti < group.length; ti++) {
+        var rowOpts = { showSource: grouping !== "note" };
+        if (options.showStar) rowOpts.showStar = true;
+        if (options.dimmed) rowOpts.dimmed = true;
+        html += renderTaskRow(group[ti], rowOpts);
+      }
+    }
+    return html;
+  }
+  function renderQuickAdd(view) {
+    return '<div class="cl-quick-add" data-view="' + view + '"><span class="cl-quick-add-icon">+</span><input class="cl-quick-add-input" placeholder="New Task" data-action="quickAdd"/></div>';
+  }
+
   // src/webview/index.js
   globalThis.onMessageFromPlugin = onMessageFromPlugin;
   function navigateToProjectNote(filename) {
@@ -1679,37 +1916,6 @@
       }, 0);
     }
   }
-  function viewPrefsKey(view, filename) {
-    return view === "note" ? "note:" + (filename || "") : view;
-  }
-  function saveCurrentViewPrefs() {
-    var key = viewPrefsKey(State.currentView, State.currentNoteFilename);
-    if (State.currentView === "note") {
-      State.viewPrefs[key] = { noteStatus: State.filters.noteStatus, tasksOnly: State.tasksOnly };
-    } else {
-      State.viewPrefs[key] = { tag: State.filters.tag, folder: State.filters.folder, grouping: State.grouping };
-    }
-  }
-  function restoreViewPrefs(view, filename) {
-    var key = viewPrefsKey(view, filename);
-    var saved = State.viewPrefs[key];
-    if (view === "note") {
-      State.filters.noteStatus = saved && saved.noteStatus || "all";
-      State.tasksOnly = saved && saved.tasksOnly || false;
-    } else {
-      State.filters.tag = saved && saved.tag || null;
-      State.filters.folder = saved && saved.folder || null;
-      State.grouping = saved && saved.grouping || defaultGrouping(view);
-    }
-  }
-  function defaultGrouping(view) {
-    if (view === "inbox") return "date";
-    if (view === "anytime") return "folder";
-    return "note";
-  }
-  function persistViewPrefs() {
-    sendMessageToPlugin("saveViewPrefs", JSON.stringify({ viewPrefs: JSON.stringify(State.viewPrefs) }));
-  }
   function handleNavClick(e) {
     var item = e.currentTarget;
     var view = item.dataset.view;
@@ -1737,208 +1943,6 @@
     for (var i = 0; i < allNav.length; i++) allNav[i].classList.remove("cl-nav-active");
     item.classList.add("cl-nav-active");
     renderCurrentView();
-  }
-  function renderTaskRow(task, options) {
-    options = options || {};
-    var showSource = options.showSource !== false;
-    var showStar = options.showStar || false;
-    var isOverdue = options.isOverdue || false;
-    var alwaysShowDate = options.alwaysShowDate || false;
-    var dimmed = options.dimmed || false;
-    var classes = "cl-task-row";
-    if (task.status === "done") classes += " cl-done";
-    if (task.status === "cancelled") classes += " cl-cancelled";
-    if (isOverdue) classes += " cl-overdue";
-    if (dimmed) classes += " cl-dimmed";
-    var dragAttrs = "";
-    if (options.lineIndex !== void 0) {
-      dragAttrs = ' data-line-index="' + options.lineIndex + '" data-indent="' + (options.indentLevel || 0) + '" data-child-count="' + (options.childCount || 0) + '"';
-    }
-    var html = '<div class="' + classes + '" data-task-id="' + esc(task.id) + '"' + dragAttrs + ">";
-    var cbClass = task.type === "checklist" ? "cl-cb cl-cb-square" : "cl-cb";
-    if (task.status === "done") cbClass += " cl-cb-done";
-    else if (task.status === "cancelled") cbClass += " cl-cb-cancelled";
-    if (task.isDelegated) cbClass += " cl-cb-delegated";
-    if (isOverdue && task.status === "open") cbClass += " cl-cb-overdue";
-    html += '<div class="' + cbClass + '" data-action="toggle"></div>';
-    html += '<div class="cl-task-content">';
-    html += '<div class="cl-task-title">';
-    if (showStar && task.scheduledDate === State.today) {
-      html += '<span class="cl-star">\u2B50</span> ';
-    }
-    html += '<span class="cl-task-text">' + renderInlineMarkdown(task.content) + "</span>";
-    html += "</div>";
-    var metaParts = [];
-    if (showSource && task.noteTitle && task.sourceType === "note") {
-      metaParts.push(esc(task.noteTitle));
-    }
-    var repeatBadge = "";
-    if (task.repeat) {
-      repeatBadge = ' <span class="cl-repeat-badge" title="Repeats: ' + esc(task.repeat) + '"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.3L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.3L3 16"/><path d="M3 21v-5h5"/></svg><span class="cl-repeat-text">' + esc(task.repeat) + "</span></span>";
-    }
-    var badgeSep = repeatBadge ? "\xA0\xA0" : "";
-    if (isOverdue && task.scheduledDate) {
-      metaParts.push('<span class="cl-overdue-date">' + task.scheduledDate + "</span>" + badgeSep + repeatBadge);
-    } else if (task.scheduledDate && (alwaysShowDate || task.scheduledDate !== State.today)) {
-      metaParts.push(task.scheduledDate + badgeSep + repeatBadge);
-    } else if (repeatBadge) {
-      metaParts.push(repeatBadge);
-    }
-    if (task.isDelegated && task.mentions.length > 0) {
-      metaParts.push('delegated to <span class="cl-mention-inline">' + esc(task.mentions[0]) + "</span>");
-    }
-    if (task.children && task.children.length > 0) {
-      var hasNotes = false;
-      var clCount = 0;
-      var clDone = 0;
-      var subCount = 0;
-      for (var ci = 0; ci < task.children.length; ci++) {
-        if (task.children[ci].type === "note") hasNotes = true;
-        else if (task.children[ci].type === "checklist") {
-          clCount++;
-          if (task.children[ci].status === "done") clDone++;
-        } else if (task.children[ci].type === "task") subCount++;
-      }
-      var indicators = [];
-      if (hasNotes) indicators.push('<span class="cl-child-icon" title="Has notes">\u2261</span>');
-      if (clCount > 0) indicators.push('<span class="cl-child-icon cl-child-checklist" title="Checklist">\u2611 ' + clDone + "/" + clCount + "</span>");
-      if (subCount > 0) indicators.push('<span class="cl-child-icon" title="Sub-tasks">\u2937 ' + subCount + "</span>");
-      if (indicators.length > 0) metaParts = metaParts.concat(indicators);
-    }
-    if (metaParts.length > 0) {
-      html += '<div class="cl-task-meta">' + metaParts.join("\xA0\xA0&middot; ") + "</div>";
-    }
-    html += "</div>";
-    var badges = "";
-    if (task.priority > 0) {
-      var priLabels = ["", "!", "!!", "!!!"];
-      badges += '<span class="cl-pri cl-pri-' + task.priority + '">' + priLabels[task.priority] + "</span>";
-    }
-    if (task.tags) {
-      for (var ti = 0; ti < task.tags.length; ti++) {
-        if (task.tags[ti] !== "#someday") {
-          badges += '<span class="cl-tag-pill">' + esc(task.tags[ti]) + "</span>";
-        }
-      }
-    }
-    if (badges) html += '<div class="cl-task-badges">' + badges + "</div>";
-    html += "</div>";
-    return html;
-  }
-  function renderFilterBar(tasks, view) {
-    var sourceTasks = view ? getTasksForView(view) : tasks;
-    var tags = extractUniqueTags(sourceTasks);
-    var folders = view ? extractUniqueFolders(sourceTasks) : [];
-    if (tags.length === 0 && folders.length < 2) return "";
-    var html = '<div class="cl-filter-bar">';
-    var activeTag = State.filters.tag;
-    var activeFolder = State.filters.folder;
-    var noFilter = !activeTag && !activeFolder;
-    html += '<span class="cl-filter-pill' + (noFilter ? " cl-filter-active" : "") + '" data-action="clearTaskFilters">All</span>';
-    for (var i = 0; i < tags.length; i++) {
-      var active = activeTag === tags[i] ? " cl-filter-active" : "";
-      html += '<span class="cl-filter-pill' + active + '" data-action="filterTag" data-tag="' + esc(tags[i]) + '">' + esc(tags[i]) + "</span>";
-    }
-    if (folders.length >= 2) {
-      if (tags.length > 0) html += '<span class="cl-filter-divider"></span>';
-      for (var fi = 0; fi < folders.length; fi++) {
-        var fActive = activeFolder === folders[fi] ? " cl-filter-active" : "";
-        html += '<span class="cl-filter-pill cl-filter-pill-folder' + fActive + '" data-action="filterFolder" data-folder="' + esc(folders[fi]) + '">' + esc(folders[fi]) + "</span>";
-      }
-    }
-    html += "</div>";
-    return html;
-  }
-  function extractUniqueTags(tasks) {
-    var tagMap = {};
-    for (var i = 0; i < tasks.length; i++) {
-      if (tasks[i].tags) {
-        for (var j = 0; j < tasks[i].tags.length; j++) {
-          if (tasks[i].tags[j] !== "#someday" && tasks[i].tags[j] !== "#evening") tagMap[tasks[i].tags[j]] = true;
-        }
-      }
-    }
-    return Object.keys(tagMap).sort();
-  }
-  function extractUniqueFolders(tasks) {
-    var folderMap = {};
-    for (var i = 0; i < tasks.length; i++) {
-      var f = tasks[i].folderName;
-      if (f) folderMap[f] = true;
-    }
-    return Object.keys(folderMap).sort();
-  }
-  function renderGroupingToggle(view) {
-    var options = [];
-    if (view === "today") options = ["note", "folder", "priority"];
-    else if (view === "anytime" || view === "someday") options = ["folder", "note", "priority"];
-    else return "";
-    var html = '<div class="cl-group-toggle">';
-    html += '<span class="cl-group-label">Group:</span>';
-    for (var i = 0; i < options.length; i++) {
-      var active = State.grouping === options[i] ? " cl-group-btn-active" : "";
-      html += '<span class="cl-group-btn' + active + '" data-action="setGrouping" data-grouping="' + options[i] + '">' + capitalize(options[i]) + "</span>";
-    }
-    html += "</div>";
-    return html;
-  }
-  function renderGroupedTasks(tasks, grouping, options) {
-    options = options || {};
-    var groups = {};
-    var groupOrder = [];
-    for (var i = 0; i < tasks.length; i++) {
-      var t = tasks[i];
-      var key;
-      switch (grouping) {
-        case "folder":
-          key = t.folderName || "Other";
-          break;
-        case "note":
-          key = t.noteTitle || "Daily Note";
-          break;
-        case "priority":
-          var priNames = ["No Priority", "!", "!!", "!!!"];
-          key = priNames[t.priority] || "No Priority";
-          break;
-        case "date":
-          key = t.sourceDate || t.scheduledDate || "No Date";
-          break;
-        default:
-          key = t.noteTitle || "Other";
-      }
-      if (!groups[key]) {
-        groups[key] = [];
-        groupOrder.push(key);
-      }
-      groups[key].push(t);
-    }
-    if (grouping === "priority") {
-      var priRank = { "!!!": 3, "!!": 2, "!": 1, "No Priority": 0 };
-      groupOrder.sort(function(a, b) {
-        return (priRank[b] || 0) - (priRank[a] || 0);
-      });
-    }
-    var html = "";
-    for (var gi = 0; gi < groupOrder.length; gi++) {
-      var name = groupOrder[gi];
-      var displayName = grouping === "date" ? formatDateHeader(name) : name;
-      var group = groups[groupOrder[gi]];
-      if (grouping === "note" && group[0] && group[0].noteFilename) {
-        html += '<div class="cl-group-header cl-group-clickable" data-action="jumpToProjectNote" data-filename="' + esc(group[0].noteFilename) + '">' + esc(displayName) + "</div>";
-      } else {
-        html += '<div class="cl-group-header">' + esc(displayName) + "</div>";
-      }
-      for (var ti = 0; ti < group.length; ti++) {
-        var rowOpts = { showSource: grouping !== "note" };
-        if (options.showStar) rowOpts.showStar = true;
-        if (options.dimmed) rowOpts.dimmed = true;
-        html += renderTaskRow(group[ti], rowOpts);
-      }
-    }
-    return html;
-  }
-  function renderQuickAdd(view) {
-    return '<div class="cl-quick-add" data-view="' + view + '"><span class="cl-quick-add-icon">+</span><input class="cl-quick-add-input" placeholder="New Task" data-action="quickAdd"/></div>';
   }
   function renderCurrentView() {
     var el = document.getElementById("cl-main");
