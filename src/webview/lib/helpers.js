@@ -2,7 +2,7 @@
 // parsing/formatting/arithmetic functions. `daysUntilDue` is the only one that
 // reads from shared state (State.today as the reference "now").
 
-import { State } from './state.js';
+import { State } from '../state.js';
 
 export function esc(str) {
   if (!str) return '';

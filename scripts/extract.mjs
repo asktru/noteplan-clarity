@@ -6,21 +6,11 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 const TARGET = new URL('../src/webview/index.js', import.meta.url);
 
+// Ranges target the CURRENT state of index.js, not the original — the
+// previous round's ranges were dropped from this list once they merged.
+// Treat REMOVE as a one-shot checkpoint, not a permanent ledger.
 const REMOVE = [
-  [3, 39],      // State + MAX_RECENT_NOTES + pushRecentNote
-  [448, 454],   // Helpers (esc, capitalize)
-  [532, 598],   // Inline Markdown
-  [600, 669],   // Markdown Tables
-  [671, 676],   // PAUSED_COLOR + REVIEW_DUE_COLOR
-  [678, 743],   // Review Cadence helpers
-  [745, 795],   // Status overlays + renderProjectIcon
-  [797, 821],   // Progress Pie
-  [823, 839],   // parseDateLocal + daysUntilDue
-  [841, 870],   // DEADLINE_FLAG_SVG + deadline badges
-  [872, 888],   // Area Icon
-  [891, 940],   // getViewIcon
-  [1459, 1507], // Date formatting
-  [2934, 2957], // Date helpers (addDays etc.)
+  [411, 596], // Keyboard Shortcuts top-level handler
 ];
 
 const lines = readFileSync(TARGET, 'utf8').split('\n');

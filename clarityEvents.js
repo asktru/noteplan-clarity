@@ -36,8 +36,104 @@
     State.recentNotes = arr;
     sendMessageToPlugin("saveRecentNotes", JSON.stringify({ recentNotes: JSON.stringify(arr) }));
   }
+  function viewPrefsKey(view, filename) {
+    return view === "note" ? "note:" + (filename || "") : view;
+  }
+  function saveCurrentViewPrefs() {
+    var key = viewPrefsKey(State.currentView, State.currentNoteFilename);
+    if (State.currentView === "note") {
+      State.viewPrefs[key] = { noteStatus: State.filters.noteStatus, tasksOnly: State.tasksOnly };
+    } else {
+      State.viewPrefs[key] = { tag: State.filters.tag, folder: State.filters.folder, grouping: State.grouping };
+    }
+  }
+  function restoreViewPrefs(view, filename) {
+    var key = viewPrefsKey(view, filename);
+    var saved = State.viewPrefs[key];
+    if (view === "note") {
+      State.filters.noteStatus = saved && saved.noteStatus || "all";
+      State.tasksOnly = saved && saved.tasksOnly || false;
+    } else {
+      State.filters.tag = saved && saved.tag || null;
+      State.filters.folder = saved && saved.folder || null;
+      State.grouping = saved && saved.grouping || defaultGrouping(view);
+    }
+  }
+  function defaultGrouping(view) {
+    if (view === "inbox") return "date";
+    if (view === "anytime") return "folder";
+    return "note";
+  }
+  function persistViewPrefs() {
+    sendMessageToPlugin("saveViewPrefs", JSON.stringify({ viewPrefs: JSON.stringify(State.viewPrefs) }));
+  }
 
-  // src/webview/helpers.js
+  // src/webview/lib/review.js
+  var PAUSED_COLOR = "#9CA3AF";
+  var REVIEW_DUE_COLOR = "#F59E0B";
+  function reviewIntervalToDays(interval) {
+    if (!interval) return null;
+    var match = String(interval).match(/^(\d+)([dwmqy])$/i);
+    if (!match) return null;
+    var num = parseInt(match[1], 10);
+    switch (match[2].toLowerCase()) {
+      case "d":
+        return num;
+      case "w":
+        return num * 7;
+      case "m":
+        return num * 30;
+      case "q":
+        return num * 91;
+      case "y":
+        return num * 365;
+      default:
+        return null;
+    }
+  }
+  function reviewDueDaysFromFm(fm) {
+    if (!fm) return null;
+    var interval = fm.review;
+    if (!interval || !reviewIntervalToDays(interval)) return null;
+    var todayStr = State.today;
+    var reviewedStr = fm.reviewed;
+    var nextStr;
+    if (reviewedStr) {
+      var days = reviewIntervalToDays(interval);
+      var d = /* @__PURE__ */ new Date(reviewedStr + "T00:00:00");
+      if (isNaN(d.getTime())) return null;
+      d.setDate(d.getDate() + days);
+      var y = d.getFullYear();
+      var m = String(d.getMonth() + 1).padStart(2, "0");
+      var dd = String(d.getDate()).padStart(2, "0");
+      nextStr = y + "-" + m + "-" + dd;
+    } else {
+      nextStr = todayStr;
+    }
+    var next = /* @__PURE__ */ new Date(nextStr + "T00:00:00");
+    var today = /* @__PURE__ */ new Date(todayStr + "T00:00:00");
+    if (isNaN(next.getTime()) || isNaN(today.getTime())) return null;
+    return Math.round((next.getTime() - today.getTime()) / 864e5);
+  }
+  function isReviewDue(reviewDueDays, status) {
+    if (reviewDueDays == null || reviewDueDays > 0) return false;
+    if (status === "paused" || status === "someday") return false;
+    if (status === "completed" || status === "canceled") return false;
+    return true;
+  }
+  function reviewDueLabel(reviewDueDays, hasReviewedDate) {
+    if (reviewDueDays == null) return "";
+    if (!hasReviewedDate) return "Never reviewed";
+    if (reviewDueDays === 0) return "Review due today";
+    if (reviewDueDays === -1) return "Was due yesterday";
+    var abs = -reviewDueDays;
+    if (abs <= 13) return "Was due " + abs + " days ago";
+    if (abs <= 29) return "Was due " + Math.floor(abs / 7) + " weeks ago";
+    var months = Math.floor(abs / 30);
+    return "Was due " + months + " month" + (months === 1 ? "" : "s") + " ago";
+  }
+
+  // src/webview/lib/helpers.js
   function esc(str) {
     if (!str) return "";
     return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -137,181 +233,7 @@
     }
   }
 
-  // src/webview/markdown.js
-  function renderInlineMarkdown(text) {
-    if (!text) return "";
-    var s = esc(text);
-    var placeholders = [];
-    function placeholder(html) {
-      var key = "\0PH" + placeholders.length + "\0";
-      placeholders.push(html);
-      return key;
-    }
-    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(m, linkText, url) {
-      return placeholder('<a class="cl-link" href="' + url + '" target="_blank">' + linkText + "</a>");
-    });
-    s = s.replace(/\[\[([^\]]+)\]\]/g, function(m, linkText) {
-      return placeholder('<span class="cl-wikilink">' + linkText + "</span>");
-    });
-    s = s.replace(/(https?:\/\/[^\s<>\[\]]+)/g, function(m, url) {
-      return placeholder('<a class="cl-link" href="' + url + '" target="_blank">' + url + "</a>");
-    });
-    s = s.replace(/`([^`]+)`/g, function(m, code) {
-      return placeholder('<code class="cl-inline-code">' + code + "</code>");
-    });
-    s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-    s = s.replace(new RegExp("(?<!\\*)\\*(?!\\*)(.+?)(?<!\\*)\\*(?!\\*)", "g"), "<em>$1</em>");
-    s = s.replace(/~~(.+?)~~/g, "<del>$1</del>");
-    s = s.replace(/==(.+?)==/g, "<mark>$1</mark>");
-    s = s.replace(/\/\/\s.*$/g, function(m) {
-      return placeholder('<span class="cl-comment">' + m + "</span>");
-    });
-    s = s.replace(/\/\*.*?\*\//g, function(m) {
-      return placeholder('<span class="cl-comment">' + m + "</span>");
-    });
-    s = s.replace(/\s*\^[\da-zA-Z]{4,}/g, function(m) {
-      return placeholder(' <span class="cl-block-id">*</span>');
-    });
-    s = s.replace(/(#[\p{L}\p{N}_\-\/]+)/gu, '<span class="cl-tag-inline">$1</span>');
-    s = s.replace(/(^|[\s(])(@(?!done|due|repeat)[\p{L}\p{N}_\-]+)/gu, function(m, pre, mention) {
-      return pre + '<span class="cl-mention-inline">' + mention + "</span>";
-    });
-    for (var i = 0; i < placeholders.length; i++) {
-      s = s.replace("\0PH" + i + "\0", placeholders[i]);
-    }
-    return s;
-  }
-  function isTableSeparatorLine(line) {
-    var cells = splitTableCells(line);
-    if (cells.length === 0) return false;
-    for (var i = 0; i < cells.length; i++) {
-      if (!/^:?-{3,}:?$/.test(cells[i])) return false;
-    }
-    return true;
-  }
-  function splitTableCells(line) {
-    var s = line.trim();
-    if (s.charAt(0) === "|") s = s.substring(1);
-    if (s.charAt(s.length - 1) === "|") s = s.substring(0, s.length - 1);
-    var cells = s.split("|");
-    for (var i = 0; i < cells.length; i++) cells[i] = cells[i].trim();
-    return cells;
-  }
-  function renderMarkdownTable(lines) {
-    var rows = lines.map(splitTableCells);
-    var sepIdx = -1;
-    for (var i = 0; i < rows.length; i++) {
-      if (isTableSeparatorLine(lines[i])) {
-        sepIdx = i;
-        break;
-      }
-    }
-    var alignments = [];
-    if (sepIdx >= 0) {
-      for (var a = 0; a < rows[sepIdx].length; a++) {
-        var cell = rows[sepIdx][a];
-        if (/^:-+:$/.test(cell)) alignments.push("center");
-        else if (/^-+:$/.test(cell)) alignments.push("right");
-        else alignments.push("left");
-      }
-    }
-    var colCount = 0;
-    for (var r = 0; r < rows.length; r++) if (rows[r].length > colCount) colCount = rows[r].length;
-    function cellStyle(col) {
-      var align = alignments[col] || "left";
-      return align === "left" ? "" : ' style="text-align:' + align + '"';
-    }
-    var html = '<div class="cl-note-table-wrap"><table class="cl-note-table">';
-    var hasHeader = sepIdx === 1;
-    var bodyStart = sepIdx >= 0 ? sepIdx + 1 : 0;
-    if (hasHeader) {
-      html += "<thead><tr>";
-      for (var h = 0; h < colCount; h++) {
-        var headText = rows[0][h] || "";
-        html += "<th" + cellStyle(h) + ">" + renderInlineMarkdown(headText) + "</th>";
-      }
-      html += "</tr></thead>";
-    }
-    html += "<tbody>";
-    for (var br = bodyStart; br < rows.length; br++) {
-      if (br === sepIdx) continue;
-      html += "<tr>";
-      for (var c = 0; c < colCount; c++) {
-        var cellText = rows[br][c] || "";
-        html += "<td" + cellStyle(c) + ">" + renderInlineMarkdown(cellText) + "</td>";
-      }
-      html += "</tr>";
-    }
-    html += "</tbody></table></div>";
-    return html;
-  }
-
-  // src/webview/review.js
-  var PAUSED_COLOR = "#9CA3AF";
-  var REVIEW_DUE_COLOR = "#F59E0B";
-  function reviewIntervalToDays(interval) {
-    if (!interval) return null;
-    var match = String(interval).match(/^(\d+)([dwmqy])$/i);
-    if (!match) return null;
-    var num = parseInt(match[1], 10);
-    switch (match[2].toLowerCase()) {
-      case "d":
-        return num;
-      case "w":
-        return num * 7;
-      case "m":
-        return num * 30;
-      case "q":
-        return num * 91;
-      case "y":
-        return num * 365;
-      default:
-        return null;
-    }
-  }
-  function reviewDueDaysFromFm(fm) {
-    if (!fm) return null;
-    var interval = fm.review;
-    if (!interval || !reviewIntervalToDays(interval)) return null;
-    var todayStr = State.today;
-    var reviewedStr = fm.reviewed;
-    var nextStr;
-    if (reviewedStr) {
-      var days = reviewIntervalToDays(interval);
-      var d = /* @__PURE__ */ new Date(reviewedStr + "T00:00:00");
-      if (isNaN(d.getTime())) return null;
-      d.setDate(d.getDate() + days);
-      var y = d.getFullYear();
-      var m = String(d.getMonth() + 1).padStart(2, "0");
-      var dd = String(d.getDate()).padStart(2, "0");
-      nextStr = y + "-" + m + "-" + dd;
-    } else {
-      nextStr = todayStr;
-    }
-    var next = /* @__PURE__ */ new Date(nextStr + "T00:00:00");
-    var today = /* @__PURE__ */ new Date(todayStr + "T00:00:00");
-    if (isNaN(next.getTime()) || isNaN(today.getTime())) return null;
-    return Math.round((next.getTime() - today.getTime()) / 864e5);
-  }
-  function isReviewDue(reviewDueDays, status) {
-    if (reviewDueDays == null || reviewDueDays > 0) return false;
-    if (status === "paused" || status === "someday") return false;
-    if (status === "completed" || status === "canceled") return false;
-    return true;
-  }
-  function reviewDueLabel(reviewDueDays, hasReviewedDate) {
-    if (reviewDueDays == null) return "";
-    if (!hasReviewedDate) return "Never reviewed";
-    if (reviewDueDays === 0) return "Review due today";
-    if (reviewDueDays === -1) return "Was due yesterday";
-    var abs = -reviewDueDays;
-    if (abs <= 13) return "Was due " + abs + " days ago";
-    if (abs <= 29) return "Was due " + Math.floor(abs / 7) + " weeks ago";
-    var months = Math.floor(abs / 30);
-    return "Was due " + months + " month" + (months === 1 ? "" : "s") + " ago";
-  }
-
-  // src/webview/icons.js
+  // src/webview/lib/icons.js
   function buildPauseOverlay(size) {
     var s = size || 18;
     return '<svg class="cl-status-overlay" width="' + s + '" height="' + s + '" viewBox="0 0 18 18" aria-hidden="true"><rect x="6" y="5.5" width="1.8" height="7" rx="0.4" fill="#fff" stroke="#374151" stroke-width="0.35"/><rect x="10.2" y="5.5" width="1.8" height="7" rx="0.4" fill="#fff" stroke="#374151" stroke-width="0.35"/></svg>';
@@ -429,392 +351,7 @@
     return "";
   }
 
-  // src/webview/index.js
-  function navigateToProjectNote(filename) {
-    if (!filename) return;
-    if (State.expandedTaskId) collapseTask();
-    var navItem = document.querySelector('.cl-nav-item[data-filename="' + filename + '"]');
-    if (navItem) {
-      navItem.click();
-      navItem.scrollIntoView({ block: "nearest" });
-      return;
-    }
-    saveCurrentViewPrefs();
-    State.currentView = "note";
-    State.currentNoteFilename = filename;
-    State.focusedTaskIndex = -1;
-    State.filters = { tag: null, mention: null, text: "", noteStatus: "all" };
-    State.tasksOnly = false;
-    State.expandedTaskId = null;
-    State.editDraft = null;
-    sendMessageToPlugin("requestNoteContent", JSON.stringify({ filename }));
-    sendMessageToPlugin("saveView", JSON.stringify({ view: "note", noteFilename: filename }));
-    pushRecentNote(filename);
-    renderSidebar();
-    renderCurrentView();
-  }
-  var dragState = null;
-  var dragSuppressNextClick = false;
-  var DRAG_LONG_PRESS_MS = 300;
-  var DRAG_CANCEL_DISTANCE = 10;
-  var DRAG_SCROLL_ZONE = 40;
-  var DRAG_SCROLL_SPEED = 8;
-  function dragGetTaskRow(el) {
-    var row = el.closest(".cl-task-row");
-    if (!row || row.dataset.lineIndex === void 0) return null;
-    return row;
-  }
-  function dragFindSiblings(sourceRow) {
-    var container = document.querySelector(".cl-note-content");
-    if (!container) return [];
-    var sourceIndent = parseInt(sourceRow.dataset.indent, 10) || 0;
-    var rows = container.querySelectorAll(".cl-task-row[data-line-index]");
-    var siblings = [];
-    for (var i = 0; i < rows.length; i++) {
-      var rowIndent = parseInt(rows[i].dataset.indent, 10) || 0;
-      if (rowIndent === sourceIndent && rows[i] !== sourceRow) {
-        siblings.push(rows[i]);
-      }
-    }
-    return siblings;
-  }
-  function dragCreateClone(sourceRow, x, y) {
-    var rect = sourceRow.getBoundingClientRect();
-    var clone = sourceRow.cloneNode(true);
-    clone.classList.add("cl-drag-clone");
-    clone.style.width = rect.width + "px";
-    clone.style.height = rect.height + "px";
-    clone.style.left = rect.left + "px";
-    clone.style.top = y - rect.height / 2 + "px";
-    document.body.appendChild(clone);
-    return clone;
-  }
-  function dragCreateIndicator() {
-    var el = document.createElement("div");
-    el.className = "cl-drop-indicator";
-    return el;
-  }
-  function dragUpdateClonePosition(clone, y) {
-    var height = clone.offsetHeight;
-    clone.style.top = y - height / 2 + "px";
-  }
-  function dragFindDropTarget(y, sourceRow, siblings) {
-    var best = null;
-    var bestDist = Infinity;
-    for (var i = 0; i < siblings.length; i++) {
-      var rect = siblings[i].getBoundingClientRect();
-      var mid = rect.top + rect.height / 2;
-      var dist = Math.abs(y - mid);
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = { el: siblings[i], position: y < mid ? "before" : "after" };
-      }
-    }
-    return best;
-  }
-  function dragPositionIndicator(indicator, target) {
-    if (!target) {
-      if (indicator.parentNode) indicator.parentNode.removeChild(indicator);
-      return;
-    }
-    var row = target.el;
-    var refEl = row.closest(".cl-indent-wrap") || row;
-    if (target.position === "before") {
-      refEl.parentNode.insertBefore(indicator, refEl);
-    } else {
-      refEl.parentNode.insertBefore(indicator, refEl.nextSibling);
-    }
-  }
-  function dragAutoScroll(y) {
-    var main = document.getElementById("cl-main");
-    if (!main) return;
-    var rect = main.getBoundingClientRect();
-    if (y < rect.top + DRAG_SCROLL_ZONE) {
-      var intensity = 1 - (y - rect.top) / DRAG_SCROLL_ZONE;
-      main.scrollTop -= DRAG_SCROLL_SPEED * Math.max(0, intensity);
-    } else if (y > rect.bottom - DRAG_SCROLL_ZONE) {
-      var intensity = 1 - (rect.bottom - y) / DRAG_SCROLL_ZONE;
-      main.scrollTop += DRAG_SCROLL_SPEED * Math.max(0, intensity);
-    }
-  }
-  function dragCommit(sourceRow, dropTarget) {
-    if (!dropTarget) return;
-    var sourceLineIndex = parseInt(sourceRow.dataset.lineIndex, 10);
-    var childCount = parseInt(sourceRow.dataset.childCount, 10) || 0;
-    var targetLineIndex = parseInt(dropTarget.el.dataset.lineIndex, 10);
-    if (dropTarget.position === "after") {
-      var targetChildCount = parseInt(dropTarget.el.dataset.childCount, 10) || 0;
-      targetLineIndex = targetLineIndex + targetChildCount + 1;
-    }
-    var sourceRef = sourceRow.closest(".cl-indent-wrap") || sourceRow;
-    var targetRef = dropTarget.el.closest(".cl-indent-wrap") || dropTarget.el;
-    if (dropTarget.position === "before") {
-      targetRef.parentNode.insertBefore(sourceRef, targetRef);
-    } else {
-      targetRef.parentNode.insertBefore(sourceRef, targetRef.nextSibling);
-    }
-    sendMessageToPlugin("reorderTask", JSON.stringify({
-      filename: State.currentNoteFilename,
-      sourceLineIndex,
-      childCount,
-      targetLineIndex
-    }));
-  }
-  function dragCleanup() {
-    if (!dragState) return;
-    if (dragState.cloneEl && dragState.cloneEl.parentNode) {
-      dragState.cloneEl.parentNode.removeChild(dragState.cloneEl);
-    }
-    if (dragState.indicatorEl && dragState.indicatorEl.parentNode) {
-      dragState.indicatorEl.parentNode.removeChild(dragState.indicatorEl);
-    }
-    if (dragState.sourceEl) {
-      dragState.sourceEl.classList.remove("cl-drag-ghost");
-    }
-    if (dragState.scrollInterval) {
-      clearInterval(dragState.scrollInterval);
-    }
-    document.body.classList.remove("cl-dragging");
-    dragState = null;
-  }
-  function dragCancel() {
-    dragCleanup();
-  }
-  function dragStart(sourceRow, y, x) {
-    if (State.expandedTaskId) {
-      dragCleanup();
-      return;
-    }
-    sourceRow.classList.add("cl-drag-ghost");
-    document.body.classList.add("cl-dragging");
-    var clone = dragCreateClone(sourceRow, x, y);
-    var indicator = dragCreateIndicator();
-    var siblings = dragFindSiblings(sourceRow);
-    if (siblings.length === 0) {
-      sourceRow.classList.remove("cl-drag-ghost");
-      document.body.classList.remove("cl-dragging");
-      if (clone.parentNode) clone.parentNode.removeChild(clone);
-      dragState = null;
-      return;
-    }
-    dragState.phase = "dragging";
-    dragState.cloneEl = clone;
-    dragState.indicatorEl = indicator;
-    dragState.siblings = siblings;
-    dragState.scrollInterval = setInterval(function() {
-      if (dragState && dragState.phase === "dragging") {
-        dragAutoScroll(dragState.currentY);
-      }
-    }, 16);
-  }
-  function dragMove(y, x) {
-    if (!dragState || dragState.phase !== "dragging") return;
-    dragState.currentY = y;
-    dragUpdateClonePosition(dragState.cloneEl, y);
-    var target = dragFindDropTarget(y, dragState.sourceEl, dragState.siblings);
-    dragState.currentTarget = target;
-    dragPositionIndicator(dragState.indicatorEl, target);
-  }
-  function dragEnd() {
-    if (!dragState) return;
-    if (dragState.phase === "pending") {
-      if (dragState.timer) clearTimeout(dragState.timer);
-      dragState = null;
-      return;
-    }
-    if (dragState.phase === "dragging") {
-      var target = dragState.currentTarget;
-      var sourceRow = dragState.sourceEl;
-      dragSuppressNextClick = true;
-      dragCleanup();
-      if (target) {
-        dragCommit(sourceRow, target);
-      }
-      return;
-    }
-    dragCleanup();
-  }
-  globalThis.onMessageFromPlugin = onMessageFromPlugin;
-  function onMessageFromPlugin(type, data) {
-    switch (type) {
-      case "INIT_DATA":
-        State.tasks = data.tasks || [];
-        State.folders = data.folders || [];
-        State.notes = data.notes || [];
-        State.today = data.today || "";
-        State.currentWeek = data.currentWeek || "";
-        if (data.lastView) State.currentView = data.lastView;
-        if (data.lastNoteFilename && data.lastView === "note") State.currentNoteFilename = data.lastNoteFilename;
-        if (data.collapsedAreas) {
-          try {
-            State.collapsedAreas = JSON.parse(data.collapsedAreas);
-          } catch (e) {
-            State.collapsedAreas = {};
-          }
-        }
-        if (data.viewPrefs) {
-          try {
-            State.viewPrefs = JSON.parse(data.viewPrefs);
-          } catch (e) {
-            State.viewPrefs = {};
-          }
-        }
-        State.hideEmptyProjects = !!data.hideEmptyProjects;
-        State.hideNonProjects = !!data.hideNonProjects;
-        State.hidePaused = !!data.hidePaused;
-        if (data.recentNotes) {
-          try {
-            var parsedRecents = JSON.parse(data.recentNotes);
-            if (Array.isArray(parsedRecents)) State.recentNotes = parsedRecents;
-          } catch (e) {
-            State.recentNotes = [];
-          }
-        }
-        if (data.visibleViews) {
-          try {
-            var parsedViews = JSON.parse(data.visibleViews);
-            if (parsedViews && typeof parsedViews === "object") {
-              for (var vk in parsedViews) {
-                if (Object.prototype.hasOwnProperty.call(parsedViews, vk)) {
-                  State.visibleViews[vk] = !!parsedViews[vk];
-                }
-              }
-            }
-          } catch (e) {
-          }
-        }
-        applySidebarWidth(data.sidebarWidth);
-        restoreViewPrefs(State.currentView, State.currentNoteFilename);
-        renderSidebar();
-        if (State.currentView === "note" && State.currentNoteFilename) {
-          sendMessageToPlugin("requestNoteContent", JSON.stringify({ filename: State.currentNoteFilename }));
-        }
-        renderCurrentView();
-        break;
-      case "NOTE_CONTENT":
-        State.noteContent = data;
-        if (State.currentView === "note") renderCurrentView();
-        break;
-      case "SHOW_NOTE":
-        if (data && data.filename) {
-          navigateToProjectNote(data.filename);
-        }
-        break;
-      case "PROJECT_REFRESHED":
-        handleProjectRefreshed(data);
-        break;
-      case "TASK_CREATED":
-      case "TASK_SAVED":
-      case "TASK_TOGGLED":
-      case "TASK_REORDERED":
-      case "TASK_RESCHEDULED":
-      case "TASK_DELETED":
-      case "TASK_TAG_UPDATED":
-        sendMessageToPlugin("ready", "{}");
-        break;
-      case "PROJECT_ARCHIVED":
-        if (data && data.success) {
-          if (State.currentNoteFilename === data.oldFilename) {
-            State.currentView = "inbox";
-            State.currentNoteFilename = null;
-            State.noteContent = null;
-            sendMessageToPlugin("saveView", JSON.stringify({ view: "inbox", noteFilename: null }));
-          }
-          sendMessageToPlugin("ready", "{}");
-        } else {
-          console.log("Clarity: archive failed: " + (data && data.error));
-        }
-        break;
-      case "NOTE_FRONTMATTER_UPDATED":
-        if (State.noteContent && State.noteContent.filename === data.filename) {
-          State.noteContent.frontmatter = data.frontmatter || {};
-          State.noteContent.bgColorDark = data.bgColorDark || State.noteContent.bgColorDark;
-        }
-        (function() {
-          var fnFm = data.filename;
-          var newFm = data.frontmatter || {};
-          var newRdd = reviewDueDaysFromFm(newFm);
-          var newStatus = newFm.status === "paused" || newFm.status === "someday" || newFm.status === "completed" || newFm.status === "canceled" ? newFm.status : null;
-          var newType = newFm.type === "area" ? "area" : newFm.type === "project" ? "project" : "";
-          var newDue = newFm.due || null;
-          function apply(target) {
-            target.reviewedDate = newFm.reviewed || null;
-            target.reviewInterval = newFm.review || null;
-            target.reviewDueDays = newRdd;
-            target.status = newStatus;
-            target.noteType = newType;
-            target.due = newDue;
-            target.bgColorDark = data.bgColorDark || target.bgColorDark;
-          }
-          for (var fi = 0; fi < State.folders.length; fi++) {
-            var fns = State.folders[fi].notes || [];
-            for (var ni = 0; ni < fns.length; ni++) {
-              if (fns[ni].filename === fnFm) apply(fns[ni]);
-            }
-          }
-          for (var li = 0; li < State.notes.length; li++) {
-            if (State.notes[li].filename === fnFm) apply(State.notes[li]);
-          }
-        })();
-        renderSidebar();
-        renderCurrentView();
-        sendMessageToPlugin("ready", "{}");
-        break;
-      default:
-        console.log("Clarity WebView: unknown message type: " + type);
-    }
-  }
-  function handleProjectRefreshed(data) {
-    if (!data || !data.filename) return;
-    var fn = data.filename;
-    var kept = [];
-    for (var i = 0; i < State.tasks.length; i++) {
-      if (State.tasks[i].noteFilename !== fn) kept.push(State.tasks[i]);
-    }
-    if (data.tasks && data.tasks.length) {
-      for (var ti = 0; ti < data.tasks.length; ti++) kept.push(data.tasks[ti]);
-    }
-    State.tasks = kept;
-    if (data.noteMeta) {
-      var nm = data.noteMeta;
-      for (var fi = 0; fi < State.folders.length; fi++) {
-        var notes = State.folders[fi].notes || [];
-        for (var ni = 0; ni < notes.length; ni++) {
-          if (notes[ni].filename === fn) {
-            notes[ni].title = nm.title;
-            notes[ni].taskCount = nm.taskCount;
-            notes[ni].doneCount = nm.doneCount;
-            notes[ni].openCount = nm.openCount;
-            notes[ni].bgColorDark = nm.bgColorDark;
-            notes[ni].hasProjectOrAreaType = nm.hasProjectOrAreaType;
-            notes[ni].noteType = nm.noteType;
-            notes[ni].due = nm.due || null;
-            notes[ni].status = nm.status || null;
-            notes[ni].reviewedDate = nm.reviewedDate || null;
-            notes[ni].reviewInterval = nm.reviewInterval || null;
-            notes[ni].reviewDueDays = nm.reviewDueDays == null ? null : nm.reviewDueDays;
-          }
-        }
-      }
-      for (var li = 0; li < State.notes.length; li++) {
-        if (State.notes[li].filename === fn) {
-          State.notes[li].title = nm.title;
-          State.notes[li].taskCount = nm.taskCount;
-          State.notes[li].doneCount = nm.doneCount;
-          State.notes[li].openCount = nm.openCount;
-          State.notes[li].bgColorDark = nm.bgColorDark;
-          State.notes[li].noteType = nm.noteType;
-          State.notes[li].due = nm.due || null;
-          State.notes[li].status = nm.status || null;
-          State.notes[li].reviewedDate = nm.reviewedDate || null;
-          State.notes[li].reviewInterval = nm.reviewInterval || null;
-          State.notes[li].reviewDueDays = nm.reviewDueDays == null ? null : nm.reviewDueDays;
-        }
-      }
-    }
-    renderSidebar();
-    renderCurrentView();
-  }
+  // src/webview/lib/task-categorization.js
   function getTasksForView(view) {
     var today = State.today;
     var currentWeek = State.currentWeek;
@@ -894,262 +431,117 @@
   function getViewCount(view) {
     return getTasksForView(view).length;
   }
-  var SIDEBAR_VIEWS = [
-    { id: "inbox", label: "Inbox" },
-    { id: "today", label: "Today" },
-    { id: "upcoming", label: "Upcoming" },
-    { id: "anytime", label: "Anytime" },
-    { id: "someday", label: "Someday" }
-  ];
-  function renderSidebar() {
-    var el = document.getElementById("cl-sidebar");
-    if (!el) return;
-    var html = '<div class="cl-sidebar-inner">';
-    for (var vi = 0; vi < SIDEBAR_VIEWS.length; vi++) {
-      var v = SIDEBAR_VIEWS[vi];
-      if (State.visibleViews[v.id] === false) continue;
-      var count = getViewCount(v.id);
-      var active = State.currentView === v.id ? " cl-nav-active" : "";
-      html += '<div class="cl-nav-item' + active + '" data-view="' + v.id + '">';
-      html += '<span class="cl-nav-icon">' + getViewIcon(v.id, 18) + "</span>";
-      html += '<span class="cl-nav-label">' + v.label + "</span>";
-      if (count > 0 && (v.id === "inbox" || v.id === "today")) {
-        html += '<span class="cl-nav-count">' + count + "</span>";
-      }
-      html += "</div>";
+
+  // src/webview/lib/markdown.js
+  function renderInlineMarkdown(text) {
+    if (!text) return "";
+    var s = esc(text);
+    var placeholders = [];
+    function placeholder(html) {
+      var key = "\0PH" + placeholders.length + "\0";
+      placeholders.push(html);
+      return key;
     }
-    html += '<div class="cl-nav-divider"></div>';
-    for (var fi = 0; fi < State.folders.length; fi++) {
-      var folder = State.folders[fi];
-      var areaKey = folder.path;
-      var collapsed = State.collapsedAreas && State.collapsedAreas[areaKey];
-      var notes = folder.notes || [];
-      var visibleNotes = notes;
-      visibleNotes = visibleNotes.filter(function(n2) {
-        return n2.status !== "someday";
-      });
-      if (State.hidePaused) {
-        visibleNotes = visibleNotes.filter(function(n2) {
-          return n2.status !== "paused";
-        });
-      }
-      if (State.hideEmptyProjects) {
-        visibleNotes = visibleNotes.filter(function(n2) {
-          return (n2.openCount || 0) > 0;
-        });
-      }
-      if (State.hideNonProjects) {
-        visibleNotes = visibleNotes.filter(function(n2) {
-          return n2.hasProjectOrAreaType;
-        });
-      }
-      if (visibleNotes.length === 0) continue;
-      html += '<div class="cl-area-header" data-area="' + esc(areaKey) + '">';
-      html += '<span class="cl-area-chevron' + (collapsed ? " cl-collapsed" : "") + '">\u25B8</span>';
-      html += esc(folder.name);
-      html += "</div>";
-      html += '<div class="cl-area-group' + (collapsed ? " cl-hidden" : "") + '" data-area-group="' + esc(areaKey) + '">';
-      for (var ni = 0; ni < visibleNotes.length; ni++) {
-        var n = visibleNotes[ni];
-        var noteActive = State.currentView === "note" && State.currentNoteFilename === n.filename ? " cl-nav-active" : "";
-        var mutedCls = n.status === "paused" || n.status === "someday" ? " cl-project-muted" : "";
-        html += '<div class="cl-nav-item cl-project-item' + mutedCls + noteActive + '" data-view="note" data-filename="' + esc(n.filename) + '">';
-        html += renderProjectIcon(n, 18);
-        html += '<span class="cl-project-title">' + esc(n.title) + "</span>";
-        if (n.due) html += buildDeadlineBadgeCompact(n.due);
-        html += "</div>";
-      }
-      html += "</div>";
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(m, linkText, url) {
+      return placeholder('<a class="cl-link" href="' + url + '" target="_blank">' + linkText + "</a>");
+    });
+    s = s.replace(/\[\[([^\]]+)\]\]/g, function(m, linkText) {
+      return placeholder('<span class="cl-wikilink">' + linkText + "</span>");
+    });
+    s = s.replace(/(https?:\/\/[^\s<>\[\]]+)/g, function(m, url) {
+      return placeholder('<a class="cl-link" href="' + url + '" target="_blank">' + url + "</a>");
+    });
+    s = s.replace(/`([^`]+)`/g, function(m, code) {
+      return placeholder('<code class="cl-inline-code">' + code + "</code>");
+    });
+    s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    s = s.replace(new RegExp("(?<!\\*)\\*(?!\\*)(.+?)(?<!\\*)\\*(?!\\*)", "g"), "<em>$1</em>");
+    s = s.replace(/~~(.+?)~~/g, "<del>$1</del>");
+    s = s.replace(/==(.+?)==/g, "<mark>$1</mark>");
+    s = s.replace(/\/\/\s.*$/g, function(m) {
+      return placeholder('<span class="cl-comment">' + m + "</span>");
+    });
+    s = s.replace(/\/\*.*?\*\//g, function(m) {
+      return placeholder('<span class="cl-comment">' + m + "</span>");
+    });
+    s = s.replace(/\s*\^[\da-zA-Z]{4,}/g, function(m) {
+      return placeholder(' <span class="cl-block-id">*</span>');
+    });
+    s = s.replace(/(#[\p{L}\p{N}_\-\/]+)/gu, '<span class="cl-tag-inline">$1</span>');
+    s = s.replace(/(^|[\s(])(@(?!done|due|repeat)[\p{L}\p{N}_\-]+)/gu, function(m, pre, mention) {
+      return pre + '<span class="cl-mention-inline">' + mention + "</span>";
+    });
+    for (var i = 0; i < placeholders.length; i++) {
+      s = s.replace("\0PH" + i + "\0", placeholders[i]);
     }
-    html += "</div>";
-    html += renderSidebarFooter();
-    el.innerHTML = html;
-    var navItems = el.querySelectorAll(".cl-nav-item");
-    for (var ci = 0; ci < navItems.length; ci++) {
-      navItems[ci].addEventListener("click", handleNavClick);
-    }
-    var areaHeaders = el.querySelectorAll(".cl-area-header");
-    for (var ai = 0; ai < areaHeaders.length; ai++) {
-      areaHeaders[ai].addEventListener("click", function(e) {
-        var areaKey2 = e.currentTarget.dataset.area;
-        if (!areaKey2) return;
-        State.collapsedAreas[areaKey2] = !State.collapsedAreas[areaKey2];
-        var chevron = e.currentTarget.querySelector(".cl-area-chevron");
-        var group = el.querySelector('[data-area-group="' + areaKey2 + '"]');
-        if (chevron) chevron.classList.toggle("cl-collapsed");
-        if (group) group.classList.toggle("cl-hidden");
-        sendMessageToPlugin("saveCollapsedAreas", JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
-      });
-    }
-    attachSidebarFooterHandlers();
+    return s;
   }
-  function renderSidebarFooter() {
-    var open = State.settingsPopoverOpen;
-    var html = '<div class="cl-sidebar-footer">';
-    html += '<div class="cl-settings-popover' + (open ? " cl-popover-open" : "") + '">';
-    html += '<div class="cl-settings-section">';
-    html += '<div class="cl-settings-section-title">Projects &amp; Areas</div>';
-    html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleHideEmpty"' + (State.hideEmptyProjects ? " checked" : "") + "><span>Hide notes without open tasks</span></label>";
-    html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleHideNonProjects"' + (State.hideNonProjects ? " checked" : "") + "><span>Hide non-projects and non-areas</span></label>";
-    html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleHidePaused"' + (State.hidePaused ? " checked" : "") + "><span>Hide paused</span></label>";
-    html += '<button class="cl-settings-action" data-action="collapseAllAreas">Collapse all</button>';
-    html += '<button class="cl-settings-action" data-action="expandAllAreas">Expand all</button>';
-    html += "</div>";
-    html += '<div class="cl-settings-section">';
-    html += '<div class="cl-settings-section-title">Views</div>';
-    for (var vi = 0; vi < SIDEBAR_VIEWS.length; vi++) {
-      var v = SIDEBAR_VIEWS[vi];
-      var checked = State.visibleViews[v.id] !== false;
-      html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleViewVisibility" data-view="' + v.id + '"' + (checked ? " checked" : "") + '><span class="cl-settings-toggle-icon">' + getViewIcon(v.id, 16) + "</span><span>" + v.label + "</span></label>";
+  function isTableSeparatorLine(line) {
+    var cells = splitTableCells(line);
+    if (cells.length === 0) return false;
+    for (var i = 0; i < cells.length; i++) {
+      if (!/^:?-{3,}:?$/.test(cells[i])) return false;
     }
-    html += "</div>";
-    html += '<div class="cl-settings-section">';
-    html += '<button class="cl-settings-action cl-settings-help" data-action="openShortcutsCheatsheet"><span>Keyboard shortcuts</span><kbd class="cl-cheatsheet-kbd">?</kbd></button>';
-    html += "</div>";
-    html += "</div>";
-    html += '<button class="cl-settings-btn' + (open ? " cl-active" : "") + '" data-action="toggleSettingsPopover" title="View settings">';
-    html += '<i class="fa-solid fa-sliders"></i>';
-    html += "<span>View settings</span>";
-    html += "</button>";
-    html += "</div>";
+    return true;
+  }
+  function splitTableCells(line) {
+    var s = line.trim();
+    if (s.charAt(0) === "|") s = s.substring(1);
+    if (s.charAt(s.length - 1) === "|") s = s.substring(0, s.length - 1);
+    var cells = s.split("|");
+    for (var i = 0; i < cells.length; i++) cells[i] = cells[i].trim();
+    return cells;
+  }
+  function renderMarkdownTable(lines) {
+    var rows = lines.map(splitTableCells);
+    var sepIdx = -1;
+    for (var i = 0; i < rows.length; i++) {
+      if (isTableSeparatorLine(lines[i])) {
+        sepIdx = i;
+        break;
+      }
+    }
+    var alignments = [];
+    if (sepIdx >= 0) {
+      for (var a = 0; a < rows[sepIdx].length; a++) {
+        var cell = rows[sepIdx][a];
+        if (/^:-+:$/.test(cell)) alignments.push("center");
+        else if (/^-+:$/.test(cell)) alignments.push("right");
+        else alignments.push("left");
+      }
+    }
+    var colCount = 0;
+    for (var r = 0; r < rows.length; r++) if (rows[r].length > colCount) colCount = rows[r].length;
+    function cellStyle(col) {
+      var align = alignments[col] || "left";
+      return align === "left" ? "" : ' style="text-align:' + align + '"';
+    }
+    var html = '<div class="cl-note-table-wrap"><table class="cl-note-table">';
+    var hasHeader = sepIdx === 1;
+    var bodyStart = sepIdx >= 0 ? sepIdx + 1 : 0;
+    if (hasHeader) {
+      html += "<thead><tr>";
+      for (var h = 0; h < colCount; h++) {
+        var headText = rows[0][h] || "";
+        html += "<th" + cellStyle(h) + ">" + renderInlineMarkdown(headText) + "</th>";
+      }
+      html += "</tr></thead>";
+    }
+    html += "<tbody>";
+    for (var br = bodyStart; br < rows.length; br++) {
+      if (br === sepIdx) continue;
+      html += "<tr>";
+      for (var c = 0; c < colCount; c++) {
+        var cellText = rows[br][c] || "";
+        html += "<td" + cellStyle(c) + ">" + renderInlineMarkdown(cellText) + "</td>";
+      }
+      html += "</tr>";
+    }
+    html += "</tbody></table></div>";
     return html;
   }
-  var _settingsOutsideListener = null;
-  function attachSidebarFooterHandlers() {
-    var footer = document.querySelector(".cl-sidebar-footer");
-    if (!footer) return;
-    if (_settingsOutsideListener) {
-      document.removeEventListener("click", _settingsOutsideListener);
-      _settingsOutsideListener = null;
-    }
-    footer.addEventListener("click", function(e) {
-      var target = e.target.closest("[data-action]");
-      if (!target) return;
-      var action = target.dataset.action;
-      switch (action) {
-        case "toggleSettingsPopover":
-          State.settingsPopoverOpen = !State.settingsPopoverOpen;
-          document.body.classList.toggle("cl-settings-backdrop", State.settingsPopoverOpen);
-          renderSidebar();
-          break;
-        case "toggleHideEmpty":
-          State.hideEmptyProjects = !!target.checked;
-          sendMessageToPlugin("saveHideEmptyProjects", JSON.stringify({ hideEmptyProjects: State.hideEmptyProjects }));
-          renderSidebar();
-          break;
-        case "toggleHidePaused":
-          State.hidePaused = !!target.checked;
-          sendMessageToPlugin("saveHidePaused", JSON.stringify({ hidePaused: State.hidePaused }));
-          renderSidebar();
-          break;
-        case "toggleHideNonProjects":
-          State.hideNonProjects = !!target.checked;
-          sendMessageToPlugin("saveHideNonProjects", JSON.stringify({ hideNonProjects: State.hideNonProjects }));
-          renderSidebar();
-          break;
-        case "collapseAllAreas":
-          for (var fi = 0; fi < State.folders.length; fi++) {
-            State.collapsedAreas[State.folders[fi].path] = true;
-          }
-          sendMessageToPlugin("saveCollapsedAreas", JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
-          renderSidebar();
-          break;
-        case "expandAllAreas":
-          State.collapsedAreas = {};
-          sendMessageToPlugin("saveCollapsedAreas", JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
-          renderSidebar();
-          break;
-        case "toggleViewVisibility": {
-          var vid = target.dataset.view;
-          if (!vid) break;
-          State.visibleViews[vid] = !!target.checked;
-          sendMessageToPlugin("saveVisibleViews", JSON.stringify({ visibleViews: JSON.stringify(State.visibleViews) }));
-          renderSidebar();
-          break;
-        }
-        case "openShortcutsCheatsheet":
-          State.settingsPopoverOpen = false;
-          document.body.classList.remove("cl-settings-backdrop");
-          renderSidebar();
-          openShortcutsCheatsheet();
-          break;
-      }
-    });
-    if (State.settingsPopoverOpen) {
-      _settingsOutsideListener = function(e) {
-        var f = document.querySelector(".cl-sidebar-footer");
-        if (f && !f.contains(e.target)) {
-          State.settingsPopoverOpen = false;
-          document.body.classList.remove("cl-settings-backdrop");
-          document.removeEventListener("click", _settingsOutsideListener);
-          _settingsOutsideListener = null;
-          renderSidebar();
-        }
-      };
-      setTimeout(function() {
-        if (_settingsOutsideListener) document.addEventListener("click", _settingsOutsideListener);
-      }, 0);
-    }
-  }
-  function viewPrefsKey(view, filename) {
-    return view === "note" ? "note:" + (filename || "") : view;
-  }
-  function saveCurrentViewPrefs() {
-    var key = viewPrefsKey(State.currentView, State.currentNoteFilename);
-    if (State.currentView === "note") {
-      State.viewPrefs[key] = { noteStatus: State.filters.noteStatus, tasksOnly: State.tasksOnly };
-    } else {
-      State.viewPrefs[key] = { tag: State.filters.tag, folder: State.filters.folder, grouping: State.grouping };
-    }
-  }
-  function restoreViewPrefs(view, filename) {
-    var key = viewPrefsKey(view, filename);
-    var saved = State.viewPrefs[key];
-    if (view === "note") {
-      State.filters.noteStatus = saved && saved.noteStatus || "all";
-      State.tasksOnly = saved && saved.tasksOnly || false;
-    } else {
-      State.filters.tag = saved && saved.tag || null;
-      State.filters.folder = saved && saved.folder || null;
-      State.grouping = saved && saved.grouping || defaultGrouping(view);
-    }
-  }
-  function defaultGrouping(view) {
-    if (view === "inbox") return "date";
-    if (view === "anytime") return "folder";
-    return "note";
-  }
-  function persistViewPrefs() {
-    sendMessageToPlugin("saveViewPrefs", JSON.stringify({ viewPrefs: JSON.stringify(State.viewPrefs) }));
-  }
-  function handleNavClick(e) {
-    var item = e.currentTarget;
-    var view = item.dataset.view;
-    if (!view) return;
-    var sidebar = document.getElementById("cl-sidebar");
-    var overlay = document.getElementById("cl-sidebar-overlay");
-    if (sidebar) sidebar.classList.remove("cl-sidebar-open");
-    if (overlay) overlay.classList.remove("cl-sidebar-open");
-    saveCurrentViewPrefs();
-    State.currentView = view;
-    State.focusedTaskIndex = -1;
-    State.filters = { tag: null, mention: null, text: "", noteStatus: "all" };
-    State.tasksOnly = false;
-    State.expandedTaskId = null;
-    State.editDraft = null;
-    if (view === "note") {
-      State.currentNoteFilename = item.dataset.filename || null;
-      sendMessageToPlugin("requestNoteContent", JSON.stringify({ filename: State.currentNoteFilename }));
-      pushRecentNote(State.currentNoteFilename);
-    }
-    restoreViewPrefs(view, State.currentNoteFilename);
-    persistViewPrefs();
-    sendMessageToPlugin("saveView", JSON.stringify({ view, noteFilename: State.currentNoteFilename }));
-    var allNav = document.querySelectorAll(".cl-nav-item");
-    for (var i = 0; i < allNav.length; i++) allNav[i].classList.remove("cl-nav-active");
-    item.classList.add("cl-nav-active");
-    renderCurrentView();
-  }
+
+  // src/webview/ui/task-list.js
   function renderTaskRow(task, options) {
     options = options || {};
     var showSource = options.showSource !== false;
@@ -1188,7 +580,7 @@
     if (task.repeat) {
       repeatBadge = ' <span class="cl-repeat-badge" title="Repeats: ' + esc(task.repeat) + '"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.3L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.5 6.3L3 16"/><path d="M3 21v-5h5"/></svg><span class="cl-repeat-text">' + esc(task.repeat) + "</span></span>";
     }
-    var badgeSep = repeatBadge ? "\xA0\xA0" : "";
+    var badgeSep = repeatBadge ? "  " : "";
     if (isOverdue && task.scheduledDate) {
       metaParts.push('<span class="cl-overdue-date">' + task.scheduledDate + "</span>" + badgeSep + repeatBadge);
     } else if (task.scheduledDate && (alwaysShowDate || task.scheduledDate !== State.today)) {
@@ -1218,7 +610,7 @@
       if (indicators.length > 0) metaParts = metaParts.concat(indicators);
     }
     if (metaParts.length > 0) {
-      html += '<div class="cl-task-meta">' + metaParts.join("\xA0\xA0&middot; ") + "</div>";
+      html += '<div class="cl-task-meta">' + metaParts.join("  &middot; ") + "</div>";
     }
     html += "</div>";
     var badges = "";
@@ -1352,6 +744,8 @@
   function renderQuickAdd(view) {
     return '<div class="cl-quick-add" data-view="' + view + '"><span class="cl-quick-add-icon">+</span><input class="cl-quick-add-input" placeholder="New Task" data-action="quickAdd"/></div>';
   }
+
+  // src/webview/ui/views.js
   function renderCurrentView() {
     var el = document.getElementById("cl-main");
     if (!el) return;
@@ -1677,8 +1071,8 @@
           sectionStack.pop();
         }
         var hRawContent = p.content || "";
-        var hCollapsed = /\u2026\s*$/.test(hRawContent);
-        var hDisplay = hRawContent.replace(/\s*\u2026\s*$/, "");
+        var hCollapsed = /…\s*$/.test(hRawContent);
+        var hDisplay = hRawContent.replace(/\s*…\s*$/, "");
         var hClass = State.tasksOnly ? "cl-section-heading" : "cl-note-heading cl-note-h" + hLevel;
         var chevronDir = hCollapsed ? "right" : "down";
         html += '<div class="' + hClass + '" data-line-index="' + p.lineIndex + '">';
@@ -1808,267 +1202,311 @@
     result.cleanContent = clean.trim();
     return result;
   }
-  var _mainListenersAttached = false;
-  function attachMainEventListeners() {
-    if (_mainListenersAttached) return;
-    var main = document.getElementById("cl-main");
-    if (!main) return;
-    _mainListenersAttached = true;
-    main.addEventListener("dblclick", function(e) {
-      if (e.target.closest(".cl-cb") || e.target.closest(".cl-task-editor")) return;
-      var row = e.target.closest(".cl-task-row");
-      if (row) {
-        e.preventDefault();
-        expandTask(row.dataset.taskId);
-      }
-    });
-    main.addEventListener("click", function(e) {
-      if (dragSuppressNextClick) {
-        dragSuppressNextClick = false;
-        e.preventDefault();
-        e.stopPropagation();
-        return;
-      }
-      if (e.target.closest("a.cl-link")) return;
-      var clickedRow = e.target.closest(".cl-task-row");
-      if (clickedRow && !e.target.closest(".cl-cb") && !e.target.closest("[data-action]")) {
-        var rows = document.querySelectorAll(".cl-task-row");
-        for (var ri = 0; ri < rows.length; ri++) {
-          rows[ri].classList.remove("cl-focused");
-          if (rows[ri] === clickedRow) State.focusedTaskIndex = ri;
-        }
-        clickedRow.classList.add("cl-focused");
-      }
+
+  // src/webview/ui/pickers.js
+  function positionPickerVertically(picker, anchor, margin) {
+    if (margin == null) margin = 4;
+    var rect = anchor.getBoundingClientRect();
+    var pickerHeight = picker.getBoundingClientRect().height;
+    var viewportHeight = window.innerHeight;
+    var spaceBelow = viewportHeight - rect.bottom - margin;
+    var spaceAbove = rect.top - margin;
+    if (pickerHeight > spaceBelow && spaceAbove > spaceBelow) {
+      picker.style.top = Math.max(margin, rect.top - pickerHeight - margin) + "px";
+    } else {
+      picker.style.top = rect.bottom + margin + "px";
+    }
+  }
+  function showDatePicker(anchor) {
+    closePickers();
+    var rect = anchor.getBoundingClientRect();
+    var picker = document.createElement("div");
+    picker.className = "cl-picker cl-date-picker";
+    picker.style.top = rect.bottom + 4 + "px";
+    picker.style.left = Math.min(rect.left, window.innerWidth - 270) + "px";
+    var today = State.today;
+    var tmr = addDays(today, 1);
+    var nextMon = getNextMonday(today);
+    var inAWeek = addDays(today, 7);
+    picker.innerHTML = '<div class="cl-picker-tabs"><div class="cl-picker-tab cl-picker-tab-active" data-tab="day">Day</div><div class="cl-picker-tab" data-tab="week">Week</div></div><div class="cl-picker-body" id="cl-date-body">' + renderDateDayTab(today, tmr, nextMon, inAWeek) + '</div><div class="cl-picker-footer"><div class="cl-picker-action" data-action="removeDate"><span>\u2715</span> Remove date <span class="cl-shortcut">\u2318O</span></div></div>';
+    document.body.appendChild(picker);
+    positionPickerVertically(picker, anchor);
+    picker.addEventListener("click", function(e) {
       var target = e.target.closest("[data-action]");
       if (!target) {
+        var tab = e.target.closest("[data-tab]");
+        if (tab) {
+          var tabs = picker.querySelectorAll(".cl-picker-tab");
+          for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove("cl-picker-tab-active");
+          tab.classList.add("cl-picker-tab-active");
+          var body = picker.querySelector("#cl-date-body");
+          if (tab.dataset.tab === "day") body.innerHTML = renderDateDayTab(today, tmr, nextMon, inAWeek);
+          else body.innerHTML = renderDateWeekTab();
+        }
         return;
       }
-      var action = target.dataset.action;
-      switch (action) {
-        case "toggle":
-          var taskRow = target.closest(".cl-task-row");
-          if (taskRow) toggleTask(taskRow.dataset.taskId);
-          break;
-        case "filterTag": {
-          var newTag = target.dataset.tag || null;
-          State.filters.tag = newTag && State.filters.tag === newTag ? null : newTag;
-          saveCurrentViewPrefs();
-          persistViewPrefs();
-          renderCurrentView();
-          break;
+      if (target.dataset.action === "selectDate") {
+        State.editDraft.scheduledDate = target.dataset.date;
+        State.editDraft.scheduledWeek = null;
+        State.editDraft.tags = State.editDraft.tags.filter(function(t) {
+          return t !== "#someday";
+        });
+        updateDateChip();
+        closePickers();
+      } else if (target.dataset.action === "selectWeek") {
+        State.editDraft.scheduledWeek = target.dataset.week;
+        State.editDraft.scheduledDate = null;
+        State.editDraft.tags = State.editDraft.tags.filter(function(t) {
+          return t !== "#someday";
+        });
+        updateDateChip();
+        closePickers();
+      } else if (target.dataset.action === "removeDate") {
+        State.editDraft.scheduledDate = null;
+        State.editDraft.scheduledWeek = null;
+        updateDateChip();
+        closePickers();
+      }
+    });
+  }
+  function renderDateDayTab(today, tmr, nextMon, inAWeek) {
+    var html = '<div class="cl-picker-options">';
+    html += '<div class="cl-picker-option cl-picker-today" data-action="selectDate" data-date="' + today + '"><span>\u2B50</span><span class="cl-picker-opt-label">Today</span><span class="cl-picker-opt-date">' + formatShortDate(today) + "</span></div>";
+    html += '<div class="cl-picker-option" data-action="selectDate" data-date="' + tmr + '"><span>\u2192</span><span class="cl-picker-opt-label">Tomorrow</span><span class="cl-picker-opt-date">' + formatShortDate(tmr) + "</span></div>";
+    html += '<div class="cl-picker-option" data-action="selectDate" data-date="' + nextMon + '"><span>\u{1F4C5}</span><span class="cl-picker-opt-label">Next Monday</span><span class="cl-picker-opt-date">' + formatShortDate(nextMon) + "</span></div>";
+    html += '<div class="cl-picker-option" data-action="selectDate" data-date="' + inAWeek + '"><span>+7</span><span class="cl-picker-opt-label">In a week</span><span class="cl-picker-opt-date">' + formatShortDate(inAWeek) + "</span></div>";
+    html += "</div>";
+    html += '<div class="cl-picker-divider"></div>';
+    html += renderMiniCalendar(today);
+    return html;
+  }
+  function renderMiniCalendar(todayStr) {
+    var parts = todayStr.split("-");
+    var year = parseInt(parts[0]);
+    var month = parseInt(parts[1]) - 1;
+    var months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    var firstDay = new Date(year, month, 1);
+    var startOffset = (firstDay.getDay() + 6) % 7;
+    var daysInMonth = new Date(year, month + 1, 0).getDate();
+    var html = '<div class="cl-mini-cal">';
+    html += '<div class="cl-cal-nav"><span class="cl-cal-arrow">\u25C0</span><span class="cl-cal-month">' + months[month] + " " + year + '</span><span class="cl-cal-arrow">\u25B6</span></div>';
+    html += '<div class="cl-cal-grid">';
+    var dayNames = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+    for (var di = 0; di < 7; di++) html += '<span class="cl-cal-day-name">' + dayNames[di] + "</span>";
+    for (var gap = 0; gap < startOffset; gap++) html += '<span class="cl-cal-day"></span>';
+    for (var d = 1; d <= daysInMonth; d++) {
+      var dateStr = year + "-" + String(month + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+      var cls = "cl-cal-day";
+      if (dateStr === todayStr) cls += " cl-cal-today";
+      if (dateStr < todayStr) cls += " cl-cal-past";
+      if (State.editDraft && State.editDraft.scheduledDate === dateStr) cls += " cl-cal-selected";
+      html += '<span class="' + cls + '" data-action="selectDate" data-date="' + dateStr + '">' + d + "</span>";
+    }
+    html += "</div></div>";
+    return html;
+  }
+  function renderDateWeekTab() {
+    var currentWeek = State.currentWeek;
+    var html = '<div class="cl-picker-options">';
+    for (var w = 0; w < 8; w++) {
+      var weekStr = addWeeks(currentWeek, w);
+      var label = w === 0 ? "This week" : w === 1 ? "Next week" : weekStr;
+      html += '<div class="cl-picker-option" data-action="selectWeek" data-week="' + weekStr + '"><span class="cl-picker-opt-label">' + label + '</span><span class="cl-picker-opt-date">' + weekStr + "</span></div>";
+    }
+    html += "</div>";
+    return html;
+  }
+  function updateDateChip() {
+    var editor = document.getElementById("cl-editor");
+    if (!editor || !State.editDraft) return;
+    var chip = editor.querySelector('[data-action="openDatePicker"]');
+    if (!chip) return;
+    var label = "Schedule...";
+    if (State.editDraft.scheduledDate) label = formatShortDate(State.editDraft.scheduledDate);
+    else if (State.editDraft.scheduledWeek) label = State.editDraft.scheduledWeek;
+    chip.innerHTML = '<span class="cl-meta-icon">\u{1F4C5}</span>' + label;
+  }
+  function showNotePicker(anchor) {
+    closePickers();
+    var rect = anchor.getBoundingClientRect();
+    var picker = document.createElement("div");
+    picker.className = "cl-picker cl-note-picker";
+    picker.style.top = rect.bottom + 4 + "px";
+    picker.style.left = Math.min(rect.left, window.innerWidth - 310) + "px";
+    picker.innerHTML = '<div class="cl-picker-search"><input class="cl-picker-input" placeholder="Search notes..." autofocus/></div><div class="cl-picker-results" id="cl-note-results">' + renderNoteResults("") + '</div><div class="cl-picker-footer"><span style="opacity:0.35;font-size:11px;">\u21B5 select \xB7 Esc close</span></div>';
+    document.body.appendChild(picker);
+    positionPickerVertically(picker, anchor);
+    var input = picker.querySelector(".cl-picker-input");
+    input.addEventListener("input", function() {
+      document.getElementById("cl-note-results").innerHTML = renderNoteResults(input.value);
+    });
+    picker.addEventListener("click", function(e) {
+      var target = e.target.closest('[data-action="selectNote"]');
+      if (target) {
+        State.editDraft.moveToFilename = target.dataset.filename;
+        State.editDraft.moveToLabel = target.dataset.title;
+        var editor = document.getElementById("cl-editor");
+        if (editor) {
+          var chip = editor.querySelector('[data-action="openNotePicker"]');
+          if (chip) chip.textContent = "\u2192 " + target.dataset.title;
         }
-        case "filterFolder": {
-          var newFolder = target.dataset.folder || null;
-          State.filters.folder = newFolder && State.filters.folder === newFolder ? null : newFolder;
-          saveCurrentViewPrefs();
-          persistViewPrefs();
-          renderCurrentView();
-          break;
-        }
-        case "clearTaskFilters":
-          State.filters.tag = null;
-          State.filters.folder = null;
-          saveCurrentViewPrefs();
-          persistViewPrefs();
-          renderCurrentView();
-          break;
-        case "filterNoteStatus":
-          State.filters.noteStatus = target.dataset.status || "all";
-          saveCurrentViewPrefs();
-          persistViewPrefs();
-          renderCurrentView();
-          break;
-        case "toggleTasksOnly":
-          State.tasksOnly = !State.tasksOnly;
-          saveCurrentViewPrefs();
-          persistViewPrefs();
-          renderCurrentView();
-          break;
-        case "setGrouping":
-          State.grouping = target.dataset.grouping || "note";
-          saveCurrentViewPrefs();
-          persistViewPrefs();
-          renderCurrentView();
-          break;
-        case "openInEditor":
-          if (target.dataset.filename) {
-            sendMessageToPlugin("openNoteInEditor", JSON.stringify({ filename: target.dataset.filename }));
-          }
-          break;
-        case "jumpToProjectNote": {
-          var jfn = target.dataset.filename;
-          if (!jfn) break;
-          var inSidebar = false;
-          for (var jpi = 0; jpi < State.notes.length; jpi++) {
-            if (State.notes[jpi].filename === jfn) {
-              inSidebar = true;
-              break;
-            }
-          }
-          if (inSidebar) {
-            navigateToProjectNote(jfn);
-            break;
-          }
-          sendMessageToPlugin("openNoteInEditor", JSON.stringify({ filename: jfn }));
-          break;
-        }
-        case "openNoteMetaModal":
-          closeProjectMenu();
-          openNoteMetaModal();
-          break;
-        case "markReviewedFromFooter": {
-          var nc = State.noteContent;
-          if (!nc) break;
-          sendMessageToPlugin("updateNoteFrontmatter", JSON.stringify({
-            filename: nc.filename,
-            updates: { reviewed: State.today }
-          }));
-          var footer = target.closest(".cl-review-footer");
-          if (footer) footer.remove();
-          break;
-        }
-        case "toggleProjectMenu":
-          toggleProjectMenu(target);
-          break;
-        case "refreshProject": {
-          var rfn = target.dataset.filename || State.currentNoteFilename;
-          if (!rfn) break;
-          closeProjectMenu();
-          target.classList.add("cl-spinning");
-          sendMessageToPlugin("refreshProject", JSON.stringify({ filename: rfn }));
-          sendMessageToPlugin("requestNoteContent", JSON.stringify({ filename: rfn }));
-          break;
-        }
-        case "archiveProject":
-          closeProjectMenu();
-          confirmArchiveProject();
-          break;
-        case "rescheduleAllOverdue": {
-          var today = State.today;
-          var moved = 0;
-          for (var rai = 0; rai < State.tasks.length; rai++) {
-            var t = State.tasks[rai];
-            if (t.status === "open" && t.scheduledDate && t.scheduledDate < today) {
-              rescheduleTaskById(t.id, today);
-              moved++;
-            }
-          }
-          if (moved > 0) renderCurrentView();
-          break;
-        }
-        case "dismissMoved":
-          State.movedFromInbox = [];
-          renderCurrentView();
-          break;
-        case "toggleHeadingCollapse": {
-          var lineIdx = parseInt(target.dataset.lineIndex, 10);
-          if (isNaN(lineIdx) || !State.currentNoteFilename) break;
-          var body = document.querySelector('.cl-section-body[data-heading-line="' + lineIdx + '"]');
-          if (body) {
-            var nowHidden = body.style.display !== "none";
-            body.style.display = nowHidden ? "none" : "";
-            var svg = target.querySelector(".cl-heading-chevron");
-            if (svg) {
-              svg.classList.toggle("cl-chevron-right", nowHidden);
-              svg.classList.toggle("cl-chevron-down", !nowHidden);
-            }
-            target.classList.toggle("cl-always-visible", nowHidden);
-          }
-          sendMessageToPlugin("toggleHeadingCollapse", JSON.stringify({
-            filename: State.currentNoteFilename,
-            lineIndex: lineIdx
-          }));
+        closePickers();
+      }
+    });
+  }
+  function renderNoteResults(query) {
+    var q = (query || "").toLowerCase();
+    var html = "";
+    if (State.expandedTaskId && !q) {
+      var curTask = null;
+      for (var ti = 0; ti < State.tasks.length; ti++) {
+        if (State.tasks[ti].id === State.expandedTaskId) {
+          curTask = State.tasks[ti];
           break;
         }
       }
+      if (curTask && curTask.noteFilename) {
+        html += '<div class="cl-picker-group">Current Location</div>';
+        html += '<div class="cl-picker-result cl-picker-current" data-action="selectNote" data-filename="' + esc(curTask.noteFilename) + '" data-title="' + esc(curTask.noteTitle) + '">';
+        html += '<span class="cl-picker-note-icon">\u{1F4CD}</span>';
+        html += '<span class="cl-picker-note-title">' + esc(curTask.noteTitle) + "</span>";
+        html += "</div>";
+        html += '<div class="cl-picker-divider" style="margin:4px 14px;"></div>';
+      }
+    }
+    for (var fi = 0; fi < State.folders.length; fi++) {
+      var folder = State.folders[fi];
+      var matchingNotes = [];
+      for (var ni = 0; ni < folder.notes.length; ni++) {
+        var n = folder.notes[ni];
+        if (!q || n.title.toLowerCase().indexOf(q) >= 0) matchingNotes.push(n);
+      }
+      if (matchingNotes.length === 0) continue;
+      html += '<div class="cl-picker-group">' + esc(folder.name) + "</div>";
+      for (var mi = 0; mi < matchingNotes.length; mi++) {
+        var mn = matchingNotes[mi];
+        html += '<div class="cl-picker-result" data-action="selectNote" data-filename="' + esc(mn.filename) + '" data-title="' + esc(mn.title) + '">';
+        html += '<span class="cl-picker-note-icon">\u{1F4C4}</span>';
+        html += '<span class="cl-picker-note-title">' + esc(mn.title) + "</span>";
+        html += '<span class="cl-picker-note-count">' + mn.taskCount + "</span>";
+        html += "</div>";
+      }
+    }
+    if (!html) html = '<div class="cl-picker-empty">No notes found</div>';
+    return html;
+  }
+  function getAllKnownTags() {
+    var tagMap = {};
+    for (var i = 0; i < State.tasks.length; i++) {
+      var t = State.tasks[i];
+      if (t.tags) {
+        for (var j = 0; j < t.tags.length; j++) tagMap[t.tags[j]] = true;
+      }
+    }
+    return Object.keys(tagMap).sort();
+  }
+  function getAllKnownMentions() {
+    var menMap = {};
+    for (var i = 0; i < State.tasks.length; i++) {
+      var t = State.tasks[i];
+      if (t.mentions) {
+        for (var j = 0; j < t.mentions.length; j++) menMap[t.mentions[j]] = true;
+      }
+    }
+    return Object.keys(menMap).sort();
+  }
+  function showInlineInput(anchor, prefix, onCommit) {
+    var existing = document.querySelector(".cl-inline-input-wrap");
+    if (existing) existing.remove();
+    var allSuggestions = prefix === "#" ? getAllKnownTags() : getAllKnownMentions();
+    var draft = State.editDraft;
+    var already = prefix === "#" ? draft.tags || [] : draft.mentions || [];
+    allSuggestions = allSuggestions.filter(function(s) {
+      return already.indexOf(s) === -1;
     });
-    main.addEventListener("keydown", function(e) {
-      if (e.key === "Enter" && e.target.classList.contains("cl-quick-add-input")) {
+    var wrap = document.createElement("div");
+    wrap.className = "cl-inline-input-wrap";
+    var input = document.createElement("input");
+    input.className = "cl-inline-input";
+    input.placeholder = prefix + "...";
+    input.value = prefix;
+    var dropdown = document.createElement("div");
+    dropdown.className = "cl-autocomplete";
+    var selectedIdx = -1;
+    wrap.appendChild(input);
+    wrap.appendChild(dropdown);
+    anchor.parentNode.insertBefore(wrap, anchor.nextSibling);
+    input.focus();
+    input.setSelectionRange(prefix.length, prefix.length);
+    function updateSuggestions() {
+      var q = input.value.toLowerCase();
+      var matches = allSuggestions.filter(function(s) {
+        return s.toLowerCase().indexOf(q) >= 0;
+      });
+      if (matches.length === 0 || matches.length === 1 && matches[0].toLowerCase() === q) {
+        dropdown.innerHTML = "";
+        dropdown.style.display = "none";
+        selectedIdx = -1;
+        return;
+      }
+      selectedIdx = -1;
+      dropdown.style.display = "block";
+      dropdown.innerHTML = "";
+      for (var i = 0; i < Math.min(matches.length, 8); i++) {
+        var item = document.createElement("div");
+        item.className = "cl-autocomplete-item";
+        item.textContent = matches[i];
+        item.dataset.value = matches[i];
+        item.addEventListener("mousedown", function(e) {
+          e.preventDefault();
+          input.value = this.dataset.value;
+          commit();
+        });
+        dropdown.appendChild(item);
+      }
+    }
+    function commit() {
+      var val = input.value.trim();
+      wrap.remove();
+      if (val && val !== prefix) {
+        onCommit(val);
+      }
+    }
+    input.addEventListener("input", updateSuggestions);
+    updateSuggestions();
+    input.addEventListener("keydown", function(e) {
+      var items = dropdown.querySelectorAll(".cl-autocomplete-item");
+      if (e.key === "ArrowDown" && items.length > 0) {
         e.preventDefault();
-        var content = e.target.value.trim();
-        if (!content) return;
-        var view = e.target.closest(".cl-quick-add").dataset.view;
-        var todayFilename = State.today.replace(/-/g, "") + ".md";
-        var targetFilename = view === "note" && State.currentNoteFilename ? State.currentNoteFilename : todayFilename;
-        var msg = { filename: targetFilename, content };
-        if (view === "today") msg.scheduledDate = State.today;
-        if (view === "someday") msg.tags = ["#someday"];
-        if (view === "note") msg.prepend = true;
-        sendMessageToPlugin("createTask", JSON.stringify(msg));
-        e.target.value = "";
+        selectedIdx = Math.min(selectedIdx + 1, items.length - 1);
+        for (var i = 0; i < items.length; i++) items[i].classList.toggle("cl-autocomplete-active", i === selectedIdx);
+        input.value = items[selectedIdx].dataset.value;
+      } else if (e.key === "ArrowUp" && items.length > 0) {
+        e.preventDefault();
+        selectedIdx = Math.max(selectedIdx - 1, 0);
+        for (var i = 0; i < items.length; i++) items[i].classList.toggle("cl-autocomplete-active", i === selectedIdx);
+        input.value = items[selectedIdx].dataset.value;
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        e.stopPropagation();
+        commit();
+      } else if (e.key === "Escape") {
+        e.stopPropagation();
+        wrap.remove();
       }
     });
+    input.addEventListener("blur", function() {
+      setTimeout(function() {
+        if (wrap.parentNode) commit();
+      }, 150);
+    });
   }
-  function toggleTaskTagById(taskId, tag, add) {
-    if (!taskId || !tag) return;
-    var parts = taskId.split(":");
-    var filename = parts.slice(0, -1).join(":");
-    var lineIndex = parseInt(parts[parts.length - 1]);
-    if (isNaN(lineIndex)) return;
-    for (var i = 0; i < State.tasks.length; i++) {
-      if (State.tasks[i].id === taskId) {
-        var tags = State.tasks[i].tags || [];
-        if (add) {
-          if (tags.indexOf(tag) < 0) tags = tags.concat([tag]);
-        } else {
-          tags = tags.filter(function(t) {
-            return t !== tag;
-          });
-        }
-        State.tasks[i].tags = tags;
-        break;
-      }
-    }
-    renderCurrentView();
-    sendMessageToPlugin("setTaskTag", JSON.stringify({
-      filename,
-      lineIndex,
-      tag,
-      add: !!add
-    }));
+  function closePickers() {
+    var pickers = document.querySelectorAll(".cl-picker");
+    for (var i = 0; i < pickers.length; i++) pickers[i].remove();
   }
-  function rescheduleTaskById(taskId, dateStr) {
-    if (!taskId) return;
-    var parts = taskId.split(":");
-    var filename = parts.slice(0, -1).join(":");
-    var lineIndex = parseInt(parts[parts.length - 1]);
-    if (isNaN(lineIndex)) return;
-    for (var i = 0; i < State.tasks.length; i++) {
-      if (State.tasks[i].id === taskId) {
-        State.tasks[i].scheduledDate = dateStr || null;
-        State.tasks[i].scheduledWeek = null;
-        break;
-      }
-    }
-    renderCurrentView();
-    sendMessageToPlugin("rescheduleTask", JSON.stringify({
-      filename,
-      lineIndex,
-      scheduledDate: dateStr || null,
-      scheduledWeek: null
-    }));
-  }
-  function getFocusedTaskId() {
-    if (State.focusedTaskIndex < 0) return null;
-    var rows = document.querySelectorAll(".cl-task-row");
-    if (!rows[State.focusedTaskIndex]) return null;
-    return rows[State.focusedTaskIndex].dataset.taskId || null;
-  }
-  function toggleTask(taskId) {
-    if (!taskId) return;
-    for (var i = 0; i < State.tasks.length; i++) {
-      if (State.tasks[i].id === taskId) {
-        State.tasks[i].status = State.tasks[i].status === "open" ? "done" : "open";
-        break;
-      }
-    }
-    renderCurrentView();
-    renderSidebar();
-    var parts = taskId.split(":");
-    var filename = parts.slice(0, -1).join(":");
-    var lineIndex = parseInt(parts[parts.length - 1]);
-    sendMessageToPlugin("toggleTask", JSON.stringify({ filename, lineIndex }));
-  }
+
+  // src/webview/ui/task-editor.js
   function expandTask(taskId) {
     if (!taskId) return;
     if (State.expandedTaskId === taskId) {
@@ -2399,505 +1837,8 @@
     }
     collapseTask();
   }
-  function positionPickerVertically(picker, anchor, margin) {
-    if (margin == null) margin = 4;
-    var rect = anchor.getBoundingClientRect();
-    var pickerHeight = picker.getBoundingClientRect().height;
-    var viewportHeight = window.innerHeight;
-    var spaceBelow = viewportHeight - rect.bottom - margin;
-    var spaceAbove = rect.top - margin;
-    if (pickerHeight > spaceBelow && spaceAbove > spaceBelow) {
-      picker.style.top = Math.max(margin, rect.top - pickerHeight - margin) + "px";
-    } else {
-      picker.style.top = rect.bottom + margin + "px";
-    }
-  }
-  function showDatePicker(anchor) {
-    closePickers();
-    var rect = anchor.getBoundingClientRect();
-    var picker = document.createElement("div");
-    picker.className = "cl-picker cl-date-picker";
-    picker.style.top = rect.bottom + 4 + "px";
-    picker.style.left = Math.min(rect.left, window.innerWidth - 270) + "px";
-    var today = State.today;
-    var tmr = addDays(today, 1);
-    var nextMon = getNextMonday(today);
-    var inAWeek = addDays(today, 7);
-    picker.innerHTML = '<div class="cl-picker-tabs"><div class="cl-picker-tab cl-picker-tab-active" data-tab="day">Day</div><div class="cl-picker-tab" data-tab="week">Week</div></div><div class="cl-picker-body" id="cl-date-body">' + renderDateDayTab(today, tmr, nextMon, inAWeek) + '</div><div class="cl-picker-footer"><div class="cl-picker-action" data-action="removeDate"><span>\u2715</span> Remove date <span class="cl-shortcut">\u2318O</span></div></div>';
-    document.body.appendChild(picker);
-    positionPickerVertically(picker, anchor);
-    picker.addEventListener("click", function(e) {
-      var target = e.target.closest("[data-action]");
-      if (!target) {
-        var tab = e.target.closest("[data-tab]");
-        if (tab) {
-          var tabs = picker.querySelectorAll(".cl-picker-tab");
-          for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove("cl-picker-tab-active");
-          tab.classList.add("cl-picker-tab-active");
-          var body = picker.querySelector("#cl-date-body");
-          if (tab.dataset.tab === "day") body.innerHTML = renderDateDayTab(today, tmr, nextMon, inAWeek);
-          else body.innerHTML = renderDateWeekTab();
-        }
-        return;
-      }
-      if (target.dataset.action === "selectDate") {
-        State.editDraft.scheduledDate = target.dataset.date;
-        State.editDraft.scheduledWeek = null;
-        State.editDraft.tags = State.editDraft.tags.filter(function(t) {
-          return t !== "#someday";
-        });
-        updateDateChip();
-        closePickers();
-      } else if (target.dataset.action === "selectWeek") {
-        State.editDraft.scheduledWeek = target.dataset.week;
-        State.editDraft.scheduledDate = null;
-        State.editDraft.tags = State.editDraft.tags.filter(function(t) {
-          return t !== "#someday";
-        });
-        updateDateChip();
-        closePickers();
-      } else if (target.dataset.action === "removeDate") {
-        State.editDraft.scheduledDate = null;
-        State.editDraft.scheduledWeek = null;
-        updateDateChip();
-        closePickers();
-      }
-    });
-  }
-  function renderDateDayTab(today, tmr, nextMon, inAWeek) {
-    var html = '<div class="cl-picker-options">';
-    html += '<div class="cl-picker-option cl-picker-today" data-action="selectDate" data-date="' + today + '"><span>\u2B50</span><span class="cl-picker-opt-label">Today</span><span class="cl-picker-opt-date">' + formatShortDate(today) + "</span></div>";
-    html += '<div class="cl-picker-option" data-action="selectDate" data-date="' + tmr + '"><span>\u2192</span><span class="cl-picker-opt-label">Tomorrow</span><span class="cl-picker-opt-date">' + formatShortDate(tmr) + "</span></div>";
-    html += '<div class="cl-picker-option" data-action="selectDate" data-date="' + nextMon + '"><span>\u{1F4C5}</span><span class="cl-picker-opt-label">Next Monday</span><span class="cl-picker-opt-date">' + formatShortDate(nextMon) + "</span></div>";
-    html += '<div class="cl-picker-option" data-action="selectDate" data-date="' + inAWeek + '"><span>+7</span><span class="cl-picker-opt-label">In a week</span><span class="cl-picker-opt-date">' + formatShortDate(inAWeek) + "</span></div>";
-    html += "</div>";
-    html += '<div class="cl-picker-divider"></div>';
-    html += renderMiniCalendar(today);
-    return html;
-  }
-  function renderMiniCalendar(todayStr) {
-    var parts = todayStr.split("-");
-    var year = parseInt(parts[0]);
-    var month = parseInt(parts[1]) - 1;
-    var months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    var firstDay = new Date(year, month, 1);
-    var startOffset = (firstDay.getDay() + 6) % 7;
-    var daysInMonth = new Date(year, month + 1, 0).getDate();
-    var html = '<div class="cl-mini-cal">';
-    html += '<div class="cl-cal-nav"><span class="cl-cal-arrow">\u25C0</span><span class="cl-cal-month">' + months[month] + " " + year + '</span><span class="cl-cal-arrow">\u25B6</span></div>';
-    html += '<div class="cl-cal-grid">';
-    var dayNames = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
-    for (var di = 0; di < 7; di++) html += '<span class="cl-cal-day-name">' + dayNames[di] + "</span>";
-    for (var gap = 0; gap < startOffset; gap++) html += '<span class="cl-cal-day"></span>';
-    for (var d = 1; d <= daysInMonth; d++) {
-      var dateStr = year + "-" + String(month + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
-      var cls = "cl-cal-day";
-      if (dateStr === todayStr) cls += " cl-cal-today";
-      if (dateStr < todayStr) cls += " cl-cal-past";
-      if (State.editDraft && State.editDraft.scheduledDate === dateStr) cls += " cl-cal-selected";
-      html += '<span class="' + cls + '" data-action="selectDate" data-date="' + dateStr + '">' + d + "</span>";
-    }
-    html += "</div></div>";
-    return html;
-  }
-  function renderDateWeekTab() {
-    var currentWeek = State.currentWeek;
-    var html = '<div class="cl-picker-options">';
-    for (var w = 0; w < 8; w++) {
-      var weekStr = addWeeks(currentWeek, w);
-      var label = w === 0 ? "This week" : w === 1 ? "Next week" : weekStr;
-      html += '<div class="cl-picker-option" data-action="selectWeek" data-week="' + weekStr + '"><span class="cl-picker-opt-label">' + label + '</span><span class="cl-picker-opt-date">' + weekStr + "</span></div>";
-    }
-    html += "</div>";
-    return html;
-  }
-  function updateDateChip() {
-    var editor = document.getElementById("cl-editor");
-    if (!editor || !State.editDraft) return;
-    var chip = editor.querySelector('[data-action="openDatePicker"]');
-    if (!chip) return;
-    var label = "Schedule...";
-    if (State.editDraft.scheduledDate) label = formatShortDate(State.editDraft.scheduledDate);
-    else if (State.editDraft.scheduledWeek) label = State.editDraft.scheduledWeek;
-    chip.innerHTML = '<span class="cl-meta-icon">\u{1F4C5}</span>' + label;
-  }
-  function showNotePicker(anchor) {
-    closePickers();
-    var rect = anchor.getBoundingClientRect();
-    var picker = document.createElement("div");
-    picker.className = "cl-picker cl-note-picker";
-    picker.style.top = rect.bottom + 4 + "px";
-    picker.style.left = Math.min(rect.left, window.innerWidth - 310) + "px";
-    picker.innerHTML = '<div class="cl-picker-search"><input class="cl-picker-input" placeholder="Search notes..." autofocus/></div><div class="cl-picker-results" id="cl-note-results">' + renderNoteResults("") + '</div><div class="cl-picker-footer"><span style="opacity:0.35;font-size:11px;">\u21B5 select \xB7 Esc close</span></div>';
-    document.body.appendChild(picker);
-    positionPickerVertically(picker, anchor);
-    var input = picker.querySelector(".cl-picker-input");
-    input.addEventListener("input", function() {
-      document.getElementById("cl-note-results").innerHTML = renderNoteResults(input.value);
-    });
-    picker.addEventListener("click", function(e) {
-      var target = e.target.closest('[data-action="selectNote"]');
-      if (target) {
-        State.editDraft.moveToFilename = target.dataset.filename;
-        State.editDraft.moveToLabel = target.dataset.title;
-        var editor = document.getElementById("cl-editor");
-        if (editor) {
-          var chip = editor.querySelector('[data-action="openNotePicker"]');
-          if (chip) chip.textContent = "\u2192 " + target.dataset.title;
-        }
-        closePickers();
-      }
-    });
-  }
-  function renderNoteResults(query) {
-    var q = (query || "").toLowerCase();
-    var html = "";
-    if (State.expandedTaskId && !q) {
-      var curTask = null;
-      for (var ti = 0; ti < State.tasks.length; ti++) {
-        if (State.tasks[ti].id === State.expandedTaskId) {
-          curTask = State.tasks[ti];
-          break;
-        }
-      }
-      if (curTask && curTask.noteFilename) {
-        html += '<div class="cl-picker-group">Current Location</div>';
-        html += '<div class="cl-picker-result cl-picker-current" data-action="selectNote" data-filename="' + esc(curTask.noteFilename) + '" data-title="' + esc(curTask.noteTitle) + '">';
-        html += '<span class="cl-picker-note-icon">\u{1F4CD}</span>';
-        html += '<span class="cl-picker-note-title">' + esc(curTask.noteTitle) + "</span>";
-        html += "</div>";
-        html += '<div class="cl-picker-divider" style="margin:4px 14px;"></div>';
-      }
-    }
-    for (var fi = 0; fi < State.folders.length; fi++) {
-      var folder = State.folders[fi];
-      var matchingNotes = [];
-      for (var ni = 0; ni < folder.notes.length; ni++) {
-        var n = folder.notes[ni];
-        if (!q || n.title.toLowerCase().indexOf(q) >= 0) matchingNotes.push(n);
-      }
-      if (matchingNotes.length === 0) continue;
-      html += '<div class="cl-picker-group">' + esc(folder.name) + "</div>";
-      for (var mi = 0; mi < matchingNotes.length; mi++) {
-        var mn = matchingNotes[mi];
-        html += '<div class="cl-picker-result" data-action="selectNote" data-filename="' + esc(mn.filename) + '" data-title="' + esc(mn.title) + '">';
-        html += '<span class="cl-picker-note-icon">\u{1F4C4}</span>';
-        html += '<span class="cl-picker-note-title">' + esc(mn.title) + "</span>";
-        html += '<span class="cl-picker-note-count">' + mn.taskCount + "</span>";
-        html += "</div>";
-      }
-    }
-    if (!html) html = '<div class="cl-picker-empty">No notes found</div>';
-    return html;
-  }
-  function getAllKnownTags() {
-    var tagMap = {};
-    for (var i = 0; i < State.tasks.length; i++) {
-      var t = State.tasks[i];
-      if (t.tags) {
-        for (var j = 0; j < t.tags.length; j++) tagMap[t.tags[j]] = true;
-      }
-    }
-    return Object.keys(tagMap).sort();
-  }
-  function getAllKnownMentions() {
-    var menMap = {};
-    for (var i = 0; i < State.tasks.length; i++) {
-      var t = State.tasks[i];
-      if (t.mentions) {
-        for (var j = 0; j < t.mentions.length; j++) menMap[t.mentions[j]] = true;
-      }
-    }
-    return Object.keys(menMap).sort();
-  }
-  function showInlineInput(anchor, prefix, onCommit) {
-    var existing = document.querySelector(".cl-inline-input-wrap");
-    if (existing) existing.remove();
-    var allSuggestions = prefix === "#" ? getAllKnownTags() : getAllKnownMentions();
-    var draft = State.editDraft;
-    var already = prefix === "#" ? draft.tags || [] : draft.mentions || [];
-    allSuggestions = allSuggestions.filter(function(s) {
-      return already.indexOf(s) === -1;
-    });
-    var wrap = document.createElement("div");
-    wrap.className = "cl-inline-input-wrap";
-    var input = document.createElement("input");
-    input.className = "cl-inline-input";
-    input.placeholder = prefix + "...";
-    input.value = prefix;
-    var dropdown = document.createElement("div");
-    dropdown.className = "cl-autocomplete";
-    var selectedIdx = -1;
-    wrap.appendChild(input);
-    wrap.appendChild(dropdown);
-    anchor.parentNode.insertBefore(wrap, anchor.nextSibling);
-    input.focus();
-    input.setSelectionRange(prefix.length, prefix.length);
-    function updateSuggestions() {
-      var q = input.value.toLowerCase();
-      var matches = allSuggestions.filter(function(s) {
-        return s.toLowerCase().indexOf(q) >= 0;
-      });
-      if (matches.length === 0 || matches.length === 1 && matches[0].toLowerCase() === q) {
-        dropdown.innerHTML = "";
-        dropdown.style.display = "none";
-        selectedIdx = -1;
-        return;
-      }
-      selectedIdx = -1;
-      dropdown.style.display = "block";
-      dropdown.innerHTML = "";
-      for (var i = 0; i < Math.min(matches.length, 8); i++) {
-        var item = document.createElement("div");
-        item.className = "cl-autocomplete-item";
-        item.textContent = matches[i];
-        item.dataset.value = matches[i];
-        item.addEventListener("mousedown", function(e) {
-          e.preventDefault();
-          input.value = this.dataset.value;
-          commit();
-        });
-        dropdown.appendChild(item);
-      }
-    }
-    function commit() {
-      var val = input.value.trim();
-      wrap.remove();
-      if (val && val !== prefix) {
-        onCommit(val);
-      }
-    }
-    input.addEventListener("input", updateSuggestions);
-    updateSuggestions();
-    input.addEventListener("keydown", function(e) {
-      var items = dropdown.querySelectorAll(".cl-autocomplete-item");
-      if (e.key === "ArrowDown" && items.length > 0) {
-        e.preventDefault();
-        selectedIdx = Math.min(selectedIdx + 1, items.length - 1);
-        for (var i = 0; i < items.length; i++) items[i].classList.toggle("cl-autocomplete-active", i === selectedIdx);
-        input.value = items[selectedIdx].dataset.value;
-      } else if (e.key === "ArrowUp" && items.length > 0) {
-        e.preventDefault();
-        selectedIdx = Math.max(selectedIdx - 1, 0);
-        for (var i = 0; i < items.length; i++) items[i].classList.toggle("cl-autocomplete-active", i === selectedIdx);
-        input.value = items[selectedIdx].dataset.value;
-      } else if (e.key === "Enter") {
-        e.preventDefault();
-        e.stopPropagation();
-        commit();
-      } else if (e.key === "Escape") {
-        e.stopPropagation();
-        wrap.remove();
-      }
-    });
-    input.addEventListener("blur", function() {
-      setTimeout(function() {
-        if (wrap.parentNode) commit();
-      }, 150);
-    });
-  }
-  function closePickers() {
-    var pickers = document.querySelectorAll(".cl-picker");
-    for (var i = 0; i < pickers.length; i++) pickers[i].remove();
-  }
-  function quickJumpScore(note, query) {
-    if (!query) return 1;
-    var q = query.toLowerCase();
-    var title = (note.title || "").toLowerCase();
-    if (!title) return 0;
-    var score = 0;
-    if (title.indexOf(q) === 0) score += 100;
-    else if (title.indexOf(q) >= 0) score += 50 - title.indexOf(q);
-    var words = title.split(/[\s\-_/]+/).filter(function(w2) {
-      return w2.length > 0;
-    });
-    var initials = "";
-    for (var w = 0; w < words.length; w++) initials += words[w].charAt(0);
-    if (initials.indexOf(q) === 0) score += 80;
-    else if (initials.indexOf(q) >= 0) score += 30;
-    return score;
-  }
-  function quickJumpResults(query) {
-    var notes = State.notes || [];
-    if (!query) {
-      var byFilename = {};
-      for (var ni = 0; ni < notes.length; ni++) byFilename[notes[ni].filename] = notes[ni];
-      var ordered = [];
-      var seen = {};
-      var recents = State.recentNotes || [];
-      for (var ri = 0; ri < recents.length; ri++) {
-        var rn = byFilename[recents[ri]];
-        if (rn && !seen[rn.filename]) {
-          ordered.push(rn);
-          seen[rn.filename] = true;
-        }
-      }
-      for (var si = 0; si < notes.length; si++) {
-        if (!seen[notes[si].filename]) {
-          ordered.push(notes[si]);
-          seen[notes[si].filename] = true;
-        }
-      }
-      return ordered.slice(0, 12);
-    }
-    var scored = [];
-    for (var i = 0; i < notes.length; i++) {
-      var s = quickJumpScore(notes[i], query);
-      if (s > 0) scored.push({ note: notes[i], score: s });
-    }
-    scored.sort(function(a, b) {
-      if (b.score !== a.score) return b.score - a.score;
-      return (a.note.title || "").localeCompare(b.note.title || "");
-    });
-    return scored.slice(0, 12).map(function(x) {
-      return x.note;
-    });
-  }
-  function renderQuickJumpResults(container, results, selectedIndex) {
-    var html = "";
-    if (results.length === 0) {
-      html = '<div class="cl-jump-empty">No matching projects or areas</div>';
-    } else {
-      for (var i = 0; i < results.length; i++) {
-        var n = results[i];
-        var folderPath = (n.filename || "").replace(/\/[^/]+$/, "");
-        var icon = renderProjectIcon(n, 16);
-        var sel = i === selectedIndex ? " cl-jump-result-active" : "";
-        html += '<div class="cl-jump-result' + sel + '" data-filename="' + esc(n.filename) + '" data-index="' + i + '"><span class="cl-jump-icon">' + icon + '</span><span class="cl-jump-title">' + esc(n.title || "") + '</span><span class="cl-jump-folder">' + esc(folderPath) + "</span></div>";
-      }
-    }
-    container.innerHTML = html;
-  }
-  function openQuickJump() {
-    var existing = document.querySelector(".cl-jump-overlay");
-    if (existing) {
-      existing.remove();
-      return;
-    }
-    var overlay = document.createElement("div");
-    overlay.className = "cl-jump-overlay";
-    overlay.innerHTML = '<div class="cl-jump-modal"><input class="cl-jump-input" type="text" placeholder="Jump to project or area\u2026" autocomplete="off" spellcheck="false"><div class="cl-jump-results"></div></div>';
-    document.body.appendChild(overlay);
-    var input = overlay.querySelector(".cl-jump-input");
-    var resultsEl = overlay.querySelector(".cl-jump-results");
-    var state = { results: quickJumpResults(""), selected: 0 };
-    renderQuickJumpResults(resultsEl, state.results, state.selected);
-    function close() {
-      overlay.remove();
-    }
-    function jumpTo(filename) {
-      if (!filename) return;
-      close();
-      navigateToProjectNote(filename);
-    }
-    input.addEventListener("input", function() {
-      state.results = quickJumpResults(input.value);
-      state.selected = 0;
-      renderQuickJumpResults(resultsEl, state.results, state.selected);
-    });
-    input.addEventListener("keydown", function(e) {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        close();
-        return;
-      }
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        if (state.results.length === 0) return;
-        state.selected = Math.min(state.selected + 1, state.results.length - 1);
-        renderQuickJumpResults(resultsEl, state.results, state.selected);
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        if (state.results.length === 0) return;
-        state.selected = Math.max(state.selected - 1, 0);
-        renderQuickJumpResults(resultsEl, state.results, state.selected);
-        return;
-      }
-      if (e.key === "Enter") {
-        e.preventDefault();
-        var pick = state.results[state.selected];
-        if (pick) jumpTo(pick.filename);
-        return;
-      }
-    });
-    resultsEl.addEventListener("click", function(e) {
-      var row = e.target.closest(".cl-jump-result");
-      if (!row) return;
-      jumpTo(row.dataset.filename);
-    });
-    overlay.addEventListener("click", function(e) {
-      if (e.target === overlay) close();
-    });
-    setTimeout(function() {
-      input.focus();
-    }, 0);
-  }
-  var SHORTCUTS_GROUPS = [
-    {
-      title: "Navigation",
-      items: [
-        { keys: ["\u23181", "..", "\u23185"], label: "Switch view (Inbox, Today, Upcoming, Anytime, Someday)" },
-        { keys: ["\u2318/"], label: "Quick-jump to a project or area" },
-        { keys: ["\u2191", "\u2193"], label: "Move focus between tasks" },
-        { keys: ["Enter"], label: "Open the focused task" },
-        { keys: ["Esc"], label: "Close editor, picker, or palette" }
-      ]
-    },
-    {
-      title: "Task actions",
-      items: [
-        { keys: ["Space"], label: "Toggle the focused task done / open" },
-        { keys: ["\u2318T"], label: "Schedule for today" },
-        { keys: ["\u2318\u21E7T"], label: "Schedule for tomorrow" },
-        { keys: ["\u2318E"], label: 'Add to "This Evening"' },
-        { keys: ["\u2318O"], label: "Clear schedule" },
-        { keys: ["\u2318\u232B"], label: "Delete task (with confirmation)" },
-        { keys: ["\u2318Enter"], label: "Save the open task editor" }
-      ]
-    },
-    {
-      title: "Other",
-      items: [
-        { keys: ["\u2318N"], label: "Focus the New Task input" },
-        { keys: ["?"], label: "Show this cheatsheet" }
-      ]
-    }
-  ];
-  function openShortcutsCheatsheet() {
-    var existing = document.querySelector(".cl-cheatsheet-overlay");
-    if (existing) {
-      existing.remove();
-      return;
-    }
-    var html = '<div class="cl-cheatsheet-modal"><div class="cl-cheatsheet-title">Keyboard shortcuts</div>';
-    for (var gi = 0; gi < SHORTCUTS_GROUPS.length; gi++) {
-      var g = SHORTCUTS_GROUPS[gi];
-      html += '<div class="cl-cheatsheet-section">';
-      html += '<div class="cl-cheatsheet-section-title">' + esc(g.title) + "</div>";
-      for (var ii = 0; ii < g.items.length; ii++) {
-        var it = g.items[ii];
-        var keysHtml = "";
-        for (var ki = 0; ki < it.keys.length; ki++) {
-          var k = it.keys[ki];
-          if (k === "..") keysHtml += '<span class="cl-cheatsheet-sep">\u2026</span>';
-          else keysHtml += '<kbd class="cl-cheatsheet-kbd">' + esc(k) + "</kbd>";
-        }
-        html += '<div class="cl-cheatsheet-row"><div class="cl-cheatsheet-keys">' + keysHtml + '</div><div class="cl-cheatsheet-label">' + esc(it.label) + "</div></div>";
-      }
-      html += "</div>";
-    }
-    html += '<div class="cl-cheatsheet-foot">Press <kbd class="cl-cheatsheet-kbd">?</kbd> or <kbd class="cl-cheatsheet-kbd">Esc</kbd> to close</div>';
-    html += "</div>";
-    var overlay = document.createElement("div");
-    overlay.className = "cl-cheatsheet-overlay";
-    overlay.innerHTML = html;
-    document.body.appendChild(overlay);
-    overlay.addEventListener("click", function(e) {
-      if (e.target === overlay) overlay.remove();
-    });
-  }
+
+  // src/webview/ui/modals.js
   function openConfirmModal(opts) {
     var existing = document.querySelector(".cl-confirm-overlay");
     if (existing) existing.remove();
@@ -2972,6 +1913,70 @@
         renderCurrentView();
         sendMessageToPlugin("deleteTask", JSON.stringify({ filename, lineIndex }));
       }
+    });
+  }
+  var SHORTCUTS_GROUPS = [
+    {
+      title: "Navigation",
+      items: [
+        { keys: ["\u23181", "..", "\u23185"], label: "Switch view (Inbox, Today, Upcoming, Anytime, Someday)" },
+        { keys: ["\u2318/"], label: "Quick-jump to a project or area" },
+        { keys: ["\u2191", "\u2193"], label: "Move focus between tasks" },
+        { keys: ["Enter"], label: "Open the focused task" },
+        { keys: ["Esc"], label: "Close editor, picker, or palette" }
+      ]
+    },
+    {
+      title: "Task actions",
+      items: [
+        { keys: ["Space"], label: "Toggle the focused task done / open" },
+        { keys: ["\u2318T"], label: "Schedule for today" },
+        { keys: ["\u2318\u21E7T"], label: "Schedule for tomorrow" },
+        { keys: ["\u2318E"], label: 'Add to "This Evening"' },
+        { keys: ["\u2318O"], label: "Clear schedule" },
+        { keys: ["\u2318\u232B"], label: "Delete task (with confirmation)" },
+        { keys: ["\u2318Enter"], label: "Save the open task editor" }
+      ]
+    },
+    {
+      title: "Other",
+      items: [
+        { keys: ["\u2318N"], label: "Focus the New Task input" },
+        { keys: ["?"], label: "Show this cheatsheet" }
+      ]
+    }
+  ];
+  function openShortcutsCheatsheet() {
+    var existing = document.querySelector(".cl-cheatsheet-overlay");
+    if (existing) {
+      existing.remove();
+      return;
+    }
+    var html = '<div class="cl-cheatsheet-modal"><div class="cl-cheatsheet-title">Keyboard shortcuts</div>';
+    for (var gi = 0; gi < SHORTCUTS_GROUPS.length; gi++) {
+      var g = SHORTCUTS_GROUPS[gi];
+      html += '<div class="cl-cheatsheet-section">';
+      html += '<div class="cl-cheatsheet-section-title">' + esc(g.title) + "</div>";
+      for (var ii = 0; ii < g.items.length; ii++) {
+        var it = g.items[ii];
+        var keysHtml = "";
+        for (var ki = 0; ki < it.keys.length; ki++) {
+          var k = it.keys[ki];
+          if (k === "..") keysHtml += '<span class="cl-cheatsheet-sep">\u2026</span>';
+          else keysHtml += '<kbd class="cl-cheatsheet-kbd">' + esc(k) + "</kbd>";
+        }
+        html += '<div class="cl-cheatsheet-row"><div class="cl-cheatsheet-keys">' + keysHtml + '</div><div class="cl-cheatsheet-label">' + esc(it.label) + "</div></div>";
+      }
+      html += "</div>";
+    }
+    html += '<div class="cl-cheatsheet-foot">Press <kbd class="cl-cheatsheet-kbd">?</kbd> or <kbd class="cl-cheatsheet-kbd">Esc</kbd> to close</div>';
+    html += "</div>";
+    var overlay = document.createElement("div");
+    overlay.className = "cl-cheatsheet-overlay";
+    overlay.innerHTML = html;
+    document.body.appendChild(overlay);
+    overlay.addEventListener("click", function(e) {
+      if (e.target === overlay) overlay.remove();
     });
   }
   var _projectMenuOutsideListener = null;
@@ -3109,6 +2114,974 @@
       if (first) first.focus();
     }, 0);
   }
+
+  // src/webview/ui/sidebar.js
+  var SIDEBAR_VIEWS = [
+    { id: "inbox", label: "Inbox" },
+    { id: "today", label: "Today" },
+    { id: "upcoming", label: "Upcoming" },
+    { id: "anytime", label: "Anytime" },
+    { id: "someday", label: "Someday" }
+  ];
+  function renderSidebar() {
+    var el = document.getElementById("cl-sidebar");
+    if (!el) return;
+    var html = '<div class="cl-sidebar-inner">';
+    for (var vi = 0; vi < SIDEBAR_VIEWS.length; vi++) {
+      var v = SIDEBAR_VIEWS[vi];
+      if (State.visibleViews[v.id] === false) continue;
+      var count = getViewCount(v.id);
+      var active = State.currentView === v.id ? " cl-nav-active" : "";
+      html += '<div class="cl-nav-item' + active + '" data-view="' + v.id + '">';
+      html += '<span class="cl-nav-icon">' + getViewIcon(v.id, 18) + "</span>";
+      html += '<span class="cl-nav-label">' + v.label + "</span>";
+      if (count > 0 && (v.id === "inbox" || v.id === "today")) {
+        html += '<span class="cl-nav-count">' + count + "</span>";
+      }
+      html += "</div>";
+    }
+    html += '<div class="cl-nav-divider"></div>';
+    for (var fi = 0; fi < State.folders.length; fi++) {
+      var folder = State.folders[fi];
+      var areaKey = folder.path;
+      var collapsed = State.collapsedAreas && State.collapsedAreas[areaKey];
+      var notes = folder.notes || [];
+      var visibleNotes = notes;
+      visibleNotes = visibleNotes.filter(function(n2) {
+        return n2.status !== "someday";
+      });
+      if (State.hidePaused) {
+        visibleNotes = visibleNotes.filter(function(n2) {
+          return n2.status !== "paused";
+        });
+      }
+      if (State.hideEmptyProjects) {
+        visibleNotes = visibleNotes.filter(function(n2) {
+          return (n2.openCount || 0) > 0;
+        });
+      }
+      if (State.hideNonProjects) {
+        visibleNotes = visibleNotes.filter(function(n2) {
+          return n2.hasProjectOrAreaType;
+        });
+      }
+      if (visibleNotes.length === 0) continue;
+      html += '<div class="cl-area-header" data-area="' + esc(areaKey) + '">';
+      html += '<span class="cl-area-chevron' + (collapsed ? " cl-collapsed" : "") + '">\u25B8</span>';
+      html += esc(folder.name);
+      html += "</div>";
+      html += '<div class="cl-area-group' + (collapsed ? " cl-hidden" : "") + '" data-area-group="' + esc(areaKey) + '">';
+      for (var ni = 0; ni < visibleNotes.length; ni++) {
+        var n = visibleNotes[ni];
+        var noteActive = State.currentView === "note" && State.currentNoteFilename === n.filename ? " cl-nav-active" : "";
+        var mutedCls = n.status === "paused" || n.status === "someday" ? " cl-project-muted" : "";
+        html += '<div class="cl-nav-item cl-project-item' + mutedCls + noteActive + '" data-view="note" data-filename="' + esc(n.filename) + '">';
+        html += renderProjectIcon(n, 18);
+        html += '<span class="cl-project-title">' + esc(n.title) + "</span>";
+        if (n.due) html += buildDeadlineBadgeCompact(n.due);
+        html += "</div>";
+      }
+      html += "</div>";
+    }
+    html += "</div>";
+    html += renderSidebarFooter();
+    el.innerHTML = html;
+    var navItems = el.querySelectorAll(".cl-nav-item");
+    for (var ci = 0; ci < navItems.length; ci++) {
+      navItems[ci].addEventListener("click", handleNavClick);
+    }
+    var areaHeaders = el.querySelectorAll(".cl-area-header");
+    for (var ai = 0; ai < areaHeaders.length; ai++) {
+      areaHeaders[ai].addEventListener("click", function(e) {
+        var areaKey2 = e.currentTarget.dataset.area;
+        if (!areaKey2) return;
+        State.collapsedAreas[areaKey2] = !State.collapsedAreas[areaKey2];
+        var chevron = e.currentTarget.querySelector(".cl-area-chevron");
+        var group = el.querySelector('[data-area-group="' + areaKey2 + '"]');
+        if (chevron) chevron.classList.toggle("cl-collapsed");
+        if (group) group.classList.toggle("cl-hidden");
+        sendMessageToPlugin("saveCollapsedAreas", JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
+      });
+    }
+    attachSidebarFooterHandlers();
+  }
+  function renderSidebarFooter() {
+    var open = State.settingsPopoverOpen;
+    var html = '<div class="cl-sidebar-footer">';
+    html += '<div class="cl-settings-popover' + (open ? " cl-popover-open" : "") + '">';
+    html += '<div class="cl-settings-section">';
+    html += '<div class="cl-settings-section-title">Projects &amp; Areas</div>';
+    html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleHideEmpty"' + (State.hideEmptyProjects ? " checked" : "") + "><span>Hide notes without open tasks</span></label>";
+    html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleHideNonProjects"' + (State.hideNonProjects ? " checked" : "") + "><span>Hide non-projects and non-areas</span></label>";
+    html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleHidePaused"' + (State.hidePaused ? " checked" : "") + "><span>Hide paused</span></label>";
+    html += '<button class="cl-settings-action" data-action="collapseAllAreas">Collapse all</button>';
+    html += '<button class="cl-settings-action" data-action="expandAllAreas">Expand all</button>';
+    html += "</div>";
+    html += '<div class="cl-settings-section">';
+    html += '<div class="cl-settings-section-title">Views</div>';
+    for (var vi = 0; vi < SIDEBAR_VIEWS.length; vi++) {
+      var v = SIDEBAR_VIEWS[vi];
+      var checked = State.visibleViews[v.id] !== false;
+      html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleViewVisibility" data-view="' + v.id + '"' + (checked ? " checked" : "") + '><span class="cl-settings-toggle-icon">' + getViewIcon(v.id, 16) + "</span><span>" + v.label + "</span></label>";
+    }
+    html += "</div>";
+    html += '<div class="cl-settings-section">';
+    html += '<button class="cl-settings-action cl-settings-help" data-action="openShortcutsCheatsheet"><span>Keyboard shortcuts</span><kbd class="cl-cheatsheet-kbd">?</kbd></button>';
+    html += "</div>";
+    html += "</div>";
+    html += '<button class="cl-settings-btn' + (open ? " cl-active" : "") + '" data-action="toggleSettingsPopover" title="View settings">';
+    html += '<i class="fa-solid fa-sliders"></i>';
+    html += "<span>View settings</span>";
+    html += "</button>";
+    html += "</div>";
+    return html;
+  }
+  var _settingsOutsideListener = null;
+  function attachSidebarFooterHandlers() {
+    var footer = document.querySelector(".cl-sidebar-footer");
+    if (!footer) return;
+    if (_settingsOutsideListener) {
+      document.removeEventListener("click", _settingsOutsideListener);
+      _settingsOutsideListener = null;
+    }
+    footer.addEventListener("click", function(e) {
+      var target = e.target.closest("[data-action]");
+      if (!target) return;
+      var action = target.dataset.action;
+      switch (action) {
+        case "toggleSettingsPopover":
+          State.settingsPopoverOpen = !State.settingsPopoverOpen;
+          document.body.classList.toggle("cl-settings-backdrop", State.settingsPopoverOpen);
+          renderSidebar();
+          break;
+        case "toggleHideEmpty":
+          State.hideEmptyProjects = !!target.checked;
+          sendMessageToPlugin("saveHideEmptyProjects", JSON.stringify({ hideEmptyProjects: State.hideEmptyProjects }));
+          renderSidebar();
+          break;
+        case "toggleHidePaused":
+          State.hidePaused = !!target.checked;
+          sendMessageToPlugin("saveHidePaused", JSON.stringify({ hidePaused: State.hidePaused }));
+          renderSidebar();
+          break;
+        case "toggleHideNonProjects":
+          State.hideNonProjects = !!target.checked;
+          sendMessageToPlugin("saveHideNonProjects", JSON.stringify({ hideNonProjects: State.hideNonProjects }));
+          renderSidebar();
+          break;
+        case "collapseAllAreas":
+          for (var fi = 0; fi < State.folders.length; fi++) {
+            State.collapsedAreas[State.folders[fi].path] = true;
+          }
+          sendMessageToPlugin("saveCollapsedAreas", JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
+          renderSidebar();
+          break;
+        case "expandAllAreas":
+          State.collapsedAreas = {};
+          sendMessageToPlugin("saveCollapsedAreas", JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
+          renderSidebar();
+          break;
+        case "toggleViewVisibility": {
+          var vid = target.dataset.view;
+          if (!vid) break;
+          State.visibleViews[vid] = !!target.checked;
+          sendMessageToPlugin("saveVisibleViews", JSON.stringify({ visibleViews: JSON.stringify(State.visibleViews) }));
+          renderSidebar();
+          break;
+        }
+        case "openShortcutsCheatsheet":
+          State.settingsPopoverOpen = false;
+          document.body.classList.remove("cl-settings-backdrop");
+          renderSidebar();
+          openShortcutsCheatsheet();
+          break;
+      }
+    });
+    if (State.settingsPopoverOpen) {
+      _settingsOutsideListener = function(e) {
+        var f = document.querySelector(".cl-sidebar-footer");
+        if (f && !f.contains(e.target)) {
+          State.settingsPopoverOpen = false;
+          document.body.classList.remove("cl-settings-backdrop");
+          document.removeEventListener("click", _settingsOutsideListener);
+          _settingsOutsideListener = null;
+          renderSidebar();
+        }
+      };
+      setTimeout(function() {
+        if (_settingsOutsideListener) document.addEventListener("click", _settingsOutsideListener);
+      }, 0);
+    }
+  }
+  function handleNavClick(e) {
+    var item = e.currentTarget;
+    var view = item.dataset.view;
+    if (!view) return;
+    var sidebar = document.getElementById("cl-sidebar");
+    var overlay = document.getElementById("cl-sidebar-overlay");
+    if (sidebar) sidebar.classList.remove("cl-sidebar-open");
+    if (overlay) overlay.classList.remove("cl-sidebar-open");
+    saveCurrentViewPrefs();
+    State.currentView = view;
+    State.focusedTaskIndex = -1;
+    State.filters = { tag: null, mention: null, text: "", noteStatus: "all" };
+    State.tasksOnly = false;
+    State.expandedTaskId = null;
+    State.editDraft = null;
+    if (view === "note") {
+      State.currentNoteFilename = item.dataset.filename || null;
+      sendMessageToPlugin("requestNoteContent", JSON.stringify({ filename: State.currentNoteFilename }));
+      pushRecentNote(State.currentNoteFilename);
+    }
+    restoreViewPrefs(view, State.currentNoteFilename);
+    persistViewPrefs();
+    sendMessageToPlugin("saveView", JSON.stringify({ view, noteFilename: State.currentNoteFilename }));
+    var allNav = document.querySelectorAll(".cl-nav-item");
+    for (var i = 0; i < allNav.length; i++) allNav[i].classList.remove("cl-nav-active");
+    item.classList.add("cl-nav-active");
+    renderCurrentView();
+  }
+  var SIDEBAR_MIN_WIDTH = 140;
+  var SIDEBAR_MAX_WIDTH = 500;
+  var SIDEBAR_DEFAULT_WIDTH = 200;
+  function applySidebarWidth(width) {
+    var w = parseInt(width, 10);
+    if (isNaN(w)) w = SIDEBAR_DEFAULT_WIDTH;
+    if (w < SIDEBAR_MIN_WIDTH) w = SIDEBAR_MIN_WIDTH;
+    if (w > SIDEBAR_MAX_WIDTH) w = SIDEBAR_MAX_WIDTH;
+    document.documentElement.style.setProperty("--cl-sidebar-width", w + "px");
+  }
+  function setupSidebarResizer() {
+    var resizer = document.getElementById("cl-resizer");
+    var sidebar = document.getElementById("cl-sidebar");
+    if (!resizer || !sidebar) return;
+    var dragging = false;
+    var startX = 0;
+    var startWidth = 0;
+    resizer.addEventListener("mousedown", function(e) {
+      if (window.innerWidth <= 600) return;
+      dragging = true;
+      startX = e.clientX;
+      startWidth = sidebar.getBoundingClientRect().width;
+      document.body.classList.add("cl-resizing");
+      resizer.classList.add("cl-resizer-active");
+      e.preventDefault();
+    });
+    document.addEventListener("mousemove", function(e) {
+      if (!dragging) return;
+      var newWidth = startWidth + (e.clientX - startX);
+      if (newWidth < SIDEBAR_MIN_WIDTH) newWidth = SIDEBAR_MIN_WIDTH;
+      if (newWidth > SIDEBAR_MAX_WIDTH) newWidth = SIDEBAR_MAX_WIDTH;
+      document.documentElement.style.setProperty("--cl-sidebar-width", newWidth + "px");
+    });
+    document.addEventListener("mouseup", function() {
+      if (!dragging) return;
+      dragging = false;
+      document.body.classList.remove("cl-resizing");
+      resizer.classList.remove("cl-resizer-active");
+      var finalWidth = sidebar.getBoundingClientRect().width;
+      sendMessageToPlugin("saveSidebarWidth", JSON.stringify({ width: Math.round(finalWidth) }));
+    });
+  }
+
+  // src/webview/messages.js
+  function onMessageFromPlugin(type, data) {
+    switch (type) {
+      case "INIT_DATA":
+        State.tasks = data.tasks || [];
+        State.folders = data.folders || [];
+        State.notes = data.notes || [];
+        State.today = data.today || "";
+        State.currentWeek = data.currentWeek || "";
+        if (data.lastView) State.currentView = data.lastView;
+        if (data.lastNoteFilename && data.lastView === "note") State.currentNoteFilename = data.lastNoteFilename;
+        if (data.collapsedAreas) {
+          try {
+            State.collapsedAreas = JSON.parse(data.collapsedAreas);
+          } catch (e) {
+            State.collapsedAreas = {};
+          }
+        }
+        if (data.viewPrefs) {
+          try {
+            State.viewPrefs = JSON.parse(data.viewPrefs);
+          } catch (e) {
+            State.viewPrefs = {};
+          }
+        }
+        State.hideEmptyProjects = !!data.hideEmptyProjects;
+        State.hideNonProjects = !!data.hideNonProjects;
+        State.hidePaused = !!data.hidePaused;
+        if (data.recentNotes) {
+          try {
+            var parsedRecents = JSON.parse(data.recentNotes);
+            if (Array.isArray(parsedRecents)) State.recentNotes = parsedRecents;
+          } catch (e) {
+            State.recentNotes = [];
+          }
+        }
+        if (data.visibleViews) {
+          try {
+            var parsedViews = JSON.parse(data.visibleViews);
+            if (parsedViews && typeof parsedViews === "object") {
+              for (var vk in parsedViews) {
+                if (Object.prototype.hasOwnProperty.call(parsedViews, vk)) {
+                  State.visibleViews[vk] = !!parsedViews[vk];
+                }
+              }
+            }
+          } catch (e) {
+          }
+        }
+        applySidebarWidth(data.sidebarWidth);
+        restoreViewPrefs(State.currentView, State.currentNoteFilename);
+        renderSidebar();
+        if (State.currentView === "note" && State.currentNoteFilename) {
+          sendMessageToPlugin("requestNoteContent", JSON.stringify({ filename: State.currentNoteFilename }));
+        }
+        renderCurrentView();
+        break;
+      case "NOTE_CONTENT":
+        State.noteContent = data;
+        if (State.currentView === "note") renderCurrentView();
+        break;
+      case "SHOW_NOTE":
+        if (data && data.filename) {
+          navigateToProjectNote(data.filename);
+        }
+        break;
+      case "PROJECT_REFRESHED":
+        handleProjectRefreshed(data);
+        break;
+      case "TASK_CREATED":
+      case "TASK_SAVED":
+      case "TASK_TOGGLED":
+      case "TASK_REORDERED":
+      case "TASK_RESCHEDULED":
+      case "TASK_DELETED":
+      case "TASK_TAG_UPDATED":
+        sendMessageToPlugin("ready", "{}");
+        break;
+      case "PROJECT_ARCHIVED":
+        if (data && data.success) {
+          if (State.currentNoteFilename === data.oldFilename) {
+            State.currentView = "inbox";
+            State.currentNoteFilename = null;
+            State.noteContent = null;
+            sendMessageToPlugin("saveView", JSON.stringify({ view: "inbox", noteFilename: null }));
+          }
+          sendMessageToPlugin("ready", "{}");
+        } else {
+          console.log("Clarity: archive failed: " + (data && data.error));
+        }
+        break;
+      case "NOTE_FRONTMATTER_UPDATED":
+        if (State.noteContent && State.noteContent.filename === data.filename) {
+          State.noteContent.frontmatter = data.frontmatter || {};
+          State.noteContent.bgColorDark = data.bgColorDark || State.noteContent.bgColorDark;
+        }
+        (function() {
+          var fnFm = data.filename;
+          var newFm = data.frontmatter || {};
+          var newRdd = reviewDueDaysFromFm(newFm);
+          var newStatus = newFm.status === "paused" || newFm.status === "someday" || newFm.status === "completed" || newFm.status === "canceled" ? newFm.status : null;
+          var newType = newFm.type === "area" ? "area" : newFm.type === "project" ? "project" : "";
+          var newDue = newFm.due || null;
+          function apply(target) {
+            target.reviewedDate = newFm.reviewed || null;
+            target.reviewInterval = newFm.review || null;
+            target.reviewDueDays = newRdd;
+            target.status = newStatus;
+            target.noteType = newType;
+            target.due = newDue;
+            target.bgColorDark = data.bgColorDark || target.bgColorDark;
+          }
+          for (var fi = 0; fi < State.folders.length; fi++) {
+            var fns = State.folders[fi].notes || [];
+            for (var ni = 0; ni < fns.length; ni++) {
+              if (fns[ni].filename === fnFm) apply(fns[ni]);
+            }
+          }
+          for (var li = 0; li < State.notes.length; li++) {
+            if (State.notes[li].filename === fnFm) apply(State.notes[li]);
+          }
+        })();
+        renderSidebar();
+        renderCurrentView();
+        sendMessageToPlugin("ready", "{}");
+        break;
+      default:
+        console.log("Clarity WebView: unknown message type: " + type);
+    }
+  }
+  function handleProjectRefreshed(data) {
+    if (!data || !data.filename) return;
+    var fn = data.filename;
+    var kept = [];
+    for (var i = 0; i < State.tasks.length; i++) {
+      if (State.tasks[i].noteFilename !== fn) kept.push(State.tasks[i]);
+    }
+    if (data.tasks && data.tasks.length) {
+      for (var ti = 0; ti < data.tasks.length; ti++) kept.push(data.tasks[ti]);
+    }
+    State.tasks = kept;
+    if (data.noteMeta) {
+      var nm = data.noteMeta;
+      for (var fi = 0; fi < State.folders.length; fi++) {
+        var notes = State.folders[fi].notes || [];
+        for (var ni = 0; ni < notes.length; ni++) {
+          if (notes[ni].filename === fn) {
+            notes[ni].title = nm.title;
+            notes[ni].taskCount = nm.taskCount;
+            notes[ni].doneCount = nm.doneCount;
+            notes[ni].openCount = nm.openCount;
+            notes[ni].bgColorDark = nm.bgColorDark;
+            notes[ni].hasProjectOrAreaType = nm.hasProjectOrAreaType;
+            notes[ni].noteType = nm.noteType;
+            notes[ni].due = nm.due || null;
+            notes[ni].status = nm.status || null;
+            notes[ni].reviewedDate = nm.reviewedDate || null;
+            notes[ni].reviewInterval = nm.reviewInterval || null;
+            notes[ni].reviewDueDays = nm.reviewDueDays == null ? null : nm.reviewDueDays;
+          }
+        }
+      }
+      for (var li = 0; li < State.notes.length; li++) {
+        if (State.notes[li].filename === fn) {
+          State.notes[li].title = nm.title;
+          State.notes[li].taskCount = nm.taskCount;
+          State.notes[li].doneCount = nm.doneCount;
+          State.notes[li].openCount = nm.openCount;
+          State.notes[li].bgColorDark = nm.bgColorDark;
+          State.notes[li].noteType = nm.noteType;
+          State.notes[li].due = nm.due || null;
+          State.notes[li].status = nm.status || null;
+          State.notes[li].reviewedDate = nm.reviewedDate || null;
+          State.notes[li].reviewInterval = nm.reviewInterval || null;
+          State.notes[li].reviewDueDays = nm.reviewDueDays == null ? null : nm.reviewDueDays;
+        }
+      }
+    }
+    renderSidebar();
+    renderCurrentView();
+  }
+
+  // src/webview/ui/dnd.js
+  var dragState = null;
+  var dragSuppressNextClick = false;
+  var DRAG_LONG_PRESS_MS = 300;
+  var DRAG_CANCEL_DISTANCE = 10;
+  var DRAG_SCROLL_ZONE = 40;
+  var DRAG_SCROLL_SPEED = 8;
+  function consumeDragClickSuppression() {
+    if (dragSuppressNextClick) {
+      dragSuppressNextClick = false;
+      return true;
+    }
+    return false;
+  }
+  function dragGetTaskRow(el) {
+    var row = el.closest(".cl-task-row");
+    if (!row || row.dataset.lineIndex === void 0) return null;
+    return row;
+  }
+  function dragFindSiblings(sourceRow) {
+    var container = document.querySelector(".cl-note-content");
+    if (!container) return [];
+    var sourceIndent = parseInt(sourceRow.dataset.indent, 10) || 0;
+    var rows = container.querySelectorAll(".cl-task-row[data-line-index]");
+    var siblings = [];
+    for (var i = 0; i < rows.length; i++) {
+      var rowIndent = parseInt(rows[i].dataset.indent, 10) || 0;
+      if (rowIndent === sourceIndent && rows[i] !== sourceRow) {
+        siblings.push(rows[i]);
+      }
+    }
+    return siblings;
+  }
+  function dragCreateClone(sourceRow, x, y) {
+    var rect = sourceRow.getBoundingClientRect();
+    var clone = sourceRow.cloneNode(true);
+    clone.classList.add("cl-drag-clone");
+    clone.style.width = rect.width + "px";
+    clone.style.height = rect.height + "px";
+    clone.style.left = rect.left + "px";
+    clone.style.top = y - rect.height / 2 + "px";
+    document.body.appendChild(clone);
+    return clone;
+  }
+  function dragCreateIndicator() {
+    var el = document.createElement("div");
+    el.className = "cl-drop-indicator";
+    return el;
+  }
+  function dragUpdateClonePosition(clone, y) {
+    var height = clone.offsetHeight;
+    clone.style.top = y - height / 2 + "px";
+  }
+  function dragFindDropTarget(y, sourceRow, siblings) {
+    var best = null;
+    var bestDist = Infinity;
+    for (var i = 0; i < siblings.length; i++) {
+      var rect = siblings[i].getBoundingClientRect();
+      var mid = rect.top + rect.height / 2;
+      var dist = Math.abs(y - mid);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = { el: siblings[i], position: y < mid ? "before" : "after" };
+      }
+    }
+    return best;
+  }
+  function dragPositionIndicator(indicator, target) {
+    if (!target) {
+      if (indicator.parentNode) indicator.parentNode.removeChild(indicator);
+      return;
+    }
+    var row = target.el;
+    var refEl = row.closest(".cl-indent-wrap") || row;
+    if (target.position === "before") {
+      refEl.parentNode.insertBefore(indicator, refEl);
+    } else {
+      refEl.parentNode.insertBefore(indicator, refEl.nextSibling);
+    }
+  }
+  function dragAutoScroll(y) {
+    var main = document.getElementById("cl-main");
+    if (!main) return;
+    var rect = main.getBoundingClientRect();
+    if (y < rect.top + DRAG_SCROLL_ZONE) {
+      var intensity = 1 - (y - rect.top) / DRAG_SCROLL_ZONE;
+      main.scrollTop -= DRAG_SCROLL_SPEED * Math.max(0, intensity);
+    } else if (y > rect.bottom - DRAG_SCROLL_ZONE) {
+      var intensity = 1 - (rect.bottom - y) / DRAG_SCROLL_ZONE;
+      main.scrollTop += DRAG_SCROLL_SPEED * Math.max(0, intensity);
+    }
+  }
+  function dragCommit(sourceRow, dropTarget) {
+    if (!dropTarget) return;
+    var sourceLineIndex = parseInt(sourceRow.dataset.lineIndex, 10);
+    var childCount = parseInt(sourceRow.dataset.childCount, 10) || 0;
+    var targetLineIndex = parseInt(dropTarget.el.dataset.lineIndex, 10);
+    if (dropTarget.position === "after") {
+      var targetChildCount = parseInt(dropTarget.el.dataset.childCount, 10) || 0;
+      targetLineIndex = targetLineIndex + targetChildCount + 1;
+    }
+    var sourceRef = sourceRow.closest(".cl-indent-wrap") || sourceRow;
+    var targetRef = dropTarget.el.closest(".cl-indent-wrap") || dropTarget.el;
+    if (dropTarget.position === "before") {
+      targetRef.parentNode.insertBefore(sourceRef, targetRef);
+    } else {
+      targetRef.parentNode.insertBefore(sourceRef, targetRef.nextSibling);
+    }
+    sendMessageToPlugin("reorderTask", JSON.stringify({
+      filename: State.currentNoteFilename,
+      sourceLineIndex,
+      childCount,
+      targetLineIndex
+    }));
+  }
+  function dragCleanup() {
+    if (!dragState) return;
+    if (dragState.cloneEl && dragState.cloneEl.parentNode) {
+      dragState.cloneEl.parentNode.removeChild(dragState.cloneEl);
+    }
+    if (dragState.indicatorEl && dragState.indicatorEl.parentNode) {
+      dragState.indicatorEl.parentNode.removeChild(dragState.indicatorEl);
+    }
+    if (dragState.sourceEl) {
+      dragState.sourceEl.classList.remove("cl-drag-ghost");
+    }
+    if (dragState.scrollInterval) {
+      clearInterval(dragState.scrollInterval);
+    }
+    document.body.classList.remove("cl-dragging");
+    dragState = null;
+  }
+  function dragCancel() {
+    dragCleanup();
+  }
+  function dragStart(sourceRow, y, x) {
+    if (State.expandedTaskId) {
+      dragCleanup();
+      return;
+    }
+    sourceRow.classList.add("cl-drag-ghost");
+    document.body.classList.add("cl-dragging");
+    var clone = dragCreateClone(sourceRow, x, y);
+    var indicator = dragCreateIndicator();
+    var siblings = dragFindSiblings(sourceRow);
+    if (siblings.length === 0) {
+      sourceRow.classList.remove("cl-drag-ghost");
+      document.body.classList.remove("cl-dragging");
+      if (clone.parentNode) clone.parentNode.removeChild(clone);
+      dragState = null;
+      return;
+    }
+    dragState.phase = "dragging";
+    dragState.cloneEl = clone;
+    dragState.indicatorEl = indicator;
+    dragState.siblings = siblings;
+    dragState.scrollInterval = setInterval(function() {
+      if (dragState && dragState.phase === "dragging") {
+        dragAutoScroll(dragState.currentY);
+      }
+    }, 16);
+  }
+  function dragMove(y, x) {
+    if (!dragState || dragState.phase !== "dragging") return;
+    dragState.currentY = y;
+    dragUpdateClonePosition(dragState.cloneEl, y);
+    var target = dragFindDropTarget(y, dragState.sourceEl, dragState.siblings);
+    dragState.currentTarget = target;
+    dragPositionIndicator(dragState.indicatorEl, target);
+  }
+  function dragEnd() {
+    if (!dragState) return;
+    if (dragState.phase === "pending") {
+      if (dragState.timer) clearTimeout(dragState.timer);
+      dragState = null;
+      return;
+    }
+    if (dragState.phase === "dragging") {
+      var target = dragState.currentTarget;
+      var sourceRow = dragState.sourceEl;
+      dragSuppressNextClick = true;
+      dragCleanup();
+      if (target) {
+        dragCommit(sourceRow, target);
+      }
+      return;
+    }
+    dragCleanup();
+  }
+  function attachDragListeners(mainEl) {
+    if (!mainEl) return;
+    mainEl.addEventListener("mousedown", function(e) {
+      if (State.currentView !== "note") return;
+      if (e.button !== 0) return;
+      if (e.target.closest(".cl-cb") || e.target.closest(".cl-task-editor") || e.target.closest(".cl-quick-add")) return;
+      var row = dragGetTaskRow(e.target);
+      if (!row) return;
+      var startY = e.clientY;
+      var startX = e.clientX;
+      dragState = {
+        phase: "pending",
+        sourceEl: row,
+        sourceId: row.dataset.taskId,
+        sourceLineIndex: parseInt(row.dataset.lineIndex, 10),
+        childCount: parseInt(row.dataset.childCount, 10) || 0,
+        indentLevel: parseInt(row.dataset.indent, 10) || 0,
+        cloneEl: null,
+        indicatorEl: null,
+        startY,
+        startX,
+        currentY: startY,
+        currentTarget: null,
+        siblings: null,
+        scrollInterval: null,
+        timer: setTimeout(function() {
+          if (dragState && dragState.phase === "pending") {
+            e.preventDefault();
+            dragStart(row, startY, startX);
+          }
+        }, DRAG_LONG_PRESS_MS)
+      };
+    });
+    mainEl.addEventListener("mousemove", function(e) {
+      if (!dragState) return;
+      if (dragState.phase === "pending") {
+        var dx = e.clientX - dragState.startX;
+        var dy = e.clientY - dragState.startY;
+        if (Math.sqrt(dx * dx + dy * dy) > DRAG_CANCEL_DISTANCE) {
+          clearTimeout(dragState.timer);
+          dragState = null;
+        }
+        return;
+      }
+      if (dragState.phase === "dragging") {
+        e.preventDefault();
+        dragMove(e.clientY, e.clientX);
+      }
+    });
+    mainEl.addEventListener("mouseup", function() {
+      if (!dragState) return;
+      dragEnd();
+    });
+    mainEl.addEventListener("touchstart", function(e) {
+      if (State.currentView !== "note") return;
+      if (e.touches.length !== 1) return;
+      if (e.target.closest(".cl-cb") || e.target.closest(".cl-task-editor") || e.target.closest(".cl-quick-add")) return;
+      var row = dragGetTaskRow(e.target);
+      if (!row) return;
+      var touch = e.touches[0];
+      var startY = touch.clientY;
+      var startX = touch.clientX;
+      dragState = {
+        phase: "pending",
+        sourceEl: row,
+        sourceId: row.dataset.taskId,
+        sourceLineIndex: parseInt(row.dataset.lineIndex, 10),
+        childCount: parseInt(row.dataset.childCount, 10) || 0,
+        indentLevel: parseInt(row.dataset.indent, 10) || 0,
+        cloneEl: null,
+        indicatorEl: null,
+        startY,
+        startX,
+        currentY: startY,
+        currentTarget: null,
+        siblings: null,
+        scrollInterval: null,
+        timer: setTimeout(function() {
+          if (dragState && dragState.phase === "pending") {
+            dragStart(row, startY, startX);
+          }
+        }, DRAG_LONG_PRESS_MS)
+      };
+    }, { passive: true });
+    mainEl.addEventListener("touchmove", function(e) {
+      if (!dragState) return;
+      var touch = e.touches[0];
+      if (dragState.phase === "pending") {
+        var dx = touch.clientX - dragState.startX;
+        var dy = touch.clientY - dragState.startY;
+        if (Math.sqrt(dx * dx + dy * dy) > DRAG_CANCEL_DISTANCE) {
+          clearTimeout(dragState.timer);
+          dragState = null;
+        }
+        return;
+      }
+      if (dragState.phase === "dragging") {
+        e.preventDefault();
+        dragMove(touch.clientY, touch.clientX);
+      }
+    }, { passive: false });
+    mainEl.addEventListener("touchend", function() {
+      if (!dragState) return;
+      dragEnd();
+    });
+    mainEl.addEventListener("touchcancel", function() {
+      if (!dragState) return;
+      dragCancel();
+    });
+    document.addEventListener("keydown", function(e) {
+      if (e.key === "Escape" && dragState && dragState.phase === "dragging") {
+        e.preventDefault();
+        dragCancel();
+      }
+    });
+  }
+
+  // src/webview/init.js
+  function renderInitialLoading() {
+    var sidebar = document.getElementById("cl-sidebar");
+    var main = document.getElementById("cl-main");
+    if (sidebar) {
+      var inner = document.createElement("div");
+      inner.className = "cl-sidebar-inner";
+      for (var i = 0; i < 5; i++) {
+        var row = document.createElement("div");
+        row.className = "cl-skeleton-nav";
+        var dot = document.createElement("div");
+        dot.className = "cl-skeleton-dot";
+        var bar = document.createElement("div");
+        bar.className = "cl-skeleton-bar";
+        row.appendChild(dot);
+        row.appendChild(bar);
+        inner.appendChild(row);
+      }
+      var div = document.createElement("div");
+      div.className = "cl-nav-divider";
+      inner.appendChild(div);
+      for (var j = 0; j < 4; j++) {
+        var row2 = document.createElement("div");
+        row2.className = "cl-skeleton-nav";
+        var dot2 = document.createElement("div");
+        dot2.className = "cl-skeleton-dot";
+        var bar2 = document.createElement("div");
+        bar2.className = "cl-skeleton-bar";
+        bar2.style.width = 50 + j * 13 % 40 + "%";
+        row2.appendChild(dot2);
+        row2.appendChild(bar2);
+        inner.appendChild(row2);
+      }
+      sidebar.replaceChildren(inner);
+    }
+    if (main) {
+      var overlay = document.createElement("div");
+      overlay.className = "cl-loading-overlay";
+      var spin = document.createElement("div");
+      spin.className = "cl-spinner";
+      var lbl = document.createElement("div");
+      lbl.className = "cl-loading-label";
+      lbl.textContent = "Loading your tasks\u2026";
+      overlay.appendChild(spin);
+      overlay.appendChild(lbl);
+      main.replaceChildren(overlay);
+    }
+  }
+  document.addEventListener("DOMContentLoaded", function() {
+    renderInitialLoading();
+    setTimeout(function() {
+      sendMessageToPlugin("ready", "{}");
+    }, 100);
+    attachDragListeners(document.getElementById("cl-main"));
+    var toggle = document.getElementById("cl-sidebar-toggle");
+    var overlay = document.getElementById("cl-sidebar-overlay");
+    if (toggle) {
+      toggle.addEventListener("click", function() {
+        var sidebar = document.getElementById("cl-sidebar");
+        if (sidebar) sidebar.classList.toggle("cl-sidebar-open");
+        if (overlay) overlay.classList.toggle("cl-sidebar-open");
+      });
+    }
+    if (overlay) {
+      overlay.addEventListener("click", function() {
+        var sidebar = document.getElementById("cl-sidebar");
+        if (sidebar) sidebar.classList.remove("cl-sidebar-open");
+        overlay.classList.remove("cl-sidebar-open");
+      });
+    }
+    setupSidebarResizer();
+  });
+
+  // src/webview/ui/quick-jump.js
+  function quickJumpScore(note, query) {
+    if (!query) return 1;
+    var q = query.toLowerCase();
+    var title = (note.title || "").toLowerCase();
+    if (!title) return 0;
+    var score = 0;
+    if (title.indexOf(q) === 0) score += 100;
+    else if (title.indexOf(q) >= 0) score += 50 - title.indexOf(q);
+    var words = title.split(/[\s\-_/]+/).filter(function(w2) {
+      return w2.length > 0;
+    });
+    var initials = "";
+    for (var w = 0; w < words.length; w++) initials += words[w].charAt(0);
+    if (initials.indexOf(q) === 0) score += 80;
+    else if (initials.indexOf(q) >= 0) score += 30;
+    return score;
+  }
+  function quickJumpResults(query) {
+    var notes = State.notes || [];
+    if (!query) {
+      var byFilename = {};
+      for (var ni = 0; ni < notes.length; ni++) byFilename[notes[ni].filename] = notes[ni];
+      var ordered = [];
+      var seen = {};
+      var recents = State.recentNotes || [];
+      for (var ri = 0; ri < recents.length; ri++) {
+        var rn = byFilename[recents[ri]];
+        if (rn && !seen[rn.filename]) {
+          ordered.push(rn);
+          seen[rn.filename] = true;
+        }
+      }
+      for (var si = 0; si < notes.length; si++) {
+        if (!seen[notes[si].filename]) {
+          ordered.push(notes[si]);
+          seen[notes[si].filename] = true;
+        }
+      }
+      return ordered.slice(0, 12);
+    }
+    var scored = [];
+    for (var i = 0; i < notes.length; i++) {
+      var s = quickJumpScore(notes[i], query);
+      if (s > 0) scored.push({ note: notes[i], score: s });
+    }
+    scored.sort(function(a, b) {
+      if (b.score !== a.score) return b.score - a.score;
+      return (a.note.title || "").localeCompare(b.note.title || "");
+    });
+    return scored.slice(0, 12).map(function(x) {
+      return x.note;
+    });
+  }
+  function renderQuickJumpResults(container, results, selectedIndex) {
+    var html = "";
+    if (results.length === 0) {
+      html = '<div class="cl-jump-empty">No matching projects or areas</div>';
+    } else {
+      for (var i = 0; i < results.length; i++) {
+        var n = results[i];
+        var folderPath = (n.filename || "").replace(/\/[^/]+$/, "");
+        var icon = renderProjectIcon(n, 16);
+        var sel = i === selectedIndex ? " cl-jump-result-active" : "";
+        html += '<div class="cl-jump-result' + sel + '" data-filename="' + esc(n.filename) + '" data-index="' + i + '"><span class="cl-jump-icon">' + icon + '</span><span class="cl-jump-title">' + esc(n.title || "") + '</span><span class="cl-jump-folder">' + esc(folderPath) + "</span></div>";
+      }
+    }
+    container.innerHTML = html;
+  }
+  function openQuickJump() {
+    var existing = document.querySelector(".cl-jump-overlay");
+    if (existing) {
+      existing.remove();
+      return;
+    }
+    var overlay = document.createElement("div");
+    overlay.className = "cl-jump-overlay";
+    overlay.innerHTML = '<div class="cl-jump-modal"><input class="cl-jump-input" type="text" placeholder="Jump to project or area\u2026" autocomplete="off" spellcheck="false"><div class="cl-jump-results"></div></div>';
+    document.body.appendChild(overlay);
+    var input = overlay.querySelector(".cl-jump-input");
+    var resultsEl = overlay.querySelector(".cl-jump-results");
+    var state = { results: quickJumpResults(""), selected: 0 };
+    renderQuickJumpResults(resultsEl, state.results, state.selected);
+    function close() {
+      overlay.remove();
+    }
+    function jumpTo(filename) {
+      if (!filename) return;
+      close();
+      navigateToProjectNote(filename);
+    }
+    input.addEventListener("input", function() {
+      state.results = quickJumpResults(input.value);
+      state.selected = 0;
+      renderQuickJumpResults(resultsEl, state.results, state.selected);
+    });
+    input.addEventListener("keydown", function(e) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (state.results.length === 0) return;
+        state.selected = Math.min(state.selected + 1, state.results.length - 1);
+        renderQuickJumpResults(resultsEl, state.results, state.selected);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (state.results.length === 0) return;
+        state.selected = Math.max(state.selected - 1, 0);
+        renderQuickJumpResults(resultsEl, state.results, state.selected);
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        var pick = state.results[state.selected];
+        if (pick) jumpTo(pick.filename);
+        return;
+      }
+    });
+    resultsEl.addEventListener("click", function(e) {
+      var row = e.target.closest(".cl-jump-result");
+      if (!row) return;
+      jumpTo(row.dataset.filename);
+    });
+    overlay.addEventListener("click", function(e) {
+      if (e.target === overlay) close();
+    });
+    setTimeout(function() {
+      input.focus();
+    }, 0);
+  }
+
+  // src/webview/keyboard.js
   document.addEventListener("keydown", function(e) {
     if (e.metaKey && e.key === "Enter") {
       if (State.expandedTaskId) {
@@ -3252,8 +3225,8 @@
       return;
     }
     if (!State.expandedTaskId && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
-      var active = document.activeElement;
-      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
+      var arrowActive = document.activeElement;
+      if (arrowActive && (arrowActive.tagName === "INPUT" || arrowActive.tagName === "TEXTAREA")) return;
       e.preventDefault();
       var rows = document.querySelectorAll(".cl-task-row");
       if (rows.length === 0) return;
@@ -3266,251 +3239,309 @@
       }
     }
     if (e.key === "Enter" && !State.expandedTaskId) {
-      var active = document.activeElement;
-      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
-      var rows = document.querySelectorAll(".cl-task-row");
-      if (State.focusedTaskIndex >= 0 && rows[State.focusedTaskIndex]) {
+      var enterActive = document.activeElement;
+      if (enterActive && (enterActive.tagName === "INPUT" || enterActive.tagName === "TEXTAREA")) return;
+      var enterRows = document.querySelectorAll(".cl-task-row");
+      if (State.focusedTaskIndex >= 0 && enterRows[State.focusedTaskIndex]) {
         e.preventDefault();
-        expandTask(rows[State.focusedTaskIndex].dataset.taskId);
+        expandTask(enterRows[State.focusedTaskIndex].dataset.taskId);
       }
     }
     if (e.key === " " && !State.expandedTaskId) {
-      var active = document.activeElement;
-      if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
-      var rows = document.querySelectorAll(".cl-task-row");
-      if (State.focusedTaskIndex >= 0 && rows[State.focusedTaskIndex]) {
+      var spaceActive = document.activeElement;
+      if (spaceActive && (spaceActive.tagName === "INPUT" || spaceActive.tagName === "TEXTAREA")) return;
+      var spaceRows = document.querySelectorAll(".cl-task-row");
+      if (State.focusedTaskIndex >= 0 && spaceRows[State.focusedTaskIndex]) {
         e.preventDefault();
-        toggleTask(rows[State.focusedTaskIndex].dataset.taskId);
+        toggleTask(spaceRows[State.focusedTaskIndex].dataset.taskId);
       }
     }
   });
-  function renderInitialLoading() {
-    var sidebar = document.getElementById("cl-sidebar");
+
+  // src/webview/index.js
+  globalThis.onMessageFromPlugin = onMessageFromPlugin;
+  function navigateToProjectNote(filename) {
+    if (!filename) return;
+    if (State.expandedTaskId) collapseTask();
+    var navItem = document.querySelector('.cl-nav-item[data-filename="' + filename + '"]');
+    if (navItem) {
+      navItem.click();
+      navItem.scrollIntoView({ block: "nearest" });
+      return;
+    }
+    saveCurrentViewPrefs();
+    State.currentView = "note";
+    State.currentNoteFilename = filename;
+    State.focusedTaskIndex = -1;
+    State.filters = { tag: null, mention: null, text: "", noteStatus: "all" };
+    State.tasksOnly = false;
+    State.expandedTaskId = null;
+    State.editDraft = null;
+    sendMessageToPlugin("requestNoteContent", JSON.stringify({ filename }));
+    sendMessageToPlugin("saveView", JSON.stringify({ view: "note", noteFilename: filename }));
+    pushRecentNote(filename);
+    renderSidebar();
+    renderCurrentView();
+  }
+  var _mainListenersAttached = false;
+  function attachMainEventListeners() {
+    if (_mainListenersAttached) return;
     var main = document.getElementById("cl-main");
-    if (sidebar) {
-      var inner = document.createElement("div");
-      inner.className = "cl-sidebar-inner";
-      for (var i = 0; i < 5; i++) {
-        var row = document.createElement("div");
-        row.className = "cl-skeleton-nav";
-        var dot = document.createElement("div");
-        dot.className = "cl-skeleton-dot";
-        var bar = document.createElement("div");
-        bar.className = "cl-skeleton-bar";
-        row.appendChild(dot);
-        row.appendChild(bar);
-        inner.appendChild(row);
-      }
-      var div = document.createElement("div");
-      div.className = "cl-nav-divider";
-      inner.appendChild(div);
-      for (var j = 0; j < 4; j++) {
-        var row2 = document.createElement("div");
-        row2.className = "cl-skeleton-nav";
-        var dot2 = document.createElement("div");
-        dot2.className = "cl-skeleton-dot";
-        var bar2 = document.createElement("div");
-        bar2.className = "cl-skeleton-bar";
-        bar2.style.width = 50 + j * 13 % 40 + "%";
-        row2.appendChild(dot2);
-        row2.appendChild(bar2);
-        inner.appendChild(row2);
-      }
-      sidebar.replaceChildren(inner);
-    }
-    if (main) {
-      var overlay = document.createElement("div");
-      overlay.className = "cl-loading-overlay";
-      var spin = document.createElement("div");
-      spin.className = "cl-spinner";
-      var lbl = document.createElement("div");
-      lbl.className = "cl-loading-label";
-      lbl.textContent = "Loading your tasks\u2026";
-      overlay.appendChild(spin);
-      overlay.appendChild(lbl);
-      main.replaceChildren(overlay);
-    }
-  }
-  document.addEventListener("DOMContentLoaded", function() {
-    renderInitialLoading();
-    setTimeout(function() {
-      sendMessageToPlugin("ready", "{}");
-    }, 100);
-    var mainEl = document.getElementById("cl-main");
-    if (mainEl) {
-      mainEl.addEventListener("mousedown", function(e) {
-        if (State.currentView !== "note") return;
-        if (e.button !== 0) return;
-        if (e.target.closest(".cl-cb") || e.target.closest(".cl-task-editor") || e.target.closest(".cl-quick-add")) return;
-        var row = dragGetTaskRow(e.target);
-        if (!row) return;
-        var startY = e.clientY;
-        var startX = e.clientX;
-        dragState = {
-          phase: "pending",
-          sourceEl: row,
-          sourceId: row.dataset.taskId,
-          sourceLineIndex: parseInt(row.dataset.lineIndex, 10),
-          childCount: parseInt(row.dataset.childCount, 10) || 0,
-          indentLevel: parseInt(row.dataset.indent, 10) || 0,
-          cloneEl: null,
-          indicatorEl: null,
-          startY,
-          startX,
-          currentY: startY,
-          currentTarget: null,
-          siblings: null,
-          scrollInterval: null,
-          timer: setTimeout(function() {
-            if (dragState && dragState.phase === "pending") {
-              e.preventDefault();
-              dragStart(row, startY, startX);
-            }
-          }, DRAG_LONG_PRESS_MS)
-        };
-      });
-      mainEl.addEventListener("mousemove", function(e) {
-        if (!dragState) return;
-        if (dragState.phase === "pending") {
-          var dx = e.clientX - dragState.startX;
-          var dy = e.clientY - dragState.startY;
-          if (Math.sqrt(dx * dx + dy * dy) > DRAG_CANCEL_DISTANCE) {
-            clearTimeout(dragState.timer);
-            dragState = null;
-          }
-          return;
-        }
-        if (dragState.phase === "dragging") {
-          e.preventDefault();
-          dragMove(e.clientY, e.clientX);
-        }
-      });
-      mainEl.addEventListener("mouseup", function(e) {
-        if (!dragState) return;
-        dragEnd();
-      });
-      mainEl.addEventListener("touchstart", function(e) {
-        if (State.currentView !== "note") return;
-        if (e.touches.length !== 1) return;
-        if (e.target.closest(".cl-cb") || e.target.closest(".cl-task-editor") || e.target.closest(".cl-quick-add")) return;
-        var row = dragGetTaskRow(e.target);
-        if (!row) return;
-        var touch = e.touches[0];
-        var startY = touch.clientY;
-        var startX = touch.clientX;
-        dragState = {
-          phase: "pending",
-          sourceEl: row,
-          sourceId: row.dataset.taskId,
-          sourceLineIndex: parseInt(row.dataset.lineIndex, 10),
-          childCount: parseInt(row.dataset.childCount, 10) || 0,
-          indentLevel: parseInt(row.dataset.indent, 10) || 0,
-          cloneEl: null,
-          indicatorEl: null,
-          startY,
-          startX,
-          currentY: startY,
-          currentTarget: null,
-          siblings: null,
-          scrollInterval: null,
-          timer: setTimeout(function() {
-            if (dragState && dragState.phase === "pending") {
-              dragStart(row, startY, startX);
-            }
-          }, DRAG_LONG_PRESS_MS)
-        };
-      }, { passive: true });
-      mainEl.addEventListener("touchmove", function(e) {
-        if (!dragState) return;
-        var touch = e.touches[0];
-        if (dragState.phase === "pending") {
-          var dx = touch.clientX - dragState.startX;
-          var dy = touch.clientY - dragState.startY;
-          if (Math.sqrt(dx * dx + dy * dy) > DRAG_CANCEL_DISTANCE) {
-            clearTimeout(dragState.timer);
-            dragState = null;
-          }
-          return;
-        }
-        if (dragState.phase === "dragging") {
-          e.preventDefault();
-          dragMove(touch.clientY, touch.clientX);
-        }
-      }, { passive: false });
-      mainEl.addEventListener("touchend", function(e) {
-        if (!dragState) return;
-        dragEnd();
-      });
-      mainEl.addEventListener("touchcancel", function(e) {
-        if (!dragState) return;
-        dragCancel();
-      });
-    }
-    document.addEventListener("keydown", function(e) {
-      if (e.key === "Escape" && dragState && dragState.phase === "dragging") {
+    if (!main) return;
+    _mainListenersAttached = true;
+    main.addEventListener("dblclick", function(e) {
+      if (e.target.closest(".cl-cb") || e.target.closest(".cl-task-editor")) return;
+      var row = e.target.closest(".cl-task-row");
+      if (row) {
         e.preventDefault();
-        dragCancel();
+        expandTask(row.dataset.taskId);
       }
     });
-    var toggle = document.getElementById("cl-sidebar-toggle");
-    var overlay = document.getElementById("cl-sidebar-overlay");
-    if (toggle) {
-      toggle.addEventListener("click", function() {
-        var sidebar = document.getElementById("cl-sidebar");
-        if (sidebar) sidebar.classList.toggle("cl-sidebar-open");
-        if (overlay) overlay.classList.toggle("cl-sidebar-open");
-      });
-    }
-    if (overlay) {
-      overlay.addEventListener("click", function() {
-        var sidebar = document.getElementById("cl-sidebar");
-        if (sidebar) sidebar.classList.remove("cl-sidebar-open");
-        overlay.classList.remove("cl-sidebar-open");
-      });
-    }
-    setupSidebarResizer();
-  });
-  var SIDEBAR_MIN_WIDTH = 140;
-  var SIDEBAR_MAX_WIDTH = 500;
-  var SIDEBAR_DEFAULT_WIDTH = 200;
-  function applySidebarWidth(width) {
-    var w = parseInt(width, 10);
-    if (isNaN(w)) w = SIDEBAR_DEFAULT_WIDTH;
-    if (w < SIDEBAR_MIN_WIDTH) w = SIDEBAR_MIN_WIDTH;
-    if (w > SIDEBAR_MAX_WIDTH) w = SIDEBAR_MAX_WIDTH;
-    document.documentElement.style.setProperty("--cl-sidebar-width", w + "px");
+    main.addEventListener("click", function(e) {
+      if (consumeDragClickSuppression()) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (e.target.closest("a.cl-link")) return;
+      var clickedRow = e.target.closest(".cl-task-row");
+      if (clickedRow && !e.target.closest(".cl-cb") && !e.target.closest("[data-action]")) {
+        var rows = document.querySelectorAll(".cl-task-row");
+        for (var ri = 0; ri < rows.length; ri++) {
+          rows[ri].classList.remove("cl-focused");
+          if (rows[ri] === clickedRow) State.focusedTaskIndex = ri;
+        }
+        clickedRow.classList.add("cl-focused");
+      }
+      var target = e.target.closest("[data-action]");
+      if (!target) {
+        return;
+      }
+      var action = target.dataset.action;
+      switch (action) {
+        case "toggle":
+          var taskRow = target.closest(".cl-task-row");
+          if (taskRow) toggleTask(taskRow.dataset.taskId);
+          break;
+        case "filterTag": {
+          var newTag = target.dataset.tag || null;
+          State.filters.tag = newTag && State.filters.tag === newTag ? null : newTag;
+          saveCurrentViewPrefs();
+          persistViewPrefs();
+          renderCurrentView();
+          break;
+        }
+        case "filterFolder": {
+          var newFolder = target.dataset.folder || null;
+          State.filters.folder = newFolder && State.filters.folder === newFolder ? null : newFolder;
+          saveCurrentViewPrefs();
+          persistViewPrefs();
+          renderCurrentView();
+          break;
+        }
+        case "clearTaskFilters":
+          State.filters.tag = null;
+          State.filters.folder = null;
+          saveCurrentViewPrefs();
+          persistViewPrefs();
+          renderCurrentView();
+          break;
+        case "filterNoteStatus":
+          State.filters.noteStatus = target.dataset.status || "all";
+          saveCurrentViewPrefs();
+          persistViewPrefs();
+          renderCurrentView();
+          break;
+        case "toggleTasksOnly":
+          State.tasksOnly = !State.tasksOnly;
+          saveCurrentViewPrefs();
+          persistViewPrefs();
+          renderCurrentView();
+          break;
+        case "setGrouping":
+          State.grouping = target.dataset.grouping || "note";
+          saveCurrentViewPrefs();
+          persistViewPrefs();
+          renderCurrentView();
+          break;
+        case "openInEditor":
+          if (target.dataset.filename) {
+            sendMessageToPlugin("openNoteInEditor", JSON.stringify({ filename: target.dataset.filename }));
+          }
+          break;
+        case "jumpToProjectNote": {
+          var jfn = target.dataset.filename;
+          if (!jfn) break;
+          var inSidebar = false;
+          for (var jpi = 0; jpi < State.notes.length; jpi++) {
+            if (State.notes[jpi].filename === jfn) {
+              inSidebar = true;
+              break;
+            }
+          }
+          if (inSidebar) {
+            navigateToProjectNote(jfn);
+            break;
+          }
+          sendMessageToPlugin("openNoteInEditor", JSON.stringify({ filename: jfn }));
+          break;
+        }
+        case "openNoteMetaModal":
+          closeProjectMenu();
+          openNoteMetaModal();
+          break;
+        case "markReviewedFromFooter": {
+          var nc = State.noteContent;
+          if (!nc) break;
+          sendMessageToPlugin("updateNoteFrontmatter", JSON.stringify({
+            filename: nc.filename,
+            updates: { reviewed: State.today }
+          }));
+          var footer = target.closest(".cl-review-footer");
+          if (footer) footer.remove();
+          break;
+        }
+        case "toggleProjectMenu":
+          toggleProjectMenu(target);
+          break;
+        case "refreshProject": {
+          var rfn = target.dataset.filename || State.currentNoteFilename;
+          if (!rfn) break;
+          closeProjectMenu();
+          target.classList.add("cl-spinning");
+          sendMessageToPlugin("refreshProject", JSON.stringify({ filename: rfn }));
+          sendMessageToPlugin("requestNoteContent", JSON.stringify({ filename: rfn }));
+          break;
+        }
+        case "archiveProject":
+          closeProjectMenu();
+          confirmArchiveProject();
+          break;
+        case "rescheduleAllOverdue": {
+          var today = State.today;
+          var moved = 0;
+          for (var rai = 0; rai < State.tasks.length; rai++) {
+            var t = State.tasks[rai];
+            if (t.status === "open" && t.scheduledDate && t.scheduledDate < today) {
+              rescheduleTaskById(t.id, today);
+              moved++;
+            }
+          }
+          if (moved > 0) renderCurrentView();
+          break;
+        }
+        case "dismissMoved":
+          State.movedFromInbox = [];
+          renderCurrentView();
+          break;
+        case "toggleHeadingCollapse": {
+          var lineIdx = parseInt(target.dataset.lineIndex, 10);
+          if (isNaN(lineIdx) || !State.currentNoteFilename) break;
+          var body = document.querySelector('.cl-section-body[data-heading-line="' + lineIdx + '"]');
+          if (body) {
+            var nowHidden = body.style.display !== "none";
+            body.style.display = nowHidden ? "none" : "";
+            var svg = target.querySelector(".cl-heading-chevron");
+            if (svg) {
+              svg.classList.toggle("cl-chevron-right", nowHidden);
+              svg.classList.toggle("cl-chevron-down", !nowHidden);
+            }
+            target.classList.toggle("cl-always-visible", nowHidden);
+          }
+          sendMessageToPlugin("toggleHeadingCollapse", JSON.stringify({
+            filename: State.currentNoteFilename,
+            lineIndex: lineIdx
+          }));
+          break;
+        }
+      }
+    });
+    main.addEventListener("keydown", function(e) {
+      if (e.key === "Enter" && e.target.classList.contains("cl-quick-add-input")) {
+        e.preventDefault();
+        var content = e.target.value.trim();
+        if (!content) return;
+        var view = e.target.closest(".cl-quick-add").dataset.view;
+        var todayFilename = State.today.replace(/-/g, "") + ".md";
+        var targetFilename = view === "note" && State.currentNoteFilename ? State.currentNoteFilename : todayFilename;
+        var msg = { filename: targetFilename, content };
+        if (view === "today") msg.scheduledDate = State.today;
+        if (view === "someday") msg.tags = ["#someday"];
+        if (view === "note") msg.prepend = true;
+        sendMessageToPlugin("createTask", JSON.stringify(msg));
+        e.target.value = "";
+      }
+    });
   }
-  function setupSidebarResizer() {
-    var resizer = document.getElementById("cl-resizer");
-    var sidebar = document.getElementById("cl-sidebar");
-    if (!resizer || !sidebar) return;
-    var dragging = false;
-    var startX = 0;
-    var startWidth = 0;
-    resizer.addEventListener("mousedown", function(e) {
-      if (window.innerWidth <= 600) return;
-      dragging = true;
-      startX = e.clientX;
-      startWidth = sidebar.getBoundingClientRect().width;
-      document.body.classList.add("cl-resizing");
-      resizer.classList.add("cl-resizer-active");
-      e.preventDefault();
-    });
-    document.addEventListener("mousemove", function(e) {
-      if (!dragging) return;
-      var newWidth = startWidth + (e.clientX - startX);
-      if (newWidth < SIDEBAR_MIN_WIDTH) newWidth = SIDEBAR_MIN_WIDTH;
-      if (newWidth > SIDEBAR_MAX_WIDTH) newWidth = SIDEBAR_MAX_WIDTH;
-      document.documentElement.style.setProperty("--cl-sidebar-width", newWidth + "px");
-    });
-    document.addEventListener("mouseup", function() {
-      if (!dragging) return;
-      dragging = false;
-      document.body.classList.remove("cl-resizing");
-      resizer.classList.remove("cl-resizer-active");
-      var finalWidth = sidebar.getBoundingClientRect().width;
-      sendMessageToPlugin("saveSidebarWidth", JSON.stringify({ width: Math.round(finalWidth) }));
-    });
+  function toggleTaskTagById(taskId, tag, add) {
+    if (!taskId || !tag) return;
+    var parts = taskId.split(":");
+    var filename = parts.slice(0, -1).join(":");
+    var lineIndex = parseInt(parts[parts.length - 1]);
+    if (isNaN(lineIndex)) return;
+    for (var i = 0; i < State.tasks.length; i++) {
+      if (State.tasks[i].id === taskId) {
+        var tags = State.tasks[i].tags || [];
+        if (add) {
+          if (tags.indexOf(tag) < 0) tags = tags.concat([tag]);
+        } else {
+          tags = tags.filter(function(t) {
+            return t !== tag;
+          });
+        }
+        State.tasks[i].tags = tags;
+        break;
+      }
+    }
+    renderCurrentView();
+    sendMessageToPlugin("setTaskTag", JSON.stringify({
+      filename,
+      lineIndex,
+      tag,
+      add: !!add
+    }));
+  }
+  function rescheduleTaskById(taskId, dateStr) {
+    if (!taskId) return;
+    var parts = taskId.split(":");
+    var filename = parts.slice(0, -1).join(":");
+    var lineIndex = parseInt(parts[parts.length - 1]);
+    if (isNaN(lineIndex)) return;
+    for (var i = 0; i < State.tasks.length; i++) {
+      if (State.tasks[i].id === taskId) {
+        State.tasks[i].scheduledDate = dateStr || null;
+        State.tasks[i].scheduledWeek = null;
+        break;
+      }
+    }
+    renderCurrentView();
+    sendMessageToPlugin("rescheduleTask", JSON.stringify({
+      filename,
+      lineIndex,
+      scheduledDate: dateStr || null,
+      scheduledWeek: null
+    }));
+  }
+  function getFocusedTaskId() {
+    if (State.focusedTaskIndex < 0) return null;
+    var rows = document.querySelectorAll(".cl-task-row");
+    if (!rows[State.focusedTaskIndex]) return null;
+    return rows[State.focusedTaskIndex].dataset.taskId || null;
+  }
+  function toggleTask(taskId) {
+    if (!taskId) return;
+    for (var i = 0; i < State.tasks.length; i++) {
+      if (State.tasks[i].id === taskId) {
+        State.tasks[i].status = State.tasks[i].status === "open" ? "done" : "open";
+        break;
+      }
+    }
+    renderCurrentView();
+    renderSidebar();
+    var parts = taskId.split(":");
+    var filename = parts.slice(0, -1).join(":");
+    var lineIndex = parseInt(parts[parts.length - 1]);
+    sendMessageToPlugin("toggleTask", JSON.stringify({ filename, lineIndex }));
   }
 })();
 //# sourceMappingURL=clarityEvents.js.map
