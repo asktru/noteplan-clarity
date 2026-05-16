@@ -1172,6 +1172,641 @@
     return result;
   }
 
+  // src/webview/pickers.js
+  function positionPickerVertically(picker, anchor, margin) {
+    if (margin == null) margin = 4;
+    var rect = anchor.getBoundingClientRect();
+    var pickerHeight = picker.getBoundingClientRect().height;
+    var viewportHeight = window.innerHeight;
+    var spaceBelow = viewportHeight - rect.bottom - margin;
+    var spaceAbove = rect.top - margin;
+    if (pickerHeight > spaceBelow && spaceAbove > spaceBelow) {
+      picker.style.top = Math.max(margin, rect.top - pickerHeight - margin) + "px";
+    } else {
+      picker.style.top = rect.bottom + margin + "px";
+    }
+  }
+  function showDatePicker(anchor) {
+    closePickers();
+    var rect = anchor.getBoundingClientRect();
+    var picker = document.createElement("div");
+    picker.className = "cl-picker cl-date-picker";
+    picker.style.top = rect.bottom + 4 + "px";
+    picker.style.left = Math.min(rect.left, window.innerWidth - 270) + "px";
+    var today = State.today;
+    var tmr = addDays(today, 1);
+    var nextMon = getNextMonday(today);
+    var inAWeek = addDays(today, 7);
+    picker.innerHTML = '<div class="cl-picker-tabs"><div class="cl-picker-tab cl-picker-tab-active" data-tab="day">Day</div><div class="cl-picker-tab" data-tab="week">Week</div></div><div class="cl-picker-body" id="cl-date-body">' + renderDateDayTab(today, tmr, nextMon, inAWeek) + '</div><div class="cl-picker-footer"><div class="cl-picker-action" data-action="removeDate"><span>\u2715</span> Remove date <span class="cl-shortcut">\u2318O</span></div></div>';
+    document.body.appendChild(picker);
+    positionPickerVertically(picker, anchor);
+    picker.addEventListener("click", function(e) {
+      var target = e.target.closest("[data-action]");
+      if (!target) {
+        var tab = e.target.closest("[data-tab]");
+        if (tab) {
+          var tabs = picker.querySelectorAll(".cl-picker-tab");
+          for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove("cl-picker-tab-active");
+          tab.classList.add("cl-picker-tab-active");
+          var body = picker.querySelector("#cl-date-body");
+          if (tab.dataset.tab === "day") body.innerHTML = renderDateDayTab(today, tmr, nextMon, inAWeek);
+          else body.innerHTML = renderDateWeekTab();
+        }
+        return;
+      }
+      if (target.dataset.action === "selectDate") {
+        State.editDraft.scheduledDate = target.dataset.date;
+        State.editDraft.scheduledWeek = null;
+        State.editDraft.tags = State.editDraft.tags.filter(function(t) {
+          return t !== "#someday";
+        });
+        updateDateChip();
+        closePickers();
+      } else if (target.dataset.action === "selectWeek") {
+        State.editDraft.scheduledWeek = target.dataset.week;
+        State.editDraft.scheduledDate = null;
+        State.editDraft.tags = State.editDraft.tags.filter(function(t) {
+          return t !== "#someday";
+        });
+        updateDateChip();
+        closePickers();
+      } else if (target.dataset.action === "removeDate") {
+        State.editDraft.scheduledDate = null;
+        State.editDraft.scheduledWeek = null;
+        updateDateChip();
+        closePickers();
+      }
+    });
+  }
+  function renderDateDayTab(today, tmr, nextMon, inAWeek) {
+    var html = '<div class="cl-picker-options">';
+    html += '<div class="cl-picker-option cl-picker-today" data-action="selectDate" data-date="' + today + '"><span>\u2B50</span><span class="cl-picker-opt-label">Today</span><span class="cl-picker-opt-date">' + formatShortDate(today) + "</span></div>";
+    html += '<div class="cl-picker-option" data-action="selectDate" data-date="' + tmr + '"><span>\u2192</span><span class="cl-picker-opt-label">Tomorrow</span><span class="cl-picker-opt-date">' + formatShortDate(tmr) + "</span></div>";
+    html += '<div class="cl-picker-option" data-action="selectDate" data-date="' + nextMon + '"><span>\u{1F4C5}</span><span class="cl-picker-opt-label">Next Monday</span><span class="cl-picker-opt-date">' + formatShortDate(nextMon) + "</span></div>";
+    html += '<div class="cl-picker-option" data-action="selectDate" data-date="' + inAWeek + '"><span>+7</span><span class="cl-picker-opt-label">In a week</span><span class="cl-picker-opt-date">' + formatShortDate(inAWeek) + "</span></div>";
+    html += "</div>";
+    html += '<div class="cl-picker-divider"></div>';
+    html += renderMiniCalendar(today);
+    return html;
+  }
+  function renderMiniCalendar(todayStr) {
+    var parts = todayStr.split("-");
+    var year = parseInt(parts[0]);
+    var month = parseInt(parts[1]) - 1;
+    var months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    var firstDay = new Date(year, month, 1);
+    var startOffset = (firstDay.getDay() + 6) % 7;
+    var daysInMonth = new Date(year, month + 1, 0).getDate();
+    var html = '<div class="cl-mini-cal">';
+    html += '<div class="cl-cal-nav"><span class="cl-cal-arrow">\u25C0</span><span class="cl-cal-month">' + months[month] + " " + year + '</span><span class="cl-cal-arrow">\u25B6</span></div>';
+    html += '<div class="cl-cal-grid">';
+    var dayNames = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+    for (var di = 0; di < 7; di++) html += '<span class="cl-cal-day-name">' + dayNames[di] + "</span>";
+    for (var gap = 0; gap < startOffset; gap++) html += '<span class="cl-cal-day"></span>';
+    for (var d = 1; d <= daysInMonth; d++) {
+      var dateStr = year + "-" + String(month + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+      var cls = "cl-cal-day";
+      if (dateStr === todayStr) cls += " cl-cal-today";
+      if (dateStr < todayStr) cls += " cl-cal-past";
+      if (State.editDraft && State.editDraft.scheduledDate === dateStr) cls += " cl-cal-selected";
+      html += '<span class="' + cls + '" data-action="selectDate" data-date="' + dateStr + '">' + d + "</span>";
+    }
+    html += "</div></div>";
+    return html;
+  }
+  function renderDateWeekTab() {
+    var currentWeek = State.currentWeek;
+    var html = '<div class="cl-picker-options">';
+    for (var w = 0; w < 8; w++) {
+      var weekStr = addWeeks(currentWeek, w);
+      var label = w === 0 ? "This week" : w === 1 ? "Next week" : weekStr;
+      html += '<div class="cl-picker-option" data-action="selectWeek" data-week="' + weekStr + '"><span class="cl-picker-opt-label">' + label + '</span><span class="cl-picker-opt-date">' + weekStr + "</span></div>";
+    }
+    html += "</div>";
+    return html;
+  }
+  function updateDateChip() {
+    var editor = document.getElementById("cl-editor");
+    if (!editor || !State.editDraft) return;
+    var chip = editor.querySelector('[data-action="openDatePicker"]');
+    if (!chip) return;
+    var label = "Schedule...";
+    if (State.editDraft.scheduledDate) label = formatShortDate(State.editDraft.scheduledDate);
+    else if (State.editDraft.scheduledWeek) label = State.editDraft.scheduledWeek;
+    chip.innerHTML = '<span class="cl-meta-icon">\u{1F4C5}</span>' + label;
+  }
+  function showNotePicker(anchor) {
+    closePickers();
+    var rect = anchor.getBoundingClientRect();
+    var picker = document.createElement("div");
+    picker.className = "cl-picker cl-note-picker";
+    picker.style.top = rect.bottom + 4 + "px";
+    picker.style.left = Math.min(rect.left, window.innerWidth - 310) + "px";
+    picker.innerHTML = '<div class="cl-picker-search"><input class="cl-picker-input" placeholder="Search notes..." autofocus/></div><div class="cl-picker-results" id="cl-note-results">' + renderNoteResults("") + '</div><div class="cl-picker-footer"><span style="opacity:0.35;font-size:11px;">\u21B5 select \xB7 Esc close</span></div>';
+    document.body.appendChild(picker);
+    positionPickerVertically(picker, anchor);
+    var input = picker.querySelector(".cl-picker-input");
+    input.addEventListener("input", function() {
+      document.getElementById("cl-note-results").innerHTML = renderNoteResults(input.value);
+    });
+    picker.addEventListener("click", function(e) {
+      var target = e.target.closest('[data-action="selectNote"]');
+      if (target) {
+        State.editDraft.moveToFilename = target.dataset.filename;
+        State.editDraft.moveToLabel = target.dataset.title;
+        var editor = document.getElementById("cl-editor");
+        if (editor) {
+          var chip = editor.querySelector('[data-action="openNotePicker"]');
+          if (chip) chip.textContent = "\u2192 " + target.dataset.title;
+        }
+        closePickers();
+      }
+    });
+  }
+  function renderNoteResults(query) {
+    var q = (query || "").toLowerCase();
+    var html = "";
+    if (State.expandedTaskId && !q) {
+      var curTask = null;
+      for (var ti = 0; ti < State.tasks.length; ti++) {
+        if (State.tasks[ti].id === State.expandedTaskId) {
+          curTask = State.tasks[ti];
+          break;
+        }
+      }
+      if (curTask && curTask.noteFilename) {
+        html += '<div class="cl-picker-group">Current Location</div>';
+        html += '<div class="cl-picker-result cl-picker-current" data-action="selectNote" data-filename="' + esc(curTask.noteFilename) + '" data-title="' + esc(curTask.noteTitle) + '">';
+        html += '<span class="cl-picker-note-icon">\u{1F4CD}</span>';
+        html += '<span class="cl-picker-note-title">' + esc(curTask.noteTitle) + "</span>";
+        html += "</div>";
+        html += '<div class="cl-picker-divider" style="margin:4px 14px;"></div>';
+      }
+    }
+    for (var fi = 0; fi < State.folders.length; fi++) {
+      var folder = State.folders[fi];
+      var matchingNotes = [];
+      for (var ni = 0; ni < folder.notes.length; ni++) {
+        var n = folder.notes[ni];
+        if (!q || n.title.toLowerCase().indexOf(q) >= 0) matchingNotes.push(n);
+      }
+      if (matchingNotes.length === 0) continue;
+      html += '<div class="cl-picker-group">' + esc(folder.name) + "</div>";
+      for (var mi = 0; mi < matchingNotes.length; mi++) {
+        var mn = matchingNotes[mi];
+        html += '<div class="cl-picker-result" data-action="selectNote" data-filename="' + esc(mn.filename) + '" data-title="' + esc(mn.title) + '">';
+        html += '<span class="cl-picker-note-icon">\u{1F4C4}</span>';
+        html += '<span class="cl-picker-note-title">' + esc(mn.title) + "</span>";
+        html += '<span class="cl-picker-note-count">' + mn.taskCount + "</span>";
+        html += "</div>";
+      }
+    }
+    if (!html) html = '<div class="cl-picker-empty">No notes found</div>';
+    return html;
+  }
+  function getAllKnownTags() {
+    var tagMap = {};
+    for (var i = 0; i < State.tasks.length; i++) {
+      var t = State.tasks[i];
+      if (t.tags) {
+        for (var j = 0; j < t.tags.length; j++) tagMap[t.tags[j]] = true;
+      }
+    }
+    return Object.keys(tagMap).sort();
+  }
+  function getAllKnownMentions() {
+    var menMap = {};
+    for (var i = 0; i < State.tasks.length; i++) {
+      var t = State.tasks[i];
+      if (t.mentions) {
+        for (var j = 0; j < t.mentions.length; j++) menMap[t.mentions[j]] = true;
+      }
+    }
+    return Object.keys(menMap).sort();
+  }
+  function showInlineInput(anchor, prefix, onCommit) {
+    var existing = document.querySelector(".cl-inline-input-wrap");
+    if (existing) existing.remove();
+    var allSuggestions = prefix === "#" ? getAllKnownTags() : getAllKnownMentions();
+    var draft = State.editDraft;
+    var already = prefix === "#" ? draft.tags || [] : draft.mentions || [];
+    allSuggestions = allSuggestions.filter(function(s) {
+      return already.indexOf(s) === -1;
+    });
+    var wrap = document.createElement("div");
+    wrap.className = "cl-inline-input-wrap";
+    var input = document.createElement("input");
+    input.className = "cl-inline-input";
+    input.placeholder = prefix + "...";
+    input.value = prefix;
+    var dropdown = document.createElement("div");
+    dropdown.className = "cl-autocomplete";
+    var selectedIdx = -1;
+    wrap.appendChild(input);
+    wrap.appendChild(dropdown);
+    anchor.parentNode.insertBefore(wrap, anchor.nextSibling);
+    input.focus();
+    input.setSelectionRange(prefix.length, prefix.length);
+    function updateSuggestions() {
+      var q = input.value.toLowerCase();
+      var matches = allSuggestions.filter(function(s) {
+        return s.toLowerCase().indexOf(q) >= 0;
+      });
+      if (matches.length === 0 || matches.length === 1 && matches[0].toLowerCase() === q) {
+        dropdown.innerHTML = "";
+        dropdown.style.display = "none";
+        selectedIdx = -1;
+        return;
+      }
+      selectedIdx = -1;
+      dropdown.style.display = "block";
+      dropdown.innerHTML = "";
+      for (var i = 0; i < Math.min(matches.length, 8); i++) {
+        var item = document.createElement("div");
+        item.className = "cl-autocomplete-item";
+        item.textContent = matches[i];
+        item.dataset.value = matches[i];
+        item.addEventListener("mousedown", function(e) {
+          e.preventDefault();
+          input.value = this.dataset.value;
+          commit();
+        });
+        dropdown.appendChild(item);
+      }
+    }
+    function commit() {
+      var val = input.value.trim();
+      wrap.remove();
+      if (val && val !== prefix) {
+        onCommit(val);
+      }
+    }
+    input.addEventListener("input", updateSuggestions);
+    updateSuggestions();
+    input.addEventListener("keydown", function(e) {
+      var items = dropdown.querySelectorAll(".cl-autocomplete-item");
+      if (e.key === "ArrowDown" && items.length > 0) {
+        e.preventDefault();
+        selectedIdx = Math.min(selectedIdx + 1, items.length - 1);
+        for (var i = 0; i < items.length; i++) items[i].classList.toggle("cl-autocomplete-active", i === selectedIdx);
+        input.value = items[selectedIdx].dataset.value;
+      } else if (e.key === "ArrowUp" && items.length > 0) {
+        e.preventDefault();
+        selectedIdx = Math.max(selectedIdx - 1, 0);
+        for (var i = 0; i < items.length; i++) items[i].classList.toggle("cl-autocomplete-active", i === selectedIdx);
+        input.value = items[selectedIdx].dataset.value;
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        e.stopPropagation();
+        commit();
+      } else if (e.key === "Escape") {
+        e.stopPropagation();
+        wrap.remove();
+      }
+    });
+    input.addEventListener("blur", function() {
+      setTimeout(function() {
+        if (wrap.parentNode) commit();
+      }, 150);
+    });
+  }
+  function closePickers() {
+    var pickers = document.querySelectorAll(".cl-picker");
+    for (var i = 0; i < pickers.length; i++) pickers[i].remove();
+  }
+
+  // src/webview/task-editor.js
+  function expandTask(taskId) {
+    if (!taskId) return;
+    if (State.expandedTaskId === taskId) {
+      collapseTask();
+      return;
+    }
+    var task = null;
+    for (var i = 0; i < State.tasks.length; i++) {
+      if (State.tasks[i].id === taskId) {
+        task = State.tasks[i];
+        break;
+      }
+    }
+    if (!task) return;
+    collapseTask();
+    State.expandedTaskId = taskId;
+    var titleContent = task.content;
+    var trailingTags = [];
+    var trailingMatch = titleContent.match(/(\s+#[\p{L}\p{N}_\-\/]+)+$/u);
+    if (trailingMatch) {
+      var trailingStr = trailingMatch[0];
+      titleContent = titleContent.substring(0, titleContent.length - trailingStr.length);
+      var tagMatches = trailingStr.match(/#[\p{L}\p{N}_\-\/]+/gu);
+      if (tagMatches) trailingTags = tagMatches;
+    }
+    State.editDraft = {
+      content: titleContent,
+      rawContent: task.rawContent,
+      priority: task.priority,
+      scheduledDate: task.scheduledDate,
+      scheduledWeek: task.scheduledWeek,
+      tags: task.tags ? task.tags.slice() : [],
+      mentions: task.mentions ? task.mentions.slice() : [],
+      trailingTags,
+      moveToFilename: null,
+      notes: [],
+      checklists: []
+    };
+    for (var ci = 0; ci < task.children.length; ci++) {
+      var child = task.children[ci];
+      if (child.type === "note") State.editDraft.notes.push({ content: child.content, rawContent: child.rawContent || child.content, lineIndex: child.lineIndex });
+      else if (child.type === "checklist") State.editDraft.checklists.push({ content: child.content, status: child.status, lineIndex: child.lineIndex });
+    }
+    State.editDraft.activeField = null;
+    var row = document.querySelector('.cl-task-row[data-task-id="' + CSS.escape(taskId) + '"]');
+    if (!row) return;
+    row.style.display = "none";
+    var editor = document.createElement("div");
+    editor.className = "cl-task-editor";
+    editor.id = "cl-editor";
+    editor.innerHTML = renderTaskEditorHTML(task);
+    row.parentNode.insertBefore(editor, row.nextSibling);
+    var subTasks = task.children.filter(function(c) {
+      return c.type === "task";
+    });
+    for (var si = subTasks.length - 1; si >= 0; si--) {
+      var subRow = document.createElement("div");
+      subRow.className = "cl-subtask-row";
+      subRow.innerHTML = renderTaskRow(subTasks[si], { showSource: false });
+      editor.parentNode.insertBefore(subRow, editor.nextSibling);
+    }
+    attachEditorListeners(editor);
+  }
+  function collapseTask() {
+    if (!State.expandedTaskId) return;
+    var editor = document.getElementById("cl-editor");
+    if (editor) {
+      var taskId = State.expandedTaskId;
+      var row = document.querySelector('.cl-task-row[data-task-id="' + CSS.escape(taskId) + '"]');
+      if (row) row.style.display = "";
+      var subRows = document.querySelectorAll(".cl-subtask-row");
+      for (var i = 0; i < subRows.length; i++) subRows[i].remove();
+      editor.remove();
+    }
+    State.expandedTaskId = null;
+    State.editDraft = null;
+  }
+  function renderTaskEditorHTML(task) {
+    var draft = State.editDraft;
+    var html = "";
+    html += '<div class="cl-editor-row">';
+    var editorCbClass = task.type === "checklist" ? "cl-cb cl-cb-square" : "cl-cb";
+    html += '<div class="' + editorCbClass + '" data-action="toggle"></div>';
+    if (draft.activeField === "title") {
+      html += '<input class="cl-editor-title cl-editor-field-active" value="' + esc(draft.content) + '" data-field="title"/>';
+    } else {
+      html += '<div class="cl-editor-title-view" data-field-view="title">' + renderInlineMarkdown(draft.content) + "</div>";
+    }
+    html += "</div>";
+    var notesForEdit = draft.notes.map(function(n) {
+      return n.content || "";
+    }).join("\n");
+    html += '<div class="cl-editor-section">';
+    if (draft.activeField === "notes") {
+      html += '<textarea class="cl-editor-notes cl-editor-field-active" data-field="notes">' + esc(notesForEdit) + "</textarea>";
+    } else if (notesForEdit.trim()) {
+      html += '<div class="cl-editor-notes-view" data-field-view="notes">' + renderNotesMarkdown(draft.notes) + "</div>";
+    } else {
+      html += '<div class="cl-editor-notes-view cl-editor-notes-empty" data-field-view="notes">Notes...</div>';
+    }
+    html += "</div>";
+    if (draft.checklists.length > 0) {
+      html += '<div class="cl-editor-section">';
+      html += '<div class="cl-editor-label">Checklist</div>';
+      for (var ci = 0; ci < draft.checklists.length; ci++) {
+        var cl = draft.checklists[ci];
+        var clDone = cl.status === "done" ? " cl-cl-done" : "";
+        html += '<div class="cl-checklist-item' + clDone + '" data-index="' + ci + '">';
+        html += '<div class="cl-cl-check" data-action="toggleChecklist"></div>';
+        html += '<span class="cl-cl-text">' + esc(cl.content) + "</span>";
+        html += "</div>";
+      }
+      html += "</div>";
+    }
+    html += '<div class="cl-editor-meta">';
+    var dateLabel = "Schedule...";
+    if (draft.scheduledDate) dateLabel = formatShortDate(draft.scheduledDate);
+    else if (draft.scheduledWeek) dateLabel = draft.scheduledWeek;
+    html += '<div class="cl-meta-chip" data-action="openDatePicker"><span class="cl-meta-icon">\u{1F4C5}</span>' + dateLabel + "</div>";
+    if (task.noteFilename) {
+      var noteLabel = draft.moveToFilename ? esc(draft.moveToLabel || "Moved") : esc(task.noteTitle);
+      html += '<div class="cl-meta-chip" data-action="jumpToProjectNote" data-filename="' + esc(task.noteFilename) + '"><span class="cl-meta-icon">\u{1F4C1}</span>' + noteLabel + "</div>";
+    }
+    html += '<div class="cl-meta-chip cl-meta-add" data-action="openNotePicker">\u2192 Move to...</div>';
+    for (var ti = 0; ti < draft.tags.length; ti++) {
+      html += '<div class="cl-meta-chip cl-meta-tag" data-action="removeTag" data-tag="' + esc(draft.tags[ti]) + '">' + esc(draft.tags[ti]) + ' <span class="cl-remove">\xD7</span></div>';
+    }
+    html += '<div class="cl-meta-chip cl-meta-add" data-action="addTag">+ tag</div>';
+    for (var mi = 0; mi < draft.mentions.length; mi++) {
+      html += '<div class="cl-meta-chip cl-meta-mention">' + esc(draft.mentions[mi]) + "</div>";
+    }
+    html += '<div class="cl-meta-chip cl-meta-add" data-action="addMention">+ @mention</div>';
+    var priLabels = ["\u2014", "!", "!!", "!!!"];
+    html += '<div class="cl-meta-chip cl-meta-pri cl-pri-' + draft.priority + '" data-action="cyclePri">' + priLabels[draft.priority] + "</div>";
+    html += "</div>";
+    html += '<div class="cl-editor-hints">\u2318Enter save \xB7 Esc cancel \xB7 \u2318T today \xB7 \u2318O remove date</div>';
+    html += '<div class="cl-editor-actions"><button class="cl-editor-btn cl-editor-btn-cancel" data-action="editorCancel">Cancel</button><button class="cl-editor-btn cl-editor-btn-save" data-action="editorSave">Save</button></div>';
+    return html;
+  }
+  function renderNotesMarkdown(notes) {
+    var html = "";
+    for (var i = 0; i < notes.length; i++) {
+      var raw = notes[i].rawContent || notes[i].content || "";
+      raw = raw.replace(/^\t+/, "");
+      if (raw.match(/^>\s?/)) {
+        html += '<div class="cl-editor-note-line cl-note-quote" style="margin:2px 0;">' + renderInlineMarkdown(raw.replace(/^>\s?/, "")) + "</div>";
+      } else if (raw.match(/^[-*]\s+/)) {
+        html += '<div class="cl-editor-note-line">\u2022 ' + renderInlineMarkdown(raw.replace(/^[-*]\s+/, "")) + "</div>";
+      } else {
+        html += '<div class="cl-editor-note-line">' + renderInlineMarkdown(raw) + "</div>";
+      }
+    }
+    return html;
+  }
+  function activateEditorField(fieldName) {
+    if (!State.editDraft) return;
+    saveActiveFieldValue();
+    State.editDraft.activeField = fieldName;
+    var task = null;
+    for (var i = 0; i < State.tasks.length; i++) {
+      if (State.tasks[i].id === State.expandedTaskId) {
+        task = State.tasks[i];
+        break;
+      }
+    }
+    if (!task) return;
+    var editor = document.getElementById("cl-editor");
+    if (!editor) return;
+    editor.innerHTML = renderTaskEditorHTML(task);
+    attachEditorListeners(editor);
+    if (fieldName === "title") {
+      var el = editor.querySelector(".cl-editor-title");
+      if (el) {
+        el.focus();
+        el.select();
+      }
+    } else if (fieldName === "notes") {
+      var el = editor.querySelector(".cl-editor-notes");
+      if (el) {
+        el.focus();
+      }
+    }
+  }
+  function saveActiveFieldValue() {
+    if (!State.editDraft) return;
+    var editor = document.getElementById("cl-editor");
+    if (!editor) return;
+    if (State.editDraft.activeField === "title") {
+      var titleEl = editor.querySelector(".cl-editor-title");
+      if (titleEl) State.editDraft.content = titleEl.value;
+    } else if (State.editDraft.activeField === "notes") {
+      var notesEl = editor.querySelector(".cl-editor-notes");
+      if (notesEl) {
+        var lines = notesEl.value.split("\n");
+        State.editDraft.notes = lines.map(function(l, i) {
+          var orig = State.editDraft.notes[i];
+          return { content: l, rawContent: orig ? orig.rawContent : "	" + l, lineIndex: orig ? orig.lineIndex : -1 };
+        });
+      }
+    }
+  }
+  function attachEditorListeners(editor) {
+    editor.addEventListener("click", function(e) {
+      var viewField = e.target.closest("[data-field-view]");
+      if (viewField) {
+        activateEditorField(viewField.dataset.fieldView);
+        return;
+      }
+      var target = e.target.closest("[data-action]");
+      if (!target) return;
+      var action = target.dataset.action;
+      switch (action) {
+        case "toggleChecklist":
+          var item = target.closest(".cl-checklist-item");
+          if (item) {
+            var idx = parseInt(item.dataset.index);
+            if (State.editDraft.checklists[idx]) {
+              State.editDraft.checklists[idx].status = State.editDraft.checklists[idx].status === "done" ? "open" : "done";
+              item.classList.toggle("cl-cl-done");
+            }
+          }
+          break;
+        case "cyclePri":
+          State.editDraft.priority = (State.editDraft.priority + 1) % 4;
+          var priLabels = ["\u2014", "!", "!!", "!!!"];
+          target.textContent = priLabels[State.editDraft.priority];
+          target.className = "cl-meta-chip cl-meta-pri cl-pri-" + State.editDraft.priority;
+          break;
+        case "removeTag":
+          var tag = target.dataset.tag;
+          State.editDraft.tags = State.editDraft.tags.filter(function(t) {
+            return t !== tag;
+          });
+          target.remove();
+          break;
+        case "addTag":
+          showInlineInput(target, "#", function(val) {
+            if (!val.startsWith("#")) val = "#" + val;
+            State.editDraft.tags.push(val);
+            reRenderEditorMeta();
+          });
+          break;
+        case "addMention":
+          showInlineInput(target, "@", function(val) {
+            if (!val.startsWith("@")) val = "@" + val;
+            State.editDraft.mentions.push(val);
+            reRenderEditorMeta();
+          });
+          break;
+        case "openDatePicker":
+          showDatePicker(target);
+          break;
+        case "openNotePicker":
+          showNotePicker(target);
+          break;
+        case "editorSave":
+          saveExpandedTask();
+          break;
+        case "editorCancel":
+          collapseTask();
+          break;
+      }
+    });
+    editor.addEventListener("keydown", function(e) {
+      if (e.key === "Tab") {
+        e.preventDefault();
+        e.stopPropagation();
+        var current = State.editDraft.activeField;
+        if (current === "title") {
+          activateEditorField("notes");
+        } else if (current === "notes") {
+          activateEditorField("title");
+        } else {
+          activateEditorField("title");
+        }
+      }
+    });
+  }
+  function reRenderEditorMeta() {
+    var task = null;
+    for (var i = 0; i < State.tasks.length; i++) {
+      if (State.tasks[i].id === State.expandedTaskId) {
+        task = State.tasks[i];
+        break;
+      }
+    }
+    if (!task) return;
+    var editor = document.getElementById("cl-editor");
+    if (editor) {
+      var titleVal = "";
+      var notesVal = "";
+      var titleEl = editor.querySelector(".cl-editor-title");
+      var notesEl = editor.querySelector(".cl-editor-notes");
+      if (titleEl) titleVal = titleEl.value;
+      if (notesEl) notesVal = notesEl.value;
+      editor.innerHTML = renderTaskEditorHTML(task);
+      titleEl = editor.querySelector(".cl-editor-title");
+      notesEl = editor.querySelector(".cl-editor-notes");
+      if (titleEl) titleEl.value = titleVal;
+      if (notesEl) notesEl.value = notesVal;
+      attachEditorListeners(editor);
+    }
+  }
+  function saveExpandedTask() {
+    if (!State.expandedTaskId || !State.editDraft) return;
+    saveActiveFieldValue();
+    var draft = State.editDraft;
+    var taskId = State.expandedTaskId;
+    var parts = taskId.split(":");
+    var filename = parts.slice(0, -1).join(":");
+    var lineIndex = parseInt(parts[parts.length - 1]);
+    var msg = {
+      filename,
+      lineIndex,
+      content: draft.content,
+      priority: draft.priority,
+      scheduledDate: draft.scheduledDate,
+      scheduledWeek: draft.scheduledWeek,
+      tags: draft.tags,
+      mentions: draft.mentions,
+      notes: draft.notes,
+      checklists: draft.checklists,
+      moveToFilename: draft.moveToFilename
+    };
+    sendMessageToPlugin("saveTask", JSON.stringify(msg));
+    if (draft.moveToFilename && State.currentView === "inbox") {
+      State.movedFromInbox.push(taskId);
+    }
+    collapseTask();
+  }
+
   // src/webview/modals.js
   function openConfirmModal(opts) {
     var existing = document.querySelector(".cl-confirm-overlay");
@@ -2379,309 +3014,6 @@
     }, 0);
   }
 
-  // src/webview/pickers.js
-  function positionPickerVertically(picker, anchor, margin) {
-    if (margin == null) margin = 4;
-    var rect = anchor.getBoundingClientRect();
-    var pickerHeight = picker.getBoundingClientRect().height;
-    var viewportHeight = window.innerHeight;
-    var spaceBelow = viewportHeight - rect.bottom - margin;
-    var spaceAbove = rect.top - margin;
-    if (pickerHeight > spaceBelow && spaceAbove > spaceBelow) {
-      picker.style.top = Math.max(margin, rect.top - pickerHeight - margin) + "px";
-    } else {
-      picker.style.top = rect.bottom + margin + "px";
-    }
-  }
-  function showDatePicker(anchor) {
-    closePickers();
-    var rect = anchor.getBoundingClientRect();
-    var picker = document.createElement("div");
-    picker.className = "cl-picker cl-date-picker";
-    picker.style.top = rect.bottom + 4 + "px";
-    picker.style.left = Math.min(rect.left, window.innerWidth - 270) + "px";
-    var today = State.today;
-    var tmr = addDays(today, 1);
-    var nextMon = getNextMonday(today);
-    var inAWeek = addDays(today, 7);
-    picker.innerHTML = '<div class="cl-picker-tabs"><div class="cl-picker-tab cl-picker-tab-active" data-tab="day">Day</div><div class="cl-picker-tab" data-tab="week">Week</div></div><div class="cl-picker-body" id="cl-date-body">' + renderDateDayTab(today, tmr, nextMon, inAWeek) + '</div><div class="cl-picker-footer"><div class="cl-picker-action" data-action="removeDate"><span>\u2715</span> Remove date <span class="cl-shortcut">\u2318O</span></div></div>';
-    document.body.appendChild(picker);
-    positionPickerVertically(picker, anchor);
-    picker.addEventListener("click", function(e) {
-      var target = e.target.closest("[data-action]");
-      if (!target) {
-        var tab = e.target.closest("[data-tab]");
-        if (tab) {
-          var tabs = picker.querySelectorAll(".cl-picker-tab");
-          for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove("cl-picker-tab-active");
-          tab.classList.add("cl-picker-tab-active");
-          var body = picker.querySelector("#cl-date-body");
-          if (tab.dataset.tab === "day") body.innerHTML = renderDateDayTab(today, tmr, nextMon, inAWeek);
-          else body.innerHTML = renderDateWeekTab();
-        }
-        return;
-      }
-      if (target.dataset.action === "selectDate") {
-        State.editDraft.scheduledDate = target.dataset.date;
-        State.editDraft.scheduledWeek = null;
-        State.editDraft.tags = State.editDraft.tags.filter(function(t) {
-          return t !== "#someday";
-        });
-        updateDateChip();
-        closePickers();
-      } else if (target.dataset.action === "selectWeek") {
-        State.editDraft.scheduledWeek = target.dataset.week;
-        State.editDraft.scheduledDate = null;
-        State.editDraft.tags = State.editDraft.tags.filter(function(t) {
-          return t !== "#someday";
-        });
-        updateDateChip();
-        closePickers();
-      } else if (target.dataset.action === "removeDate") {
-        State.editDraft.scheduledDate = null;
-        State.editDraft.scheduledWeek = null;
-        updateDateChip();
-        closePickers();
-      }
-    });
-  }
-  function renderDateDayTab(today, tmr, nextMon, inAWeek) {
-    var html = '<div class="cl-picker-options">';
-    html += '<div class="cl-picker-option cl-picker-today" data-action="selectDate" data-date="' + today + '"><span>\u2B50</span><span class="cl-picker-opt-label">Today</span><span class="cl-picker-opt-date">' + formatShortDate(today) + "</span></div>";
-    html += '<div class="cl-picker-option" data-action="selectDate" data-date="' + tmr + '"><span>\u2192</span><span class="cl-picker-opt-label">Tomorrow</span><span class="cl-picker-opt-date">' + formatShortDate(tmr) + "</span></div>";
-    html += '<div class="cl-picker-option" data-action="selectDate" data-date="' + nextMon + '"><span>\u{1F4C5}</span><span class="cl-picker-opt-label">Next Monday</span><span class="cl-picker-opt-date">' + formatShortDate(nextMon) + "</span></div>";
-    html += '<div class="cl-picker-option" data-action="selectDate" data-date="' + inAWeek + '"><span>+7</span><span class="cl-picker-opt-label">In a week</span><span class="cl-picker-opt-date">' + formatShortDate(inAWeek) + "</span></div>";
-    html += "</div>";
-    html += '<div class="cl-picker-divider"></div>';
-    html += renderMiniCalendar(today);
-    return html;
-  }
-  function renderMiniCalendar(todayStr) {
-    var parts = todayStr.split("-");
-    var year = parseInt(parts[0]);
-    var month = parseInt(parts[1]) - 1;
-    var months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    var firstDay = new Date(year, month, 1);
-    var startOffset = (firstDay.getDay() + 6) % 7;
-    var daysInMonth = new Date(year, month + 1, 0).getDate();
-    var html = '<div class="cl-mini-cal">';
-    html += '<div class="cl-cal-nav"><span class="cl-cal-arrow">\u25C0</span><span class="cl-cal-month">' + months[month] + " " + year + '</span><span class="cl-cal-arrow">\u25B6</span></div>';
-    html += '<div class="cl-cal-grid">';
-    var dayNames = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
-    for (var di = 0; di < 7; di++) html += '<span class="cl-cal-day-name">' + dayNames[di] + "</span>";
-    for (var gap = 0; gap < startOffset; gap++) html += '<span class="cl-cal-day"></span>';
-    for (var d = 1; d <= daysInMonth; d++) {
-      var dateStr = year + "-" + String(month + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
-      var cls = "cl-cal-day";
-      if (dateStr === todayStr) cls += " cl-cal-today";
-      if (dateStr < todayStr) cls += " cl-cal-past";
-      if (State.editDraft && State.editDraft.scheduledDate === dateStr) cls += " cl-cal-selected";
-      html += '<span class="' + cls + '" data-action="selectDate" data-date="' + dateStr + '">' + d + "</span>";
-    }
-    html += "</div></div>";
-    return html;
-  }
-  function renderDateWeekTab() {
-    var currentWeek = State.currentWeek;
-    var html = '<div class="cl-picker-options">';
-    for (var w = 0; w < 8; w++) {
-      var weekStr = addWeeks(currentWeek, w);
-      var label = w === 0 ? "This week" : w === 1 ? "Next week" : weekStr;
-      html += '<div class="cl-picker-option" data-action="selectWeek" data-week="' + weekStr + '"><span class="cl-picker-opt-label">' + label + '</span><span class="cl-picker-opt-date">' + weekStr + "</span></div>";
-    }
-    html += "</div>";
-    return html;
-  }
-  function updateDateChip() {
-    var editor = document.getElementById("cl-editor");
-    if (!editor || !State.editDraft) return;
-    var chip = editor.querySelector('[data-action="openDatePicker"]');
-    if (!chip) return;
-    var label = "Schedule...";
-    if (State.editDraft.scheduledDate) label = formatShortDate(State.editDraft.scheduledDate);
-    else if (State.editDraft.scheduledWeek) label = State.editDraft.scheduledWeek;
-    chip.innerHTML = '<span class="cl-meta-icon">\u{1F4C5}</span>' + label;
-  }
-  function showNotePicker(anchor) {
-    closePickers();
-    var rect = anchor.getBoundingClientRect();
-    var picker = document.createElement("div");
-    picker.className = "cl-picker cl-note-picker";
-    picker.style.top = rect.bottom + 4 + "px";
-    picker.style.left = Math.min(rect.left, window.innerWidth - 310) + "px";
-    picker.innerHTML = '<div class="cl-picker-search"><input class="cl-picker-input" placeholder="Search notes..." autofocus/></div><div class="cl-picker-results" id="cl-note-results">' + renderNoteResults("") + '</div><div class="cl-picker-footer"><span style="opacity:0.35;font-size:11px;">\u21B5 select \xB7 Esc close</span></div>';
-    document.body.appendChild(picker);
-    positionPickerVertically(picker, anchor);
-    var input = picker.querySelector(".cl-picker-input");
-    input.addEventListener("input", function() {
-      document.getElementById("cl-note-results").innerHTML = renderNoteResults(input.value);
-    });
-    picker.addEventListener("click", function(e) {
-      var target = e.target.closest('[data-action="selectNote"]');
-      if (target) {
-        State.editDraft.moveToFilename = target.dataset.filename;
-        State.editDraft.moveToLabel = target.dataset.title;
-        var editor = document.getElementById("cl-editor");
-        if (editor) {
-          var chip = editor.querySelector('[data-action="openNotePicker"]');
-          if (chip) chip.textContent = "\u2192 " + target.dataset.title;
-        }
-        closePickers();
-      }
-    });
-  }
-  function renderNoteResults(query) {
-    var q = (query || "").toLowerCase();
-    var html = "";
-    if (State.expandedTaskId && !q) {
-      var curTask = null;
-      for (var ti = 0; ti < State.tasks.length; ti++) {
-        if (State.tasks[ti].id === State.expandedTaskId) {
-          curTask = State.tasks[ti];
-          break;
-        }
-      }
-      if (curTask && curTask.noteFilename) {
-        html += '<div class="cl-picker-group">Current Location</div>';
-        html += '<div class="cl-picker-result cl-picker-current" data-action="selectNote" data-filename="' + esc(curTask.noteFilename) + '" data-title="' + esc(curTask.noteTitle) + '">';
-        html += '<span class="cl-picker-note-icon">\u{1F4CD}</span>';
-        html += '<span class="cl-picker-note-title">' + esc(curTask.noteTitle) + "</span>";
-        html += "</div>";
-        html += '<div class="cl-picker-divider" style="margin:4px 14px;"></div>';
-      }
-    }
-    for (var fi = 0; fi < State.folders.length; fi++) {
-      var folder = State.folders[fi];
-      var matchingNotes = [];
-      for (var ni = 0; ni < folder.notes.length; ni++) {
-        var n = folder.notes[ni];
-        if (!q || n.title.toLowerCase().indexOf(q) >= 0) matchingNotes.push(n);
-      }
-      if (matchingNotes.length === 0) continue;
-      html += '<div class="cl-picker-group">' + esc(folder.name) + "</div>";
-      for (var mi = 0; mi < matchingNotes.length; mi++) {
-        var mn = matchingNotes[mi];
-        html += '<div class="cl-picker-result" data-action="selectNote" data-filename="' + esc(mn.filename) + '" data-title="' + esc(mn.title) + '">';
-        html += '<span class="cl-picker-note-icon">\u{1F4C4}</span>';
-        html += '<span class="cl-picker-note-title">' + esc(mn.title) + "</span>";
-        html += '<span class="cl-picker-note-count">' + mn.taskCount + "</span>";
-        html += "</div>";
-      }
-    }
-    if (!html) html = '<div class="cl-picker-empty">No notes found</div>';
-    return html;
-  }
-  function getAllKnownTags() {
-    var tagMap = {};
-    for (var i = 0; i < State.tasks.length; i++) {
-      var t = State.tasks[i];
-      if (t.tags) {
-        for (var j = 0; j < t.tags.length; j++) tagMap[t.tags[j]] = true;
-      }
-    }
-    return Object.keys(tagMap).sort();
-  }
-  function getAllKnownMentions() {
-    var menMap = {};
-    for (var i = 0; i < State.tasks.length; i++) {
-      var t = State.tasks[i];
-      if (t.mentions) {
-        for (var j = 0; j < t.mentions.length; j++) menMap[t.mentions[j]] = true;
-      }
-    }
-    return Object.keys(menMap).sort();
-  }
-  function showInlineInput(anchor, prefix, onCommit) {
-    var existing = document.querySelector(".cl-inline-input-wrap");
-    if (existing) existing.remove();
-    var allSuggestions = prefix === "#" ? getAllKnownTags() : getAllKnownMentions();
-    var draft = State.editDraft;
-    var already = prefix === "#" ? draft.tags || [] : draft.mentions || [];
-    allSuggestions = allSuggestions.filter(function(s) {
-      return already.indexOf(s) === -1;
-    });
-    var wrap = document.createElement("div");
-    wrap.className = "cl-inline-input-wrap";
-    var input = document.createElement("input");
-    input.className = "cl-inline-input";
-    input.placeholder = prefix + "...";
-    input.value = prefix;
-    var dropdown = document.createElement("div");
-    dropdown.className = "cl-autocomplete";
-    var selectedIdx = -1;
-    wrap.appendChild(input);
-    wrap.appendChild(dropdown);
-    anchor.parentNode.insertBefore(wrap, anchor.nextSibling);
-    input.focus();
-    input.setSelectionRange(prefix.length, prefix.length);
-    function updateSuggestions() {
-      var q = input.value.toLowerCase();
-      var matches = allSuggestions.filter(function(s) {
-        return s.toLowerCase().indexOf(q) >= 0;
-      });
-      if (matches.length === 0 || matches.length === 1 && matches[0].toLowerCase() === q) {
-        dropdown.innerHTML = "";
-        dropdown.style.display = "none";
-        selectedIdx = -1;
-        return;
-      }
-      selectedIdx = -1;
-      dropdown.style.display = "block";
-      dropdown.innerHTML = "";
-      for (var i = 0; i < Math.min(matches.length, 8); i++) {
-        var item = document.createElement("div");
-        item.className = "cl-autocomplete-item";
-        item.textContent = matches[i];
-        item.dataset.value = matches[i];
-        item.addEventListener("mousedown", function(e) {
-          e.preventDefault();
-          input.value = this.dataset.value;
-          commit();
-        });
-        dropdown.appendChild(item);
-      }
-    }
-    function commit() {
-      var val = input.value.trim();
-      wrap.remove();
-      if (val && val !== prefix) {
-        onCommit(val);
-      }
-    }
-    input.addEventListener("input", updateSuggestions);
-    updateSuggestions();
-    input.addEventListener("keydown", function(e) {
-      var items = dropdown.querySelectorAll(".cl-autocomplete-item");
-      if (e.key === "ArrowDown" && items.length > 0) {
-        e.preventDefault();
-        selectedIdx = Math.min(selectedIdx + 1, items.length - 1);
-        for (var i = 0; i < items.length; i++) items[i].classList.toggle("cl-autocomplete-active", i === selectedIdx);
-        input.value = items[selectedIdx].dataset.value;
-      } else if (e.key === "ArrowUp" && items.length > 0) {
-        e.preventDefault();
-        selectedIdx = Math.max(selectedIdx - 1, 0);
-        for (var i = 0; i < items.length; i++) items[i].classList.toggle("cl-autocomplete-active", i === selectedIdx);
-        input.value = items[selectedIdx].dataset.value;
-      } else if (e.key === "Enter") {
-        e.preventDefault();
-        e.stopPropagation();
-        commit();
-      } else if (e.key === "Escape") {
-        e.stopPropagation();
-        wrap.remove();
-      }
-    });
-    input.addEventListener("blur", function() {
-      setTimeout(function() {
-        if (wrap.parentNode) commit();
-      }, 150);
-    });
-  }
-  function closePickers() {
-    var pickers = document.querySelectorAll(".cl-picker");
-    for (var i = 0; i < pickers.length; i++) pickers[i].remove();
-  }
-
   // src/webview/init.js
   function renderInitialLoading() {
     var sidebar = document.getElementById("cl-sidebar");
@@ -3039,336 +3371,6 @@
     var filename = parts.slice(0, -1).join(":");
     var lineIndex = parseInt(parts[parts.length - 1]);
     sendMessageToPlugin("toggleTask", JSON.stringify({ filename, lineIndex }));
-  }
-  function expandTask(taskId) {
-    if (!taskId) return;
-    if (State.expandedTaskId === taskId) {
-      collapseTask();
-      return;
-    }
-    var task = null;
-    for (var i = 0; i < State.tasks.length; i++) {
-      if (State.tasks[i].id === taskId) {
-        task = State.tasks[i];
-        break;
-      }
-    }
-    if (!task) return;
-    collapseTask();
-    State.expandedTaskId = taskId;
-    var titleContent = task.content;
-    var trailingTags = [];
-    var trailingMatch = titleContent.match(/(\s+#[\p{L}\p{N}_\-\/]+)+$/u);
-    if (trailingMatch) {
-      var trailingStr = trailingMatch[0];
-      titleContent = titleContent.substring(0, titleContent.length - trailingStr.length);
-      var tagMatches = trailingStr.match(/#[\p{L}\p{N}_\-\/]+/gu);
-      if (tagMatches) trailingTags = tagMatches;
-    }
-    State.editDraft = {
-      content: titleContent,
-      rawContent: task.rawContent,
-      priority: task.priority,
-      scheduledDate: task.scheduledDate,
-      scheduledWeek: task.scheduledWeek,
-      tags: task.tags ? task.tags.slice() : [],
-      mentions: task.mentions ? task.mentions.slice() : [],
-      trailingTags,
-      moveToFilename: null,
-      notes: [],
-      checklists: []
-    };
-    for (var ci = 0; ci < task.children.length; ci++) {
-      var child = task.children[ci];
-      if (child.type === "note") State.editDraft.notes.push({ content: child.content, rawContent: child.rawContent || child.content, lineIndex: child.lineIndex });
-      else if (child.type === "checklist") State.editDraft.checklists.push({ content: child.content, status: child.status, lineIndex: child.lineIndex });
-    }
-    State.editDraft.activeField = null;
-    var row = document.querySelector('.cl-task-row[data-task-id="' + CSS.escape(taskId) + '"]');
-    if (!row) return;
-    row.style.display = "none";
-    var editor = document.createElement("div");
-    editor.className = "cl-task-editor";
-    editor.id = "cl-editor";
-    editor.innerHTML = renderTaskEditorHTML(task);
-    row.parentNode.insertBefore(editor, row.nextSibling);
-    var subTasks = task.children.filter(function(c) {
-      return c.type === "task";
-    });
-    for (var si = subTasks.length - 1; si >= 0; si--) {
-      var subRow = document.createElement("div");
-      subRow.className = "cl-subtask-row";
-      subRow.innerHTML = renderTaskRow(subTasks[si], { showSource: false });
-      editor.parentNode.insertBefore(subRow, editor.nextSibling);
-    }
-    attachEditorListeners(editor);
-  }
-  function collapseTask() {
-    if (!State.expandedTaskId) return;
-    var editor = document.getElementById("cl-editor");
-    if (editor) {
-      var taskId = State.expandedTaskId;
-      var row = document.querySelector('.cl-task-row[data-task-id="' + CSS.escape(taskId) + '"]');
-      if (row) row.style.display = "";
-      var subRows = document.querySelectorAll(".cl-subtask-row");
-      for (var i = 0; i < subRows.length; i++) subRows[i].remove();
-      editor.remove();
-    }
-    State.expandedTaskId = null;
-    State.editDraft = null;
-  }
-  function renderTaskEditorHTML(task) {
-    var draft = State.editDraft;
-    var html = "";
-    html += '<div class="cl-editor-row">';
-    var editorCbClass = task.type === "checklist" ? "cl-cb cl-cb-square" : "cl-cb";
-    html += '<div class="' + editorCbClass + '" data-action="toggle"></div>';
-    if (draft.activeField === "title") {
-      html += '<input class="cl-editor-title cl-editor-field-active" value="' + esc(draft.content) + '" data-field="title"/>';
-    } else {
-      html += '<div class="cl-editor-title-view" data-field-view="title">' + renderInlineMarkdown(draft.content) + "</div>";
-    }
-    html += "</div>";
-    var notesForEdit = draft.notes.map(function(n) {
-      return n.content || "";
-    }).join("\n");
-    html += '<div class="cl-editor-section">';
-    if (draft.activeField === "notes") {
-      html += '<textarea class="cl-editor-notes cl-editor-field-active" data-field="notes">' + esc(notesForEdit) + "</textarea>";
-    } else if (notesForEdit.trim()) {
-      html += '<div class="cl-editor-notes-view" data-field-view="notes">' + renderNotesMarkdown(draft.notes) + "</div>";
-    } else {
-      html += '<div class="cl-editor-notes-view cl-editor-notes-empty" data-field-view="notes">Notes...</div>';
-    }
-    html += "</div>";
-    if (draft.checklists.length > 0) {
-      html += '<div class="cl-editor-section">';
-      html += '<div class="cl-editor-label">Checklist</div>';
-      for (var ci = 0; ci < draft.checklists.length; ci++) {
-        var cl = draft.checklists[ci];
-        var clDone = cl.status === "done" ? " cl-cl-done" : "";
-        html += '<div class="cl-checklist-item' + clDone + '" data-index="' + ci + '">';
-        html += '<div class="cl-cl-check" data-action="toggleChecklist"></div>';
-        html += '<span class="cl-cl-text">' + esc(cl.content) + "</span>";
-        html += "</div>";
-      }
-      html += "</div>";
-    }
-    html += '<div class="cl-editor-meta">';
-    var dateLabel = "Schedule...";
-    if (draft.scheduledDate) dateLabel = formatShortDate(draft.scheduledDate);
-    else if (draft.scheduledWeek) dateLabel = draft.scheduledWeek;
-    html += '<div class="cl-meta-chip" data-action="openDatePicker"><span class="cl-meta-icon">\u{1F4C5}</span>' + dateLabel + "</div>";
-    if (task.noteFilename) {
-      var noteLabel = draft.moveToFilename ? esc(draft.moveToLabel || "Moved") : esc(task.noteTitle);
-      html += '<div class="cl-meta-chip" data-action="jumpToProjectNote" data-filename="' + esc(task.noteFilename) + '"><span class="cl-meta-icon">\u{1F4C1}</span>' + noteLabel + "</div>";
-    }
-    html += '<div class="cl-meta-chip cl-meta-add" data-action="openNotePicker">\u2192 Move to...</div>';
-    for (var ti = 0; ti < draft.tags.length; ti++) {
-      html += '<div class="cl-meta-chip cl-meta-tag" data-action="removeTag" data-tag="' + esc(draft.tags[ti]) + '">' + esc(draft.tags[ti]) + ' <span class="cl-remove">\xD7</span></div>';
-    }
-    html += '<div class="cl-meta-chip cl-meta-add" data-action="addTag">+ tag</div>';
-    for (var mi = 0; mi < draft.mentions.length; mi++) {
-      html += '<div class="cl-meta-chip cl-meta-mention">' + esc(draft.mentions[mi]) + "</div>";
-    }
-    html += '<div class="cl-meta-chip cl-meta-add" data-action="addMention">+ @mention</div>';
-    var priLabels = ["\u2014", "!", "!!", "!!!"];
-    html += '<div class="cl-meta-chip cl-meta-pri cl-pri-' + draft.priority + '" data-action="cyclePri">' + priLabels[draft.priority] + "</div>";
-    html += "</div>";
-    html += '<div class="cl-editor-hints">\u2318Enter save \xB7 Esc cancel \xB7 \u2318T today \xB7 \u2318O remove date</div>';
-    html += '<div class="cl-editor-actions"><button class="cl-editor-btn cl-editor-btn-cancel" data-action="editorCancel">Cancel</button><button class="cl-editor-btn cl-editor-btn-save" data-action="editorSave">Save</button></div>';
-    return html;
-  }
-  function renderNotesMarkdown(notes) {
-    var html = "";
-    for (var i = 0; i < notes.length; i++) {
-      var raw = notes[i].rawContent || notes[i].content || "";
-      raw = raw.replace(/^\t+/, "");
-      if (raw.match(/^>\s?/)) {
-        html += '<div class="cl-editor-note-line cl-note-quote" style="margin:2px 0;">' + renderInlineMarkdown(raw.replace(/^>\s?/, "")) + "</div>";
-      } else if (raw.match(/^[-*]\s+/)) {
-        html += '<div class="cl-editor-note-line">\u2022 ' + renderInlineMarkdown(raw.replace(/^[-*]\s+/, "")) + "</div>";
-      } else {
-        html += '<div class="cl-editor-note-line">' + renderInlineMarkdown(raw) + "</div>";
-      }
-    }
-    return html;
-  }
-  function activateEditorField(fieldName) {
-    if (!State.editDraft) return;
-    saveActiveFieldValue();
-    State.editDraft.activeField = fieldName;
-    var task = null;
-    for (var i = 0; i < State.tasks.length; i++) {
-      if (State.tasks[i].id === State.expandedTaskId) {
-        task = State.tasks[i];
-        break;
-      }
-    }
-    if (!task) return;
-    var editor = document.getElementById("cl-editor");
-    if (!editor) return;
-    editor.innerHTML = renderTaskEditorHTML(task);
-    attachEditorListeners(editor);
-    if (fieldName === "title") {
-      var el = editor.querySelector(".cl-editor-title");
-      if (el) {
-        el.focus();
-        el.select();
-      }
-    } else if (fieldName === "notes") {
-      var el = editor.querySelector(".cl-editor-notes");
-      if (el) {
-        el.focus();
-      }
-    }
-  }
-  function saveActiveFieldValue() {
-    if (!State.editDraft) return;
-    var editor = document.getElementById("cl-editor");
-    if (!editor) return;
-    if (State.editDraft.activeField === "title") {
-      var titleEl = editor.querySelector(".cl-editor-title");
-      if (titleEl) State.editDraft.content = titleEl.value;
-    } else if (State.editDraft.activeField === "notes") {
-      var notesEl = editor.querySelector(".cl-editor-notes");
-      if (notesEl) {
-        var lines = notesEl.value.split("\n");
-        State.editDraft.notes = lines.map(function(l, i) {
-          var orig = State.editDraft.notes[i];
-          return { content: l, rawContent: orig ? orig.rawContent : "	" + l, lineIndex: orig ? orig.lineIndex : -1 };
-        });
-      }
-    }
-  }
-  function attachEditorListeners(editor) {
-    editor.addEventListener("click", function(e) {
-      var viewField = e.target.closest("[data-field-view]");
-      if (viewField) {
-        activateEditorField(viewField.dataset.fieldView);
-        return;
-      }
-      var target = e.target.closest("[data-action]");
-      if (!target) return;
-      var action = target.dataset.action;
-      switch (action) {
-        case "toggleChecklist":
-          var item = target.closest(".cl-checklist-item");
-          if (item) {
-            var idx = parseInt(item.dataset.index);
-            if (State.editDraft.checklists[idx]) {
-              State.editDraft.checklists[idx].status = State.editDraft.checklists[idx].status === "done" ? "open" : "done";
-              item.classList.toggle("cl-cl-done");
-            }
-          }
-          break;
-        case "cyclePri":
-          State.editDraft.priority = (State.editDraft.priority + 1) % 4;
-          var priLabels = ["\u2014", "!", "!!", "!!!"];
-          target.textContent = priLabels[State.editDraft.priority];
-          target.className = "cl-meta-chip cl-meta-pri cl-pri-" + State.editDraft.priority;
-          break;
-        case "removeTag":
-          var tag = target.dataset.tag;
-          State.editDraft.tags = State.editDraft.tags.filter(function(t) {
-            return t !== tag;
-          });
-          target.remove();
-          break;
-        case "addTag":
-          showInlineInput(target, "#", function(val) {
-            if (!val.startsWith("#")) val = "#" + val;
-            State.editDraft.tags.push(val);
-            reRenderEditorMeta();
-          });
-          break;
-        case "addMention":
-          showInlineInput(target, "@", function(val) {
-            if (!val.startsWith("@")) val = "@" + val;
-            State.editDraft.mentions.push(val);
-            reRenderEditorMeta();
-          });
-          break;
-        case "openDatePicker":
-          showDatePicker(target);
-          break;
-        case "openNotePicker":
-          showNotePicker(target);
-          break;
-        case "editorSave":
-          saveExpandedTask();
-          break;
-        case "editorCancel":
-          collapseTask();
-          break;
-      }
-    });
-    editor.addEventListener("keydown", function(e) {
-      if (e.key === "Tab") {
-        e.preventDefault();
-        e.stopPropagation();
-        var current = State.editDraft.activeField;
-        if (current === "title") {
-          activateEditorField("notes");
-        } else if (current === "notes") {
-          activateEditorField("title");
-        } else {
-          activateEditorField("title");
-        }
-      }
-    });
-  }
-  function reRenderEditorMeta() {
-    var task = null;
-    for (var i = 0; i < State.tasks.length; i++) {
-      if (State.tasks[i].id === State.expandedTaskId) {
-        task = State.tasks[i];
-        break;
-      }
-    }
-    if (!task) return;
-    var editor = document.getElementById("cl-editor");
-    if (editor) {
-      var titleVal = "";
-      var notesVal = "";
-      var titleEl = editor.querySelector(".cl-editor-title");
-      var notesEl = editor.querySelector(".cl-editor-notes");
-      if (titleEl) titleVal = titleEl.value;
-      if (notesEl) notesVal = notesEl.value;
-      editor.innerHTML = renderTaskEditorHTML(task);
-      titleEl = editor.querySelector(".cl-editor-title");
-      notesEl = editor.querySelector(".cl-editor-notes");
-      if (titleEl) titleEl.value = titleVal;
-      if (notesEl) notesEl.value = notesVal;
-      attachEditorListeners(editor);
-    }
-  }
-  function saveExpandedTask() {
-    if (!State.expandedTaskId || !State.editDraft) return;
-    saveActiveFieldValue();
-    var draft = State.editDraft;
-    var taskId = State.expandedTaskId;
-    var parts = taskId.split(":");
-    var filename = parts.slice(0, -1).join(":");
-    var lineIndex = parseInt(parts[parts.length - 1]);
-    var msg = {
-      filename,
-      lineIndex,
-      content: draft.content,
-      priority: draft.priority,
-      scheduledDate: draft.scheduledDate,
-      scheduledWeek: draft.scheduledWeek,
-      tags: draft.tags,
-      mentions: draft.mentions,
-      notes: draft.notes,
-      checklists: draft.checklists,
-      moveToFilename: draft.moveToFilename
-    };
-    sendMessageToPlugin("saveTask", JSON.stringify(msg));
-    if (draft.moveToFilename && State.currentView === "inbox") {
-      State.movedFromInbox.push(taskId);
-    }
-    collapseTask();
   }
   document.addEventListener("keydown", function(e) {
     if (e.metaKey && e.key === "Enter") {

@@ -9,7 +9,7 @@
 import { State } from './state.js';
 import { esc } from './helpers.js';
 import { renderCurrentView } from './views.js';
-import { collapseTask } from './index.js';
+import { collapseTask } from './task-editor.js';
 
 // ─── Confirmation Modal ─────────────────────────────────────
 export function openConfirmModal(opts) {
