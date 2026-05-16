@@ -4,13 +4,11 @@
 // `onMessageFromPlugin` on the window, so the entry point is republished onto
 // globalThis from index.js after this module's import resolves.
 
-import { State } from './state.js';
-import { reviewDueDaysFromFm } from './review.js';
+import { State, restoreViewPrefs } from './state.js';
+import { reviewDueDaysFromFm } from './lib/review.js';
 import { navigateToProjectNote } from './index.js';
-import { renderSidebar } from './sidebar.js';
-import { renderCurrentView } from './views.js';
-import { restoreViewPrefs } from './view-prefs.js';
-import { applySidebarWidth } from './sidebar-resize.js';
+import { renderSidebar, applySidebarWidth } from './ui/sidebar.js';
+import { renderCurrentView } from './ui/views.js';
 
 export function onMessageFromPlugin(type, data) {
   switch (type) {

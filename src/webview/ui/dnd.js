@@ -10,7 +10,7 @@
 // in via `consumeDragClickSuppression()` to swallow the trailing click that
 // would otherwise fire right after a drag-release.
 
-import { State } from './state.js';
+import { State } from '../state.js';
 
 var dragState = null;
 var dragSuppressNextClick = false;

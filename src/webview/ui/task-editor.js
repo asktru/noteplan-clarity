@@ -5,9 +5,9 @@
 // Esc cancels. `editDraft` lives on State and is the single source of truth
 // for unsaved field values while the editor is open.
 
-import { State } from './state.js';
-import { esc, formatShortDate } from './helpers.js';
-import { renderInlineMarkdown } from './markdown.js';
+import { State } from '../state.js';
+import { esc, formatShortDate } from '../lib/helpers.js';
+import { renderInlineMarkdown } from '../lib/markdown.js';
 import { renderTaskRow } from './task-list.js';
 import {
   showDatePicker,

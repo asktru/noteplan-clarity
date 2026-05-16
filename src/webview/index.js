@@ -9,19 +9,18 @@
 //     keyboard shortcuts and the event-delegation switch
 //   - globalThis.onMessageFromPlugin: required by NotePlan's bridge
 
-import { State, pushRecentNote } from './state.js';
+import { State, pushRecentNote, saveCurrentViewPrefs, persistViewPrefs } from './state.js';
 import { onMessageFromPlugin } from './messages.js';
 import {
   closeProjectMenu,
   toggleProjectMenu,
   confirmArchiveProject,
-} from './modals.js';
-import { consumeDragClickSuppression } from './dnd.js';
-import { openNoteMetaModal } from './note-meta-modal.js';
-import { saveCurrentViewPrefs, persistViewPrefs } from './view-prefs.js';
-import { renderSidebar } from './sidebar.js';
-import { renderCurrentView } from './views.js';
-import { expandTask, collapseTask } from './task-editor.js';
+} from './ui/modals.js';
+import { consumeDragClickSuppression } from './ui/dnd.js';
+import { openNoteMetaModal } from './ui/modals.js';
+import { renderSidebar } from './ui/sidebar.js';
+import { renderCurrentView } from './ui/views.js';
+import { expandTask, collapseTask } from './ui/task-editor.js';
 // Side-effect imports: register DOMContentLoaded + global keydown listeners.
 import './init.js';
 import './keyboard.js';

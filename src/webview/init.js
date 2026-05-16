@@ -5,8 +5,8 @@
 // scheduled on a setTimeout so the bridge has time to register its window
 // globals before we send it.
 
-import { attachDragListeners } from './dnd.js';
-import { setupSidebarResizer } from './sidebar-resize.js';
+import { attachDragListeners } from './ui/dnd.js';
+import { setupSidebarResizer } from './ui/sidebar.js';
 
 function renderInitialLoading() {
   var sidebar = document.getElementById('cl-sidebar');

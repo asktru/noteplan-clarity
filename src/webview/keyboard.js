@@ -7,11 +7,11 @@
 // module-evaluation time.
 
 import { State } from './state.js';
-import { addDays } from './helpers.js';
-import { expandTask, collapseTask, saveExpandedTask } from './task-editor.js';
-import { openShortcutsCheatsheet, deleteTaskById } from './modals.js';
-import { openQuickJump } from './quick-jump.js';
-import { updateDateChip } from './pickers.js';
+import { addDays } from './lib/helpers.js';
+import { expandTask, collapseTask, saveExpandedTask } from './ui/task-editor.js';
+import { openShortcutsCheatsheet, deleteTaskById } from './ui/modals.js';
+import { openQuickJump } from './ui/quick-jump.js';
+import { updateDateChip } from './ui/pickers.js';
 import {
   getFocusedTaskId,
   toggleTask,

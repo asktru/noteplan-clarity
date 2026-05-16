@@ -2,7 +2,7 @@
 // — the duplication exists because script.js and clarityEvents.js can't share
 // a module system at runtime; semantics must match `asktru.WeeklyReview`.
 
-import { State } from './state.js';
+import { State } from '../state.js';
 
 // Color used for paused/someday projects/areas (overrides bgColorDark in icons).
 export var PAUSED_COLOR = '#9CA3AF';

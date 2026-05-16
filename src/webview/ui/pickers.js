@@ -5,8 +5,8 @@
 // All three close cleanly via `closePickers`, which removes any picker
 // overlays from the DOM (used both internally and from the editor's lifecycle).
 
-import { State } from './state.js';
-import { esc, addDays, getNextMonday, addWeeks, formatShortDate } from './helpers.js';
+import { State } from '../state.js';
+import { esc, addDays, getNextMonday, addWeeks, formatShortDate } from '../lib/helpers.js';
 
 // Position an absolutely/fixed-positioned picker below its anchor by default,
 // flipping above when the picker would overflow the viewport bottom AND there's

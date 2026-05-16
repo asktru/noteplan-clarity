@@ -3,12 +3,12 @@
 // returns an HTML string that the router slots into #cl-main, then it
 // (re)wires the main event delegation handlers.
 
-import { State } from './state.js';
-import { esc, capitalize, formatDateHeader, formatUpcomingDateHeader, formatWeekHeader } from './helpers.js';
-import { renderInlineMarkdown, isTableSeparatorLine, renderMarkdownTable } from './markdown.js';
-import { reviewDueDaysFromFm, isReviewDue, reviewDueLabel } from './review.js';
-import { renderProjectIcon, getViewIcon, buildDeadlineBadgeVerbose } from './icons.js';
-import { getFilteredTasks } from './task-categorization.js';
+import { State } from '../state.js';
+import { esc, capitalize, formatDateHeader, formatUpcomingDateHeader, formatWeekHeader } from '../lib/helpers.js';
+import { renderInlineMarkdown, isTableSeparatorLine, renderMarkdownTable } from '../lib/markdown.js';
+import { reviewDueDaysFromFm, isReviewDue, reviewDueLabel } from '../lib/review.js';
+import { renderProjectIcon, getViewIcon, buildDeadlineBadgeVerbose } from '../lib/icons.js';
+import { getFilteredTasks } from '../lib/task-categorization.js';
 import {
   renderTaskRow,
   renderFilterBar,
@@ -16,7 +16,7 @@ import {
   renderGroupedTasks,
   renderQuickAdd,
 } from './task-list.js';
-import { attachMainEventListeners } from './index.js';
+import { attachMainEventListeners } from '../index.js';
 
 export function renderCurrentView() {
   var el = document.getElementById('cl-main');

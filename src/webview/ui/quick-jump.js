@@ -2,10 +2,10 @@
 // then the rest of the sidebar order; a non-empty query ranks by substring
 // position + initials match (so "ehs" → "Eat Healthy Stuff").
 
-import { State, pushRecentNote } from './state.js';
-import { esc } from './helpers.js';
-import { renderProjectIcon } from './icons.js';
-import { navigateToProjectNote } from './index.js';
+import { State, pushRecentNote } from '../state.js';
+import { esc } from '../lib/helpers.js';
+import { renderProjectIcon } from '../lib/icons.js';
+import { navigateToProjectNote } from '../index.js';
 
 // Score a note title against a query. Higher is better; 0 means no match.
 // Combines case-insensitive substring match and first-letter-of-each-word match.

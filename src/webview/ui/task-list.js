@@ -3,10 +3,10 @@
 // returns an HTML string — the view renderers in index.js concatenate them
 // into the final markup.
 
-import { State } from './state.js';
-import { esc, capitalize, formatDateHeader } from './helpers.js';
-import { renderInlineMarkdown } from './markdown.js';
-import { getTasksForView } from './task-categorization.js';
+import { State } from '../state.js';
+import { esc, capitalize, formatDateHeader } from '../lib/helpers.js';
+import { renderInlineMarkdown } from '../lib/markdown.js';
+import { getTasksForView } from '../lib/task-categorization.js';
 
 export function renderTaskRow(task, options) {
   options = options || {};

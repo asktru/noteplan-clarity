@@ -4,7 +4,7 @@
 // referenced from both the project note and its calendar entry shows up once.
 // `getFilteredTasks` layers tag/folder/mention/text filters on top.
 
-import { State } from './state.js';
+import { State } from '../state.js';
 
 export function getTasksForView(view) {
   var today = State.today;
