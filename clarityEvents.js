@@ -510,6 +510,196 @@
     return getTasksForView(view).length;
   }
 
+  // src/webview/modals.js
+  function openConfirmModal(opts) {
+    var existing = document.querySelector(".cl-confirm-overlay");
+    if (existing) existing.remove();
+    var title = opts.title || "Are you sure?";
+    var message = opts.message || "";
+    var confirmLabel = opts.confirmLabel || "Confirm";
+    var cancelLabel = opts.cancelLabel || "Cancel";
+    var destructive = !!opts.destructive;
+    var overlay = document.createElement("div");
+    overlay.className = "cl-confirm-overlay";
+    overlay.innerHTML = '<div class="cl-confirm-modal"><div class="cl-confirm-title">' + esc(title) + "</div>" + (message ? '<div class="cl-confirm-message">' + esc(message) + "</div>" : "") + '<div class="cl-confirm-actions"><button class="cl-confirm-cancel" type="button">' + esc(cancelLabel) + '</button><button class="cl-confirm-ok' + (destructive ? " cl-confirm-destructive" : "") + '" type="button">' + esc(confirmLabel) + "</button></div></div>";
+    document.body.appendChild(overlay);
+    var okBtn = overlay.querySelector(".cl-confirm-ok");
+    var cancelBtn = overlay.querySelector(".cl-confirm-cancel");
+    function close() {
+      overlay.remove();
+    }
+    function confirm() {
+      close();
+      if (typeof opts.onConfirm === "function") opts.onConfirm();
+    }
+    function cancel() {
+      close();
+      if (typeof opts.onCancel === "function") opts.onCancel();
+    }
+    okBtn.addEventListener("click", confirm);
+    cancelBtn.addEventListener("click", cancel);
+    overlay.addEventListener("click", function(e) {
+      if (e.target === overlay) cancel();
+    });
+    overlay.addEventListener("keydown", function(e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        e.stopPropagation();
+        confirm();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        cancel();
+      }
+    });
+    setTimeout(function() {
+      okBtn.focus();
+    }, 0);
+  }
+  function deleteTaskById(taskId) {
+    if (!taskId) return;
+    var task = null;
+    for (var i = 0; i < State.tasks.length; i++) {
+      if (State.tasks[i].id === taskId) {
+        task = State.tasks[i];
+        break;
+      }
+    }
+    var parts = taskId.split(":");
+    var filename = parts.slice(0, -1).join(":");
+    var lineIndex = parseInt(parts[parts.length - 1]);
+    if (isNaN(lineIndex)) return;
+    var preview = task ? task.content : "";
+    openConfirmModal({
+      title: "Delete this task?",
+      message: preview ? "\u201C" + preview + "\u201D will be removed from its note. This cannot be undone from Clarity." : "The task will be removed from its note. This cannot be undone from Clarity.",
+      confirmLabel: "Delete",
+      cancelLabel: "Cancel",
+      destructive: true,
+      onConfirm: function() {
+        State.tasks = State.tasks.filter(function(t) {
+          return t.id !== taskId;
+        });
+        if (State.expandedTaskId === taskId) collapseTask();
+        State.focusedTaskIndex = -1;
+        renderCurrentView();
+        sendMessageToPlugin("deleteTask", JSON.stringify({ filename, lineIndex }));
+      }
+    });
+  }
+  var SHORTCUTS_GROUPS = [
+    {
+      title: "Navigation",
+      items: [
+        { keys: ["\u23181", "..", "\u23185"], label: "Switch view (Inbox, Today, Upcoming, Anytime, Someday)" },
+        { keys: ["\u2318/"], label: "Quick-jump to a project or area" },
+        { keys: ["\u2191", "\u2193"], label: "Move focus between tasks" },
+        { keys: ["Enter"], label: "Open the focused task" },
+        { keys: ["Esc"], label: "Close editor, picker, or palette" }
+      ]
+    },
+    {
+      title: "Task actions",
+      items: [
+        { keys: ["Space"], label: "Toggle the focused task done / open" },
+        { keys: ["\u2318T"], label: "Schedule for today" },
+        { keys: ["\u2318\u21E7T"], label: "Schedule for tomorrow" },
+        { keys: ["\u2318E"], label: 'Add to "This Evening"' },
+        { keys: ["\u2318O"], label: "Clear schedule" },
+        { keys: ["\u2318\u232B"], label: "Delete task (with confirmation)" },
+        { keys: ["\u2318Enter"], label: "Save the open task editor" }
+      ]
+    },
+    {
+      title: "Other",
+      items: [
+        { keys: ["\u2318N"], label: "Focus the New Task input" },
+        { keys: ["?"], label: "Show this cheatsheet" }
+      ]
+    }
+  ];
+  function openShortcutsCheatsheet() {
+    var existing = document.querySelector(".cl-cheatsheet-overlay");
+    if (existing) {
+      existing.remove();
+      return;
+    }
+    var html = '<div class="cl-cheatsheet-modal"><div class="cl-cheatsheet-title">Keyboard shortcuts</div>';
+    for (var gi = 0; gi < SHORTCUTS_GROUPS.length; gi++) {
+      var g = SHORTCUTS_GROUPS[gi];
+      html += '<div class="cl-cheatsheet-section">';
+      html += '<div class="cl-cheatsheet-section-title">' + esc(g.title) + "</div>";
+      for (var ii = 0; ii < g.items.length; ii++) {
+        var it = g.items[ii];
+        var keysHtml = "";
+        for (var ki = 0; ki < it.keys.length; ki++) {
+          var k = it.keys[ki];
+          if (k === "..") keysHtml += '<span class="cl-cheatsheet-sep">\u2026</span>';
+          else keysHtml += '<kbd class="cl-cheatsheet-kbd">' + esc(k) + "</kbd>";
+        }
+        html += '<div class="cl-cheatsheet-row"><div class="cl-cheatsheet-keys">' + keysHtml + '</div><div class="cl-cheatsheet-label">' + esc(it.label) + "</div></div>";
+      }
+      html += "</div>";
+    }
+    html += '<div class="cl-cheatsheet-foot">Press <kbd class="cl-cheatsheet-kbd">?</kbd> or <kbd class="cl-cheatsheet-kbd">Esc</kbd> to close</div>';
+    html += "</div>";
+    var overlay = document.createElement("div");
+    overlay.className = "cl-cheatsheet-overlay";
+    overlay.innerHTML = html;
+    document.body.appendChild(overlay);
+    overlay.addEventListener("click", function(e) {
+      if (e.target === overlay) overlay.remove();
+    });
+  }
+  var _projectMenuOutsideListener = null;
+  function closeProjectMenu() {
+    var existing = document.querySelector(".cl-project-menu");
+    if (existing) existing.remove();
+    if (_projectMenuOutsideListener) {
+      document.removeEventListener("mousedown", _projectMenuOutsideListener, true);
+      _projectMenuOutsideListener = null;
+    }
+  }
+  function toggleProjectMenu(button) {
+    if (document.querySelector(".cl-project-menu")) {
+      closeProjectMenu();
+      return;
+    }
+    var wrap = button.closest(".cl-project-menu-wrap");
+    if (!wrap) return;
+    var fn = State.currentNoteFilename || State.noteContent && State.noteContent.filename || "";
+    var menu = document.createElement("div");
+    menu.className = "cl-project-menu";
+    menu.innerHTML = '<button type="button" class="cl-project-menu-item" data-action="refreshProject" data-filename="' + esc(fn) + '"><span class="cl-project-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3.5-7.1"/><path d="M21 4v5h-5"/></svg></span><span>Refresh</span></button><button type="button" class="cl-project-menu-item" data-action="openNoteMetaModal"><span class="cl-project-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></span><span>Edit metadata\u2026</span></button><div class="cl-project-menu-sep"></div><button type="button" class="cl-project-menu-item cl-project-menu-destructive" data-action="archiveProject"><span class="cl-project-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8H3v13h18V8z"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg></span><span>Move to archive\u2026</span></button>';
+    wrap.appendChild(menu);
+    _projectMenuOutsideListener = function(e) {
+      if (!menu.contains(e.target) && !button.contains(e.target)) closeProjectMenu();
+    };
+    setTimeout(function() {
+      document.addEventListener("mousedown", _projectMenuOutsideListener, true);
+    }, 0);
+  }
+  function confirmArchiveProject() {
+    var nc = State.noteContent;
+    var fn = nc && nc.filename || State.currentNoteFilename;
+    if (!fn) return;
+    var origFolder = fn.replace(/\/[^/]+$/, "");
+    if (origFolder === fn) origFolder = "";
+    var leaf = fn.split("/").pop();
+    var targetPath = "@Archive/" + State.today + (origFolder ? "/" + origFolder : "") + "/" + leaf;
+    var title = nc && nc.title || leaf.replace(/\.(md|txt)$/, "");
+    openConfirmModal({
+      title: "Move to archive?",
+      message: "\u201C" + title + "\u201D will be moved to: " + targetPath,
+      confirmLabel: "Archive",
+      cancelLabel: "Cancel",
+      destructive: true,
+      onConfirm: function() {
+        sendMessageToPlugin("archiveProject", JSON.stringify({ filename: fn }));
+      }
+    });
+  }
+
   // src/webview/view-prefs.js
   function viewPrefsKey(view, filename) {
     return view === "note" ? "note:" + (filename || "") : view;
@@ -541,6 +731,233 @@
   }
   function persistViewPrefs() {
     sendMessageToPlugin("saveViewPrefs", JSON.stringify({ viewPrefs: JSON.stringify(State.viewPrefs) }));
+  }
+
+  // src/webview/sidebar.js
+  var SIDEBAR_VIEWS = [
+    { id: "inbox", label: "Inbox" },
+    { id: "today", label: "Today" },
+    { id: "upcoming", label: "Upcoming" },
+    { id: "anytime", label: "Anytime" },
+    { id: "someday", label: "Someday" }
+  ];
+  function renderSidebar() {
+    var el = document.getElementById("cl-sidebar");
+    if (!el) return;
+    var html = '<div class="cl-sidebar-inner">';
+    for (var vi = 0; vi < SIDEBAR_VIEWS.length; vi++) {
+      var v = SIDEBAR_VIEWS[vi];
+      if (State.visibleViews[v.id] === false) continue;
+      var count = getViewCount(v.id);
+      var active = State.currentView === v.id ? " cl-nav-active" : "";
+      html += '<div class="cl-nav-item' + active + '" data-view="' + v.id + '">';
+      html += '<span class="cl-nav-icon">' + getViewIcon(v.id, 18) + "</span>";
+      html += '<span class="cl-nav-label">' + v.label + "</span>";
+      if (count > 0 && (v.id === "inbox" || v.id === "today")) {
+        html += '<span class="cl-nav-count">' + count + "</span>";
+      }
+      html += "</div>";
+    }
+    html += '<div class="cl-nav-divider"></div>';
+    for (var fi = 0; fi < State.folders.length; fi++) {
+      var folder = State.folders[fi];
+      var areaKey = folder.path;
+      var collapsed = State.collapsedAreas && State.collapsedAreas[areaKey];
+      var notes = folder.notes || [];
+      var visibleNotes = notes;
+      visibleNotes = visibleNotes.filter(function(n2) {
+        return n2.status !== "someday";
+      });
+      if (State.hidePaused) {
+        visibleNotes = visibleNotes.filter(function(n2) {
+          return n2.status !== "paused";
+        });
+      }
+      if (State.hideEmptyProjects) {
+        visibleNotes = visibleNotes.filter(function(n2) {
+          return (n2.openCount || 0) > 0;
+        });
+      }
+      if (State.hideNonProjects) {
+        visibleNotes = visibleNotes.filter(function(n2) {
+          return n2.hasProjectOrAreaType;
+        });
+      }
+      if (visibleNotes.length === 0) continue;
+      html += '<div class="cl-area-header" data-area="' + esc(areaKey) + '">';
+      html += '<span class="cl-area-chevron' + (collapsed ? " cl-collapsed" : "") + '">\u25B8</span>';
+      html += esc(folder.name);
+      html += "</div>";
+      html += '<div class="cl-area-group' + (collapsed ? " cl-hidden" : "") + '" data-area-group="' + esc(areaKey) + '">';
+      for (var ni = 0; ni < visibleNotes.length; ni++) {
+        var n = visibleNotes[ni];
+        var noteActive = State.currentView === "note" && State.currentNoteFilename === n.filename ? " cl-nav-active" : "";
+        var mutedCls = n.status === "paused" || n.status === "someday" ? " cl-project-muted" : "";
+        html += '<div class="cl-nav-item cl-project-item' + mutedCls + noteActive + '" data-view="note" data-filename="' + esc(n.filename) + '">';
+        html += renderProjectIcon(n, 18);
+        html += '<span class="cl-project-title">' + esc(n.title) + "</span>";
+        if (n.due) html += buildDeadlineBadgeCompact(n.due);
+        html += "</div>";
+      }
+      html += "</div>";
+    }
+    html += "</div>";
+    html += renderSidebarFooter();
+    el.innerHTML = html;
+    var navItems = el.querySelectorAll(".cl-nav-item");
+    for (var ci = 0; ci < navItems.length; ci++) {
+      navItems[ci].addEventListener("click", handleNavClick);
+    }
+    var areaHeaders = el.querySelectorAll(".cl-area-header");
+    for (var ai = 0; ai < areaHeaders.length; ai++) {
+      areaHeaders[ai].addEventListener("click", function(e) {
+        var areaKey2 = e.currentTarget.dataset.area;
+        if (!areaKey2) return;
+        State.collapsedAreas[areaKey2] = !State.collapsedAreas[areaKey2];
+        var chevron = e.currentTarget.querySelector(".cl-area-chevron");
+        var group = el.querySelector('[data-area-group="' + areaKey2 + '"]');
+        if (chevron) chevron.classList.toggle("cl-collapsed");
+        if (group) group.classList.toggle("cl-hidden");
+        sendMessageToPlugin("saveCollapsedAreas", JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
+      });
+    }
+    attachSidebarFooterHandlers();
+  }
+  function renderSidebarFooter() {
+    var open = State.settingsPopoverOpen;
+    var html = '<div class="cl-sidebar-footer">';
+    html += '<div class="cl-settings-popover' + (open ? " cl-popover-open" : "") + '">';
+    html += '<div class="cl-settings-section">';
+    html += '<div class="cl-settings-section-title">Projects &amp; Areas</div>';
+    html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleHideEmpty"' + (State.hideEmptyProjects ? " checked" : "") + "><span>Hide notes without open tasks</span></label>";
+    html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleHideNonProjects"' + (State.hideNonProjects ? " checked" : "") + "><span>Hide non-projects and non-areas</span></label>";
+    html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleHidePaused"' + (State.hidePaused ? " checked" : "") + "><span>Hide paused</span></label>";
+    html += '<button class="cl-settings-action" data-action="collapseAllAreas">Collapse all</button>';
+    html += '<button class="cl-settings-action" data-action="expandAllAreas">Expand all</button>';
+    html += "</div>";
+    html += '<div class="cl-settings-section">';
+    html += '<div class="cl-settings-section-title">Views</div>';
+    for (var vi = 0; vi < SIDEBAR_VIEWS.length; vi++) {
+      var v = SIDEBAR_VIEWS[vi];
+      var checked = State.visibleViews[v.id] !== false;
+      html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleViewVisibility" data-view="' + v.id + '"' + (checked ? " checked" : "") + '><span class="cl-settings-toggle-icon">' + getViewIcon(v.id, 16) + "</span><span>" + v.label + "</span></label>";
+    }
+    html += "</div>";
+    html += '<div class="cl-settings-section">';
+    html += '<button class="cl-settings-action cl-settings-help" data-action="openShortcutsCheatsheet"><span>Keyboard shortcuts</span><kbd class="cl-cheatsheet-kbd">?</kbd></button>';
+    html += "</div>";
+    html += "</div>";
+    html += '<button class="cl-settings-btn' + (open ? " cl-active" : "") + '" data-action="toggleSettingsPopover" title="View settings">';
+    html += '<i class="fa-solid fa-sliders"></i>';
+    html += "<span>View settings</span>";
+    html += "</button>";
+    html += "</div>";
+    return html;
+  }
+  var _settingsOutsideListener = null;
+  function attachSidebarFooterHandlers() {
+    var footer = document.querySelector(".cl-sidebar-footer");
+    if (!footer) return;
+    if (_settingsOutsideListener) {
+      document.removeEventListener("click", _settingsOutsideListener);
+      _settingsOutsideListener = null;
+    }
+    footer.addEventListener("click", function(e) {
+      var target = e.target.closest("[data-action]");
+      if (!target) return;
+      var action = target.dataset.action;
+      switch (action) {
+        case "toggleSettingsPopover":
+          State.settingsPopoverOpen = !State.settingsPopoverOpen;
+          document.body.classList.toggle("cl-settings-backdrop", State.settingsPopoverOpen);
+          renderSidebar();
+          break;
+        case "toggleHideEmpty":
+          State.hideEmptyProjects = !!target.checked;
+          sendMessageToPlugin("saveHideEmptyProjects", JSON.stringify({ hideEmptyProjects: State.hideEmptyProjects }));
+          renderSidebar();
+          break;
+        case "toggleHidePaused":
+          State.hidePaused = !!target.checked;
+          sendMessageToPlugin("saveHidePaused", JSON.stringify({ hidePaused: State.hidePaused }));
+          renderSidebar();
+          break;
+        case "toggleHideNonProjects":
+          State.hideNonProjects = !!target.checked;
+          sendMessageToPlugin("saveHideNonProjects", JSON.stringify({ hideNonProjects: State.hideNonProjects }));
+          renderSidebar();
+          break;
+        case "collapseAllAreas":
+          for (var fi = 0; fi < State.folders.length; fi++) {
+            State.collapsedAreas[State.folders[fi].path] = true;
+          }
+          sendMessageToPlugin("saveCollapsedAreas", JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
+          renderSidebar();
+          break;
+        case "expandAllAreas":
+          State.collapsedAreas = {};
+          sendMessageToPlugin("saveCollapsedAreas", JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
+          renderSidebar();
+          break;
+        case "toggleViewVisibility": {
+          var vid = target.dataset.view;
+          if (!vid) break;
+          State.visibleViews[vid] = !!target.checked;
+          sendMessageToPlugin("saveVisibleViews", JSON.stringify({ visibleViews: JSON.stringify(State.visibleViews) }));
+          renderSidebar();
+          break;
+        }
+        case "openShortcutsCheatsheet":
+          State.settingsPopoverOpen = false;
+          document.body.classList.remove("cl-settings-backdrop");
+          renderSidebar();
+          openShortcutsCheatsheet();
+          break;
+      }
+    });
+    if (State.settingsPopoverOpen) {
+      _settingsOutsideListener = function(e) {
+        var f = document.querySelector(".cl-sidebar-footer");
+        if (f && !f.contains(e.target)) {
+          State.settingsPopoverOpen = false;
+          document.body.classList.remove("cl-settings-backdrop");
+          document.removeEventListener("click", _settingsOutsideListener);
+          _settingsOutsideListener = null;
+          renderSidebar();
+        }
+      };
+      setTimeout(function() {
+        if (_settingsOutsideListener) document.addEventListener("click", _settingsOutsideListener);
+      }, 0);
+    }
+  }
+  function handleNavClick(e) {
+    var item = e.currentTarget;
+    var view = item.dataset.view;
+    if (!view) return;
+    var sidebar = document.getElementById("cl-sidebar");
+    var overlay = document.getElementById("cl-sidebar-overlay");
+    if (sidebar) sidebar.classList.remove("cl-sidebar-open");
+    if (overlay) overlay.classList.remove("cl-sidebar-open");
+    saveCurrentViewPrefs();
+    State.currentView = view;
+    State.focusedTaskIndex = -1;
+    State.filters = { tag: null, mention: null, text: "", noteStatus: "all" };
+    State.tasksOnly = false;
+    State.expandedTaskId = null;
+    State.editDraft = null;
+    if (view === "note") {
+      State.currentNoteFilename = item.dataset.filename || null;
+      sendMessageToPlugin("requestNoteContent", JSON.stringify({ filename: State.currentNoteFilename }));
+      pushRecentNote(State.currentNoteFilename);
+    }
+    restoreViewPrefs(view, State.currentNoteFilename);
+    persistViewPrefs();
+    sendMessageToPlugin("saveView", JSON.stringify({ view, noteFilename: State.currentNoteFilename }));
+    var allNav = document.querySelectorAll(".cl-nav-item");
+    for (var i = 0; i < allNav.length; i++) allNav[i].classList.remove("cl-nav-active");
+    item.classList.add("cl-nav-active");
+    renderCurrentView();
   }
 
   // src/webview/sidebar-resize.js
@@ -903,196 +1320,6 @@
     setTimeout(function() {
       input.focus();
     }, 0);
-  }
-
-  // src/webview/modals.js
-  function openConfirmModal(opts) {
-    var existing = document.querySelector(".cl-confirm-overlay");
-    if (existing) existing.remove();
-    var title = opts.title || "Are you sure?";
-    var message = opts.message || "";
-    var confirmLabel = opts.confirmLabel || "Confirm";
-    var cancelLabel = opts.cancelLabel || "Cancel";
-    var destructive = !!opts.destructive;
-    var overlay = document.createElement("div");
-    overlay.className = "cl-confirm-overlay";
-    overlay.innerHTML = '<div class="cl-confirm-modal"><div class="cl-confirm-title">' + esc(title) + "</div>" + (message ? '<div class="cl-confirm-message">' + esc(message) + "</div>" : "") + '<div class="cl-confirm-actions"><button class="cl-confirm-cancel" type="button">' + esc(cancelLabel) + '</button><button class="cl-confirm-ok' + (destructive ? " cl-confirm-destructive" : "") + '" type="button">' + esc(confirmLabel) + "</button></div></div>";
-    document.body.appendChild(overlay);
-    var okBtn = overlay.querySelector(".cl-confirm-ok");
-    var cancelBtn = overlay.querySelector(".cl-confirm-cancel");
-    function close() {
-      overlay.remove();
-    }
-    function confirm() {
-      close();
-      if (typeof opts.onConfirm === "function") opts.onConfirm();
-    }
-    function cancel() {
-      close();
-      if (typeof opts.onCancel === "function") opts.onCancel();
-    }
-    okBtn.addEventListener("click", confirm);
-    cancelBtn.addEventListener("click", cancel);
-    overlay.addEventListener("click", function(e) {
-      if (e.target === overlay) cancel();
-    });
-    overlay.addEventListener("keydown", function(e) {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        e.stopPropagation();
-        confirm();
-      } else if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        cancel();
-      }
-    });
-    setTimeout(function() {
-      okBtn.focus();
-    }, 0);
-  }
-  function deleteTaskById(taskId) {
-    if (!taskId) return;
-    var task = null;
-    for (var i = 0; i < State.tasks.length; i++) {
-      if (State.tasks[i].id === taskId) {
-        task = State.tasks[i];
-        break;
-      }
-    }
-    var parts = taskId.split(":");
-    var filename = parts.slice(0, -1).join(":");
-    var lineIndex = parseInt(parts[parts.length - 1]);
-    if (isNaN(lineIndex)) return;
-    var preview = task ? task.content : "";
-    openConfirmModal({
-      title: "Delete this task?",
-      message: preview ? "\u201C" + preview + "\u201D will be removed from its note. This cannot be undone from Clarity." : "The task will be removed from its note. This cannot be undone from Clarity.",
-      confirmLabel: "Delete",
-      cancelLabel: "Cancel",
-      destructive: true,
-      onConfirm: function() {
-        State.tasks = State.tasks.filter(function(t) {
-          return t.id !== taskId;
-        });
-        if (State.expandedTaskId === taskId) collapseTask();
-        State.focusedTaskIndex = -1;
-        renderCurrentView();
-        sendMessageToPlugin("deleteTask", JSON.stringify({ filename, lineIndex }));
-      }
-    });
-  }
-  var SHORTCUTS_GROUPS = [
-    {
-      title: "Navigation",
-      items: [
-        { keys: ["\u23181", "..", "\u23185"], label: "Switch view (Inbox, Today, Upcoming, Anytime, Someday)" },
-        { keys: ["\u2318/"], label: "Quick-jump to a project or area" },
-        { keys: ["\u2191", "\u2193"], label: "Move focus between tasks" },
-        { keys: ["Enter"], label: "Open the focused task" },
-        { keys: ["Esc"], label: "Close editor, picker, or palette" }
-      ]
-    },
-    {
-      title: "Task actions",
-      items: [
-        { keys: ["Space"], label: "Toggle the focused task done / open" },
-        { keys: ["\u2318T"], label: "Schedule for today" },
-        { keys: ["\u2318\u21E7T"], label: "Schedule for tomorrow" },
-        { keys: ["\u2318E"], label: 'Add to "This Evening"' },
-        { keys: ["\u2318O"], label: "Clear schedule" },
-        { keys: ["\u2318\u232B"], label: "Delete task (with confirmation)" },
-        { keys: ["\u2318Enter"], label: "Save the open task editor" }
-      ]
-    },
-    {
-      title: "Other",
-      items: [
-        { keys: ["\u2318N"], label: "Focus the New Task input" },
-        { keys: ["?"], label: "Show this cheatsheet" }
-      ]
-    }
-  ];
-  function openShortcutsCheatsheet() {
-    var existing = document.querySelector(".cl-cheatsheet-overlay");
-    if (existing) {
-      existing.remove();
-      return;
-    }
-    var html = '<div class="cl-cheatsheet-modal"><div class="cl-cheatsheet-title">Keyboard shortcuts</div>';
-    for (var gi = 0; gi < SHORTCUTS_GROUPS.length; gi++) {
-      var g = SHORTCUTS_GROUPS[gi];
-      html += '<div class="cl-cheatsheet-section">';
-      html += '<div class="cl-cheatsheet-section-title">' + esc(g.title) + "</div>";
-      for (var ii = 0; ii < g.items.length; ii++) {
-        var it = g.items[ii];
-        var keysHtml = "";
-        for (var ki = 0; ki < it.keys.length; ki++) {
-          var k = it.keys[ki];
-          if (k === "..") keysHtml += '<span class="cl-cheatsheet-sep">\u2026</span>';
-          else keysHtml += '<kbd class="cl-cheatsheet-kbd">' + esc(k) + "</kbd>";
-        }
-        html += '<div class="cl-cheatsheet-row"><div class="cl-cheatsheet-keys">' + keysHtml + '</div><div class="cl-cheatsheet-label">' + esc(it.label) + "</div></div>";
-      }
-      html += "</div>";
-    }
-    html += '<div class="cl-cheatsheet-foot">Press <kbd class="cl-cheatsheet-kbd">?</kbd> or <kbd class="cl-cheatsheet-kbd">Esc</kbd> to close</div>';
-    html += "</div>";
-    var overlay = document.createElement("div");
-    overlay.className = "cl-cheatsheet-overlay";
-    overlay.innerHTML = html;
-    document.body.appendChild(overlay);
-    overlay.addEventListener("click", function(e) {
-      if (e.target === overlay) overlay.remove();
-    });
-  }
-  var _projectMenuOutsideListener = null;
-  function closeProjectMenu() {
-    var existing = document.querySelector(".cl-project-menu");
-    if (existing) existing.remove();
-    if (_projectMenuOutsideListener) {
-      document.removeEventListener("mousedown", _projectMenuOutsideListener, true);
-      _projectMenuOutsideListener = null;
-    }
-  }
-  function toggleProjectMenu(button) {
-    if (document.querySelector(".cl-project-menu")) {
-      closeProjectMenu();
-      return;
-    }
-    var wrap = button.closest(".cl-project-menu-wrap");
-    if (!wrap) return;
-    var fn = State.currentNoteFilename || State.noteContent && State.noteContent.filename || "";
-    var menu = document.createElement("div");
-    menu.className = "cl-project-menu";
-    menu.innerHTML = '<button type="button" class="cl-project-menu-item" data-action="refreshProject" data-filename="' + esc(fn) + '"><span class="cl-project-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3.5-7.1"/><path d="M21 4v5h-5"/></svg></span><span>Refresh</span></button><button type="button" class="cl-project-menu-item" data-action="openNoteMetaModal"><span class="cl-project-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></span><span>Edit metadata\u2026</span></button><div class="cl-project-menu-sep"></div><button type="button" class="cl-project-menu-item cl-project-menu-destructive" data-action="archiveProject"><span class="cl-project-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8H3v13h18V8z"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg></span><span>Move to archive\u2026</span></button>';
-    wrap.appendChild(menu);
-    _projectMenuOutsideListener = function(e) {
-      if (!menu.contains(e.target) && !button.contains(e.target)) closeProjectMenu();
-    };
-    setTimeout(function() {
-      document.addEventListener("mousedown", _projectMenuOutsideListener, true);
-    }, 0);
-  }
-  function confirmArchiveProject() {
-    var nc = State.noteContent;
-    var fn = nc && nc.filename || State.currentNoteFilename;
-    if (!fn) return;
-    var origFolder = fn.replace(/\/[^/]+$/, "");
-    if (origFolder === fn) origFolder = "";
-    var leaf = fn.split("/").pop();
-    var targetPath = "@Archive/" + State.today + (origFolder ? "/" + origFolder : "") + "/" + leaf;
-    var title = nc && nc.title || leaf.replace(/\.(md|txt)$/, "");
-    openConfirmModal({
-      title: "Move to archive?",
-      message: "\u201C" + title + "\u201D will be moved to: " + targetPath,
-      confirmLabel: "Archive",
-      cancelLabel: "Cancel",
-      destructive: true,
-      onConfirm: function() {
-        sendMessageToPlugin("archiveProject", JSON.stringify({ filename: fn }));
-      }
-    });
   }
 
   // src/webview/dnd.js
@@ -1717,231 +1944,6 @@
     sendMessageToPlugin("saveView", JSON.stringify({ view: "note", noteFilename: filename }));
     pushRecentNote(filename);
     renderSidebar();
-    renderCurrentView();
-  }
-  var SIDEBAR_VIEWS = [
-    { id: "inbox", label: "Inbox" },
-    { id: "today", label: "Today" },
-    { id: "upcoming", label: "Upcoming" },
-    { id: "anytime", label: "Anytime" },
-    { id: "someday", label: "Someday" }
-  ];
-  function renderSidebar() {
-    var el = document.getElementById("cl-sidebar");
-    if (!el) return;
-    var html = '<div class="cl-sidebar-inner">';
-    for (var vi = 0; vi < SIDEBAR_VIEWS.length; vi++) {
-      var v = SIDEBAR_VIEWS[vi];
-      if (State.visibleViews[v.id] === false) continue;
-      var count = getViewCount(v.id);
-      var active = State.currentView === v.id ? " cl-nav-active" : "";
-      html += '<div class="cl-nav-item' + active + '" data-view="' + v.id + '">';
-      html += '<span class="cl-nav-icon">' + getViewIcon(v.id, 18) + "</span>";
-      html += '<span class="cl-nav-label">' + v.label + "</span>";
-      if (count > 0 && (v.id === "inbox" || v.id === "today")) {
-        html += '<span class="cl-nav-count">' + count + "</span>";
-      }
-      html += "</div>";
-    }
-    html += '<div class="cl-nav-divider"></div>';
-    for (var fi = 0; fi < State.folders.length; fi++) {
-      var folder = State.folders[fi];
-      var areaKey = folder.path;
-      var collapsed = State.collapsedAreas && State.collapsedAreas[areaKey];
-      var notes = folder.notes || [];
-      var visibleNotes = notes;
-      visibleNotes = visibleNotes.filter(function(n2) {
-        return n2.status !== "someday";
-      });
-      if (State.hidePaused) {
-        visibleNotes = visibleNotes.filter(function(n2) {
-          return n2.status !== "paused";
-        });
-      }
-      if (State.hideEmptyProjects) {
-        visibleNotes = visibleNotes.filter(function(n2) {
-          return (n2.openCount || 0) > 0;
-        });
-      }
-      if (State.hideNonProjects) {
-        visibleNotes = visibleNotes.filter(function(n2) {
-          return n2.hasProjectOrAreaType;
-        });
-      }
-      if (visibleNotes.length === 0) continue;
-      html += '<div class="cl-area-header" data-area="' + esc(areaKey) + '">';
-      html += '<span class="cl-area-chevron' + (collapsed ? " cl-collapsed" : "") + '">\u25B8</span>';
-      html += esc(folder.name);
-      html += "</div>";
-      html += '<div class="cl-area-group' + (collapsed ? " cl-hidden" : "") + '" data-area-group="' + esc(areaKey) + '">';
-      for (var ni = 0; ni < visibleNotes.length; ni++) {
-        var n = visibleNotes[ni];
-        var noteActive = State.currentView === "note" && State.currentNoteFilename === n.filename ? " cl-nav-active" : "";
-        var mutedCls = n.status === "paused" || n.status === "someday" ? " cl-project-muted" : "";
-        html += '<div class="cl-nav-item cl-project-item' + mutedCls + noteActive + '" data-view="note" data-filename="' + esc(n.filename) + '">';
-        html += renderProjectIcon(n, 18);
-        html += '<span class="cl-project-title">' + esc(n.title) + "</span>";
-        if (n.due) html += buildDeadlineBadgeCompact(n.due);
-        html += "</div>";
-      }
-      html += "</div>";
-    }
-    html += "</div>";
-    html += renderSidebarFooter();
-    el.innerHTML = html;
-    var navItems = el.querySelectorAll(".cl-nav-item");
-    for (var ci = 0; ci < navItems.length; ci++) {
-      navItems[ci].addEventListener("click", handleNavClick);
-    }
-    var areaHeaders = el.querySelectorAll(".cl-area-header");
-    for (var ai = 0; ai < areaHeaders.length; ai++) {
-      areaHeaders[ai].addEventListener("click", function(e) {
-        var areaKey2 = e.currentTarget.dataset.area;
-        if (!areaKey2) return;
-        State.collapsedAreas[areaKey2] = !State.collapsedAreas[areaKey2];
-        var chevron = e.currentTarget.querySelector(".cl-area-chevron");
-        var group = el.querySelector('[data-area-group="' + areaKey2 + '"]');
-        if (chevron) chevron.classList.toggle("cl-collapsed");
-        if (group) group.classList.toggle("cl-hidden");
-        sendMessageToPlugin("saveCollapsedAreas", JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
-      });
-    }
-    attachSidebarFooterHandlers();
-  }
-  function renderSidebarFooter() {
-    var open = State.settingsPopoverOpen;
-    var html = '<div class="cl-sidebar-footer">';
-    html += '<div class="cl-settings-popover' + (open ? " cl-popover-open" : "") + '">';
-    html += '<div class="cl-settings-section">';
-    html += '<div class="cl-settings-section-title">Projects &amp; Areas</div>';
-    html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleHideEmpty"' + (State.hideEmptyProjects ? " checked" : "") + "><span>Hide notes without open tasks</span></label>";
-    html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleHideNonProjects"' + (State.hideNonProjects ? " checked" : "") + "><span>Hide non-projects and non-areas</span></label>";
-    html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleHidePaused"' + (State.hidePaused ? " checked" : "") + "><span>Hide paused</span></label>";
-    html += '<button class="cl-settings-action" data-action="collapseAllAreas">Collapse all</button>';
-    html += '<button class="cl-settings-action" data-action="expandAllAreas">Expand all</button>';
-    html += "</div>";
-    html += '<div class="cl-settings-section">';
-    html += '<div class="cl-settings-section-title">Views</div>';
-    for (var vi = 0; vi < SIDEBAR_VIEWS.length; vi++) {
-      var v = SIDEBAR_VIEWS[vi];
-      var checked = State.visibleViews[v.id] !== false;
-      html += '<label class="cl-settings-toggle"><input type="checkbox" data-action="toggleViewVisibility" data-view="' + v.id + '"' + (checked ? " checked" : "") + '><span class="cl-settings-toggle-icon">' + getViewIcon(v.id, 16) + "</span><span>" + v.label + "</span></label>";
-    }
-    html += "</div>";
-    html += '<div class="cl-settings-section">';
-    html += '<button class="cl-settings-action cl-settings-help" data-action="openShortcutsCheatsheet"><span>Keyboard shortcuts</span><kbd class="cl-cheatsheet-kbd">?</kbd></button>';
-    html += "</div>";
-    html += "</div>";
-    html += '<button class="cl-settings-btn' + (open ? " cl-active" : "") + '" data-action="toggleSettingsPopover" title="View settings">';
-    html += '<i class="fa-solid fa-sliders"></i>';
-    html += "<span>View settings</span>";
-    html += "</button>";
-    html += "</div>";
-    return html;
-  }
-  var _settingsOutsideListener = null;
-  function attachSidebarFooterHandlers() {
-    var footer = document.querySelector(".cl-sidebar-footer");
-    if (!footer) return;
-    if (_settingsOutsideListener) {
-      document.removeEventListener("click", _settingsOutsideListener);
-      _settingsOutsideListener = null;
-    }
-    footer.addEventListener("click", function(e) {
-      var target = e.target.closest("[data-action]");
-      if (!target) return;
-      var action = target.dataset.action;
-      switch (action) {
-        case "toggleSettingsPopover":
-          State.settingsPopoverOpen = !State.settingsPopoverOpen;
-          document.body.classList.toggle("cl-settings-backdrop", State.settingsPopoverOpen);
-          renderSidebar();
-          break;
-        case "toggleHideEmpty":
-          State.hideEmptyProjects = !!target.checked;
-          sendMessageToPlugin("saveHideEmptyProjects", JSON.stringify({ hideEmptyProjects: State.hideEmptyProjects }));
-          renderSidebar();
-          break;
-        case "toggleHidePaused":
-          State.hidePaused = !!target.checked;
-          sendMessageToPlugin("saveHidePaused", JSON.stringify({ hidePaused: State.hidePaused }));
-          renderSidebar();
-          break;
-        case "toggleHideNonProjects":
-          State.hideNonProjects = !!target.checked;
-          sendMessageToPlugin("saveHideNonProjects", JSON.stringify({ hideNonProjects: State.hideNonProjects }));
-          renderSidebar();
-          break;
-        case "collapseAllAreas":
-          for (var fi = 0; fi < State.folders.length; fi++) {
-            State.collapsedAreas[State.folders[fi].path] = true;
-          }
-          sendMessageToPlugin("saveCollapsedAreas", JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
-          renderSidebar();
-          break;
-        case "expandAllAreas":
-          State.collapsedAreas = {};
-          sendMessageToPlugin("saveCollapsedAreas", JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
-          renderSidebar();
-          break;
-        case "toggleViewVisibility": {
-          var vid = target.dataset.view;
-          if (!vid) break;
-          State.visibleViews[vid] = !!target.checked;
-          sendMessageToPlugin("saveVisibleViews", JSON.stringify({ visibleViews: JSON.stringify(State.visibleViews) }));
-          renderSidebar();
-          break;
-        }
-        case "openShortcutsCheatsheet":
-          State.settingsPopoverOpen = false;
-          document.body.classList.remove("cl-settings-backdrop");
-          renderSidebar();
-          openShortcutsCheatsheet();
-          break;
-      }
-    });
-    if (State.settingsPopoverOpen) {
-      _settingsOutsideListener = function(e) {
-        var f = document.querySelector(".cl-sidebar-footer");
-        if (f && !f.contains(e.target)) {
-          State.settingsPopoverOpen = false;
-          document.body.classList.remove("cl-settings-backdrop");
-          document.removeEventListener("click", _settingsOutsideListener);
-          _settingsOutsideListener = null;
-          renderSidebar();
-        }
-      };
-      setTimeout(function() {
-        if (_settingsOutsideListener) document.addEventListener("click", _settingsOutsideListener);
-      }, 0);
-    }
-  }
-  function handleNavClick(e) {
-    var item = e.currentTarget;
-    var view = item.dataset.view;
-    if (!view) return;
-    var sidebar = document.getElementById("cl-sidebar");
-    var overlay = document.getElementById("cl-sidebar-overlay");
-    if (sidebar) sidebar.classList.remove("cl-sidebar-open");
-    if (overlay) overlay.classList.remove("cl-sidebar-open");
-    saveCurrentViewPrefs();
-    State.currentView = view;
-    State.focusedTaskIndex = -1;
-    State.filters = { tag: null, mention: null, text: "", noteStatus: "all" };
-    State.tasksOnly = false;
-    State.expandedTaskId = null;
-    State.editDraft = null;
-    if (view === "note") {
-      State.currentNoteFilename = item.dataset.filename || null;
-      sendMessageToPlugin("requestNoteContent", JSON.stringify({ filename: State.currentNoteFilename }));
-      pushRecentNote(State.currentNoteFilename);
-    }
-    restoreViewPrefs(view, State.currentNoteFilename);
-    persistViewPrefs();
-    sendMessageToPlugin("saveView", JSON.stringify({ view, noteFilename: State.currentNoteFilename }));
-    var allNav = document.querySelectorAll(".cl-nav-item");
-    for (var i = 0; i < allNav.length; i++) allNav[i].classList.remove("cl-nav-active");
-    item.classList.add("cl-nav-active");
     renderCurrentView();
   }
   function renderCurrentView() {
