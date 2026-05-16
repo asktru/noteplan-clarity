@@ -6,11 +6,9 @@
 
 import { State } from './state.js';
 import { reviewDueDaysFromFm } from './review.js';
-import {
-  navigateToProjectNote,
-  renderCurrentView,
-} from './index.js';
+import { navigateToProjectNote } from './index.js';
 import { renderSidebar } from './sidebar.js';
+import { renderCurrentView } from './views.js';
 import { restoreViewPrefs } from './view-prefs.js';
 import { applySidebarWidth } from './sidebar-resize.js';
 

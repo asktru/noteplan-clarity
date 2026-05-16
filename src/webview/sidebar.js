@@ -18,7 +18,7 @@ import {
   restoreViewPrefs,
   persistViewPrefs,
 } from './view-prefs.js';
-import { renderCurrentView } from './index.js';
+import { renderCurrentView } from './views.js';
 
 var SIDEBAR_VIEWS = [
   { id: 'inbox', label: 'Inbox' },

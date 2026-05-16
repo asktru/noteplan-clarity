@@ -8,7 +8,7 @@
 
 import { State } from './state.js';
 import { esc } from './helpers.js';
-import { renderCurrentView } from './index.js';
+import { renderCurrentView } from './views.js';
 import { collapseTask } from './index.js';
 
 // ─── Confirmation Modal ─────────────────────────────────────
