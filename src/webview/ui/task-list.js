@@ -39,7 +39,10 @@ export function renderTaskRow(task, options) {
   // Content area
   html += '<div class="cl-task-content">';
   html += '<div class="cl-task-title">';
-  if (showStar && task.scheduledDate === State.today) {
+  // Closed tasks (done / cancelled) shouldn't draw the eye — skip the
+  // today-star and priority badge for them.
+  var isClosed = (task.status === 'done' || task.status === 'cancelled');
+  if (showStar && !isClosed && task.scheduledDate === State.today) {
     html += '<span class="cl-star">⭐</span> ';
   }
   html += '<span class="cl-task-text">' + renderInlineMarkdown(task.content) + '</span>';
@@ -91,7 +94,7 @@ export function renderTaskRow(task, options) {
 
   // Right side badges
   var badges = '';
-  if (task.priority > 0) {
+  if (task.priority > 0 && !isClosed) {
     var priLabels = ['', '!', '!!', '!!!'];
     badges += '<span class="cl-pri cl-pri-' + task.priority + '">' + priLabels[task.priority] + '</span>';
   }

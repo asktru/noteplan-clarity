@@ -567,7 +567,8 @@
     html += '<div class="' + cbClass + '" data-action="toggle"></div>';
     html += '<div class="cl-task-content">';
     html += '<div class="cl-task-title">';
-    if (showStar && task.scheduledDate === State.today) {
+    var isClosed = task.status === "done" || task.status === "cancelled";
+    if (showStar && !isClosed && task.scheduledDate === State.today) {
       html += '<span class="cl-star">\u2B50</span> ';
     }
     html += '<span class="cl-task-text">' + renderInlineMarkdown(task.content) + "</span>";
@@ -614,7 +615,7 @@
     }
     html += "</div>";
     var badges = "";
-    if (task.priority > 0) {
+    if (task.priority > 0 && !isClosed) {
       var priLabels = ["", "!", "!!", "!!!"];
       badges += '<span class="cl-pri cl-pri-' + task.priority + '">' + priLabels[task.priority] + "</span>";
     }
