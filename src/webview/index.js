@@ -1,86 +1,27 @@
 /* global sendMessageToPlugin */
 //
-// Entry point for the Clarity webview bundle. Module-scope code that used to
-// live here has moved into sibling modules (state, helpers, markdown, review,
-// icons). What remains will be peeled off in follow-up commits.
+// Entry point for the Clarity webview bundle. The webview's runtime now lives
+// across ~20 sibling modules; what's left here is the wiring layer:
+//   - navigateToProjectNote: cross-module navigation primitive
+//   - attachMainEventListeners: the big delegated click/dblclick/keydown
+//     handler on #cl-main (re-attached after every render)
+//   - small task-mutation helpers (toggle/reschedule/tag) called from
+//     keyboard shortcuts and the event-delegation switch
+//   - globalThis.onMessageFromPlugin: required by NotePlan's bridge
 
-import { State, MAX_RECENT_NOTES, pushRecentNote } from './state.js';
-import {
-  esc,
-  capitalize,
-  parseDateLocal,
-  daysUntilDue,
-  addDays,
-  getNextMonday,
-  addWeeks,
-  formatDateHeader,
-  formatUpcomingDateHeader,
-  formatWeekHeader,
-  formatShortDate,
-} from './helpers.js';
-import {
-  renderInlineMarkdown,
-  isTableSeparatorLine,
-  splitTableCells,
-  renderMarkdownTable,
-} from './markdown.js';
-import {
-  PAUSED_COLOR,
-  REVIEW_DUE_COLOR,
-  reviewIntervalToDays,
-  reviewDueDaysFromFm,
-  isReviewDue,
-  reviewDueLabel,
-} from './review.js';
-import {
-  buildPauseOverlay,
-  buildCheckOverlay,
-  buildXOverlay,
-  renderProjectIcon,
-  buildProgressPie,
-  buildDeadlineBadgeCompact,
-  buildDeadlineBadgeVerbose,
-  buildAreaIcon,
-  getViewIcon,
-} from './icons.js';
-import {
-  getTasksForView,
-  getFilteredTasks,
-  getViewCount,
-} from './task-categorization.js';
+import { State, pushRecentNote } from './state.js';
 import { onMessageFromPlugin } from './messages.js';
-import { openQuickJump } from './quick-jump.js';
 import {
-  deleteTaskById,
-  openShortcutsCheatsheet,
   closeProjectMenu,
   toggleProjectMenu,
   confirmArchiveProject,
 } from './modals.js';
 import { consumeDragClickSuppression } from './dnd.js';
 import { openNoteMetaModal } from './note-meta-modal.js';
-import {
-  saveCurrentViewPrefs,
-  restoreViewPrefs,
-  persistViewPrefs,
-} from './view-prefs.js';
-import {
-  renderTaskRow,
-  renderFilterBar,
-  renderGroupingToggle,
-  renderGroupedTasks,
-  renderQuickAdd,
-} from './task-list.js';
+import { saveCurrentViewPrefs, persistViewPrefs } from './view-prefs.js';
 import { renderSidebar } from './sidebar.js';
 import { renderCurrentView } from './views.js';
-import {
-  showDatePicker,
-  showNotePicker,
-  showInlineInput,
-  updateDateChip,
-  closePickers,
-} from './pickers.js';
-import { expandTask, collapseTask, saveExpandedTask } from './task-editor.js';
+import { expandTask, collapseTask } from './task-editor.js';
 // Side-effect imports: register DOMContentLoaded + global keydown listeners.
 import './init.js';
 import './keyboard.js';

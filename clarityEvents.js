@@ -37,6 +37,71 @@
     sendMessageToPlugin("saveRecentNotes", JSON.stringify({ recentNotes: JSON.stringify(arr) }));
   }
 
+  // src/webview/review.js
+  var PAUSED_COLOR = "#9CA3AF";
+  var REVIEW_DUE_COLOR = "#F59E0B";
+  function reviewIntervalToDays(interval) {
+    if (!interval) return null;
+    var match = String(interval).match(/^(\d+)([dwmqy])$/i);
+    if (!match) return null;
+    var num = parseInt(match[1], 10);
+    switch (match[2].toLowerCase()) {
+      case "d":
+        return num;
+      case "w":
+        return num * 7;
+      case "m":
+        return num * 30;
+      case "q":
+        return num * 91;
+      case "y":
+        return num * 365;
+      default:
+        return null;
+    }
+  }
+  function reviewDueDaysFromFm(fm) {
+    if (!fm) return null;
+    var interval = fm.review;
+    if (!interval || !reviewIntervalToDays(interval)) return null;
+    var todayStr = State.today;
+    var reviewedStr = fm.reviewed;
+    var nextStr;
+    if (reviewedStr) {
+      var days = reviewIntervalToDays(interval);
+      var d = /* @__PURE__ */ new Date(reviewedStr + "T00:00:00");
+      if (isNaN(d.getTime())) return null;
+      d.setDate(d.getDate() + days);
+      var y = d.getFullYear();
+      var m = String(d.getMonth() + 1).padStart(2, "0");
+      var dd = String(d.getDate()).padStart(2, "0");
+      nextStr = y + "-" + m + "-" + dd;
+    } else {
+      nextStr = todayStr;
+    }
+    var next = /* @__PURE__ */ new Date(nextStr + "T00:00:00");
+    var today = /* @__PURE__ */ new Date(todayStr + "T00:00:00");
+    if (isNaN(next.getTime()) || isNaN(today.getTime())) return null;
+    return Math.round((next.getTime() - today.getTime()) / 864e5);
+  }
+  function isReviewDue(reviewDueDays, status) {
+    if (reviewDueDays == null || reviewDueDays > 0) return false;
+    if (status === "paused" || status === "someday") return false;
+    if (status === "completed" || status === "canceled") return false;
+    return true;
+  }
+  function reviewDueLabel(reviewDueDays, hasReviewedDate) {
+    if (reviewDueDays == null) return "";
+    if (!hasReviewedDate) return "Never reviewed";
+    if (reviewDueDays === 0) return "Review due today";
+    if (reviewDueDays === -1) return "Was due yesterday";
+    var abs = -reviewDueDays;
+    if (abs <= 13) return "Was due " + abs + " days ago";
+    if (abs <= 29) return "Was due " + Math.floor(abs / 7) + " weeks ago";
+    var months = Math.floor(abs / 30);
+    return "Was due " + months + " month" + (months === 1 ? "" : "s") + " ago";
+  }
+
   // src/webview/helpers.js
   function esc(str) {
     if (!str) return "";
@@ -135,180 +200,6 @@
     } catch (e) {
       return dateStr;
     }
-  }
-
-  // src/webview/markdown.js
-  function renderInlineMarkdown(text) {
-    if (!text) return "";
-    var s = esc(text);
-    var placeholders = [];
-    function placeholder(html) {
-      var key = "\0PH" + placeholders.length + "\0";
-      placeholders.push(html);
-      return key;
-    }
-    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(m, linkText, url) {
-      return placeholder('<a class="cl-link" href="' + url + '" target="_blank">' + linkText + "</a>");
-    });
-    s = s.replace(/\[\[([^\]]+)\]\]/g, function(m, linkText) {
-      return placeholder('<span class="cl-wikilink">' + linkText + "</span>");
-    });
-    s = s.replace(/(https?:\/\/[^\s<>\[\]]+)/g, function(m, url) {
-      return placeholder('<a class="cl-link" href="' + url + '" target="_blank">' + url + "</a>");
-    });
-    s = s.replace(/`([^`]+)`/g, function(m, code) {
-      return placeholder('<code class="cl-inline-code">' + code + "</code>");
-    });
-    s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-    s = s.replace(new RegExp("(?<!\\*)\\*(?!\\*)(.+?)(?<!\\*)\\*(?!\\*)", "g"), "<em>$1</em>");
-    s = s.replace(/~~(.+?)~~/g, "<del>$1</del>");
-    s = s.replace(/==(.+?)==/g, "<mark>$1</mark>");
-    s = s.replace(/\/\/\s.*$/g, function(m) {
-      return placeholder('<span class="cl-comment">' + m + "</span>");
-    });
-    s = s.replace(/\/\*.*?\*\//g, function(m) {
-      return placeholder('<span class="cl-comment">' + m + "</span>");
-    });
-    s = s.replace(/\s*\^[\da-zA-Z]{4,}/g, function(m) {
-      return placeholder(' <span class="cl-block-id">*</span>');
-    });
-    s = s.replace(/(#[\p{L}\p{N}_\-\/]+)/gu, '<span class="cl-tag-inline">$1</span>');
-    s = s.replace(/(^|[\s(])(@(?!done|due|repeat)[\p{L}\p{N}_\-]+)/gu, function(m, pre, mention) {
-      return pre + '<span class="cl-mention-inline">' + mention + "</span>";
-    });
-    for (var i = 0; i < placeholders.length; i++) {
-      s = s.replace("\0PH" + i + "\0", placeholders[i]);
-    }
-    return s;
-  }
-  function isTableSeparatorLine(line) {
-    var cells = splitTableCells(line);
-    if (cells.length === 0) return false;
-    for (var i = 0; i < cells.length; i++) {
-      if (!/^:?-{3,}:?$/.test(cells[i])) return false;
-    }
-    return true;
-  }
-  function splitTableCells(line) {
-    var s = line.trim();
-    if (s.charAt(0) === "|") s = s.substring(1);
-    if (s.charAt(s.length - 1) === "|") s = s.substring(0, s.length - 1);
-    var cells = s.split("|");
-    for (var i = 0; i < cells.length; i++) cells[i] = cells[i].trim();
-    return cells;
-  }
-  function renderMarkdownTable(lines) {
-    var rows = lines.map(splitTableCells);
-    var sepIdx = -1;
-    for (var i = 0; i < rows.length; i++) {
-      if (isTableSeparatorLine(lines[i])) {
-        sepIdx = i;
-        break;
-      }
-    }
-    var alignments = [];
-    if (sepIdx >= 0) {
-      for (var a = 0; a < rows[sepIdx].length; a++) {
-        var cell = rows[sepIdx][a];
-        if (/^:-+:$/.test(cell)) alignments.push("center");
-        else if (/^-+:$/.test(cell)) alignments.push("right");
-        else alignments.push("left");
-      }
-    }
-    var colCount = 0;
-    for (var r = 0; r < rows.length; r++) if (rows[r].length > colCount) colCount = rows[r].length;
-    function cellStyle(col) {
-      var align = alignments[col] || "left";
-      return align === "left" ? "" : ' style="text-align:' + align + '"';
-    }
-    var html = '<div class="cl-note-table-wrap"><table class="cl-note-table">';
-    var hasHeader = sepIdx === 1;
-    var bodyStart = sepIdx >= 0 ? sepIdx + 1 : 0;
-    if (hasHeader) {
-      html += "<thead><tr>";
-      for (var h = 0; h < colCount; h++) {
-        var headText = rows[0][h] || "";
-        html += "<th" + cellStyle(h) + ">" + renderInlineMarkdown(headText) + "</th>";
-      }
-      html += "</tr></thead>";
-    }
-    html += "<tbody>";
-    for (var br = bodyStart; br < rows.length; br++) {
-      if (br === sepIdx) continue;
-      html += "<tr>";
-      for (var c = 0; c < colCount; c++) {
-        var cellText = rows[br][c] || "";
-        html += "<td" + cellStyle(c) + ">" + renderInlineMarkdown(cellText) + "</td>";
-      }
-      html += "</tr>";
-    }
-    html += "</tbody></table></div>";
-    return html;
-  }
-
-  // src/webview/review.js
-  var PAUSED_COLOR = "#9CA3AF";
-  var REVIEW_DUE_COLOR = "#F59E0B";
-  function reviewIntervalToDays(interval) {
-    if (!interval) return null;
-    var match = String(interval).match(/^(\d+)([dwmqy])$/i);
-    if (!match) return null;
-    var num = parseInt(match[1], 10);
-    switch (match[2].toLowerCase()) {
-      case "d":
-        return num;
-      case "w":
-        return num * 7;
-      case "m":
-        return num * 30;
-      case "q":
-        return num * 91;
-      case "y":
-        return num * 365;
-      default:
-        return null;
-    }
-  }
-  function reviewDueDaysFromFm(fm) {
-    if (!fm) return null;
-    var interval = fm.review;
-    if (!interval || !reviewIntervalToDays(interval)) return null;
-    var todayStr = State.today;
-    var reviewedStr = fm.reviewed;
-    var nextStr;
-    if (reviewedStr) {
-      var days = reviewIntervalToDays(interval);
-      var d = /* @__PURE__ */ new Date(reviewedStr + "T00:00:00");
-      if (isNaN(d.getTime())) return null;
-      d.setDate(d.getDate() + days);
-      var y = d.getFullYear();
-      var m = String(d.getMonth() + 1).padStart(2, "0");
-      var dd = String(d.getDate()).padStart(2, "0");
-      nextStr = y + "-" + m + "-" + dd;
-    } else {
-      nextStr = todayStr;
-    }
-    var next = /* @__PURE__ */ new Date(nextStr + "T00:00:00");
-    var today = /* @__PURE__ */ new Date(todayStr + "T00:00:00");
-    if (isNaN(next.getTime()) || isNaN(today.getTime())) return null;
-    return Math.round((next.getTime() - today.getTime()) / 864e5);
-  }
-  function isReviewDue(reviewDueDays, status) {
-    if (reviewDueDays == null || reviewDueDays > 0) return false;
-    if (status === "paused" || status === "someday") return false;
-    if (status === "completed" || status === "canceled") return false;
-    return true;
-  }
-  function reviewDueLabel(reviewDueDays, hasReviewedDate) {
-    if (reviewDueDays == null) return "";
-    if (!hasReviewedDate) return "Never reviewed";
-    if (reviewDueDays === 0) return "Review due today";
-    if (reviewDueDays === -1) return "Was due yesterday";
-    var abs = -reviewDueDays;
-    if (abs <= 13) return "Was due " + abs + " days ago";
-    if (abs <= 29) return "Was due " + Math.floor(abs / 7) + " weeks ago";
-    var months = Math.floor(abs / 30);
-    return "Was due " + months + " month" + (months === 1 ? "" : "s") + " ago";
   }
 
   // src/webview/icons.js
@@ -508,6 +399,115 @@
   }
   function getViewCount(view) {
     return getTasksForView(view).length;
+  }
+
+  // src/webview/markdown.js
+  function renderInlineMarkdown(text) {
+    if (!text) return "";
+    var s = esc(text);
+    var placeholders = [];
+    function placeholder(html) {
+      var key = "\0PH" + placeholders.length + "\0";
+      placeholders.push(html);
+      return key;
+    }
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(m, linkText, url) {
+      return placeholder('<a class="cl-link" href="' + url + '" target="_blank">' + linkText + "</a>");
+    });
+    s = s.replace(/\[\[([^\]]+)\]\]/g, function(m, linkText) {
+      return placeholder('<span class="cl-wikilink">' + linkText + "</span>");
+    });
+    s = s.replace(/(https?:\/\/[^\s<>\[\]]+)/g, function(m, url) {
+      return placeholder('<a class="cl-link" href="' + url + '" target="_blank">' + url + "</a>");
+    });
+    s = s.replace(/`([^`]+)`/g, function(m, code) {
+      return placeholder('<code class="cl-inline-code">' + code + "</code>");
+    });
+    s = s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    s = s.replace(new RegExp("(?<!\\*)\\*(?!\\*)(.+?)(?<!\\*)\\*(?!\\*)", "g"), "<em>$1</em>");
+    s = s.replace(/~~(.+?)~~/g, "<del>$1</del>");
+    s = s.replace(/==(.+?)==/g, "<mark>$1</mark>");
+    s = s.replace(/\/\/\s.*$/g, function(m) {
+      return placeholder('<span class="cl-comment">' + m + "</span>");
+    });
+    s = s.replace(/\/\*.*?\*\//g, function(m) {
+      return placeholder('<span class="cl-comment">' + m + "</span>");
+    });
+    s = s.replace(/\s*\^[\da-zA-Z]{4,}/g, function(m) {
+      return placeholder(' <span class="cl-block-id">*</span>');
+    });
+    s = s.replace(/(#[\p{L}\p{N}_\-\/]+)/gu, '<span class="cl-tag-inline">$1</span>');
+    s = s.replace(/(^|[\s(])(@(?!done|due|repeat)[\p{L}\p{N}_\-]+)/gu, function(m, pre, mention) {
+      return pre + '<span class="cl-mention-inline">' + mention + "</span>";
+    });
+    for (var i = 0; i < placeholders.length; i++) {
+      s = s.replace("\0PH" + i + "\0", placeholders[i]);
+    }
+    return s;
+  }
+  function isTableSeparatorLine(line) {
+    var cells = splitTableCells(line);
+    if (cells.length === 0) return false;
+    for (var i = 0; i < cells.length; i++) {
+      if (!/^:?-{3,}:?$/.test(cells[i])) return false;
+    }
+    return true;
+  }
+  function splitTableCells(line) {
+    var s = line.trim();
+    if (s.charAt(0) === "|") s = s.substring(1);
+    if (s.charAt(s.length - 1) === "|") s = s.substring(0, s.length - 1);
+    var cells = s.split("|");
+    for (var i = 0; i < cells.length; i++) cells[i] = cells[i].trim();
+    return cells;
+  }
+  function renderMarkdownTable(lines) {
+    var rows = lines.map(splitTableCells);
+    var sepIdx = -1;
+    for (var i = 0; i < rows.length; i++) {
+      if (isTableSeparatorLine(lines[i])) {
+        sepIdx = i;
+        break;
+      }
+    }
+    var alignments = [];
+    if (sepIdx >= 0) {
+      for (var a = 0; a < rows[sepIdx].length; a++) {
+        var cell = rows[sepIdx][a];
+        if (/^:-+:$/.test(cell)) alignments.push("center");
+        else if (/^-+:$/.test(cell)) alignments.push("right");
+        else alignments.push("left");
+      }
+    }
+    var colCount = 0;
+    for (var r = 0; r < rows.length; r++) if (rows[r].length > colCount) colCount = rows[r].length;
+    function cellStyle(col) {
+      var align = alignments[col] || "left";
+      return align === "left" ? "" : ' style="text-align:' + align + '"';
+    }
+    var html = '<div class="cl-note-table-wrap"><table class="cl-note-table">';
+    var hasHeader = sepIdx === 1;
+    var bodyStart = sepIdx >= 0 ? sepIdx + 1 : 0;
+    if (hasHeader) {
+      html += "<thead><tr>";
+      for (var h = 0; h < colCount; h++) {
+        var headText = rows[0][h] || "";
+        html += "<th" + cellStyle(h) + ">" + renderInlineMarkdown(headText) + "</th>";
+      }
+      html += "</tr></thead>";
+    }
+    html += "<tbody>";
+    for (var br = bodyStart; br < rows.length; br++) {
+      if (br === sepIdx) continue;
+      html += "<tr>";
+      for (var c = 0; c < colCount; c++) {
+        var cellText = rows[br][c] || "";
+        html += "<td" + cellStyle(c) + ">" + renderInlineMarkdown(cellText) + "</td>";
+      }
+      html += "</tr>";
+    }
+    html += "</tbody></table></div>";
+    return html;
   }
 
   // src/webview/task-list.js
@@ -2483,142 +2483,6 @@
     renderCurrentView();
   }
 
-  // src/webview/quick-jump.js
-  function quickJumpScore(note, query) {
-    if (!query) return 1;
-    var q = query.toLowerCase();
-    var title = (note.title || "").toLowerCase();
-    if (!title) return 0;
-    var score = 0;
-    if (title.indexOf(q) === 0) score += 100;
-    else if (title.indexOf(q) >= 0) score += 50 - title.indexOf(q);
-    var words = title.split(/[\s\-_/]+/).filter(function(w2) {
-      return w2.length > 0;
-    });
-    var initials = "";
-    for (var w = 0; w < words.length; w++) initials += words[w].charAt(0);
-    if (initials.indexOf(q) === 0) score += 80;
-    else if (initials.indexOf(q) >= 0) score += 30;
-    return score;
-  }
-  function quickJumpResults(query) {
-    var notes = State.notes || [];
-    if (!query) {
-      var byFilename = {};
-      for (var ni = 0; ni < notes.length; ni++) byFilename[notes[ni].filename] = notes[ni];
-      var ordered = [];
-      var seen = {};
-      var recents = State.recentNotes || [];
-      for (var ri = 0; ri < recents.length; ri++) {
-        var rn = byFilename[recents[ri]];
-        if (rn && !seen[rn.filename]) {
-          ordered.push(rn);
-          seen[rn.filename] = true;
-        }
-      }
-      for (var si = 0; si < notes.length; si++) {
-        if (!seen[notes[si].filename]) {
-          ordered.push(notes[si]);
-          seen[notes[si].filename] = true;
-        }
-      }
-      return ordered.slice(0, 12);
-    }
-    var scored = [];
-    for (var i = 0; i < notes.length; i++) {
-      var s = quickJumpScore(notes[i], query);
-      if (s > 0) scored.push({ note: notes[i], score: s });
-    }
-    scored.sort(function(a, b) {
-      if (b.score !== a.score) return b.score - a.score;
-      return (a.note.title || "").localeCompare(b.note.title || "");
-    });
-    return scored.slice(0, 12).map(function(x) {
-      return x.note;
-    });
-  }
-  function renderQuickJumpResults(container, results, selectedIndex) {
-    var html = "";
-    if (results.length === 0) {
-      html = '<div class="cl-jump-empty">No matching projects or areas</div>';
-    } else {
-      for (var i = 0; i < results.length; i++) {
-        var n = results[i];
-        var folderPath = (n.filename || "").replace(/\/[^/]+$/, "");
-        var icon = renderProjectIcon(n, 16);
-        var sel = i === selectedIndex ? " cl-jump-result-active" : "";
-        html += '<div class="cl-jump-result' + sel + '" data-filename="' + esc(n.filename) + '" data-index="' + i + '"><span class="cl-jump-icon">' + icon + '</span><span class="cl-jump-title">' + esc(n.title || "") + '</span><span class="cl-jump-folder">' + esc(folderPath) + "</span></div>";
-      }
-    }
-    container.innerHTML = html;
-  }
-  function openQuickJump() {
-    var existing = document.querySelector(".cl-jump-overlay");
-    if (existing) {
-      existing.remove();
-      return;
-    }
-    var overlay = document.createElement("div");
-    overlay.className = "cl-jump-overlay";
-    overlay.innerHTML = '<div class="cl-jump-modal"><input class="cl-jump-input" type="text" placeholder="Jump to project or area\u2026" autocomplete="off" spellcheck="false"><div class="cl-jump-results"></div></div>';
-    document.body.appendChild(overlay);
-    var input = overlay.querySelector(".cl-jump-input");
-    var resultsEl = overlay.querySelector(".cl-jump-results");
-    var state = { results: quickJumpResults(""), selected: 0 };
-    renderQuickJumpResults(resultsEl, state.results, state.selected);
-    function close() {
-      overlay.remove();
-    }
-    function jumpTo(filename) {
-      if (!filename) return;
-      close();
-      navigateToProjectNote(filename);
-    }
-    input.addEventListener("input", function() {
-      state.results = quickJumpResults(input.value);
-      state.selected = 0;
-      renderQuickJumpResults(resultsEl, state.results, state.selected);
-    });
-    input.addEventListener("keydown", function(e) {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        close();
-        return;
-      }
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        if (state.results.length === 0) return;
-        state.selected = Math.min(state.selected + 1, state.results.length - 1);
-        renderQuickJumpResults(resultsEl, state.results, state.selected);
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        if (state.results.length === 0) return;
-        state.selected = Math.max(state.selected - 1, 0);
-        renderQuickJumpResults(resultsEl, state.results, state.selected);
-        return;
-      }
-      if (e.key === "Enter") {
-        e.preventDefault();
-        var pick = state.results[state.selected];
-        if (pick) jumpTo(pick.filename);
-        return;
-      }
-    });
-    resultsEl.addEventListener("click", function(e) {
-      var row = e.target.closest(".cl-jump-result");
-      if (!row) return;
-      jumpTo(row.dataset.filename);
-    });
-    overlay.addEventListener("click", function(e) {
-      if (e.target === overlay) close();
-    });
-    setTimeout(function() {
-      input.focus();
-    }, 0);
-  }
-
   // src/webview/dnd.js
   var dragState = null;
   var dragSuppressNextClick = false;
@@ -3086,6 +2950,142 @@
     }
     setupSidebarResizer();
   });
+
+  // src/webview/quick-jump.js
+  function quickJumpScore(note, query) {
+    if (!query) return 1;
+    var q = query.toLowerCase();
+    var title = (note.title || "").toLowerCase();
+    if (!title) return 0;
+    var score = 0;
+    if (title.indexOf(q) === 0) score += 100;
+    else if (title.indexOf(q) >= 0) score += 50 - title.indexOf(q);
+    var words = title.split(/[\s\-_/]+/).filter(function(w2) {
+      return w2.length > 0;
+    });
+    var initials = "";
+    for (var w = 0; w < words.length; w++) initials += words[w].charAt(0);
+    if (initials.indexOf(q) === 0) score += 80;
+    else if (initials.indexOf(q) >= 0) score += 30;
+    return score;
+  }
+  function quickJumpResults(query) {
+    var notes = State.notes || [];
+    if (!query) {
+      var byFilename = {};
+      for (var ni = 0; ni < notes.length; ni++) byFilename[notes[ni].filename] = notes[ni];
+      var ordered = [];
+      var seen = {};
+      var recents = State.recentNotes || [];
+      for (var ri = 0; ri < recents.length; ri++) {
+        var rn = byFilename[recents[ri]];
+        if (rn && !seen[rn.filename]) {
+          ordered.push(rn);
+          seen[rn.filename] = true;
+        }
+      }
+      for (var si = 0; si < notes.length; si++) {
+        if (!seen[notes[si].filename]) {
+          ordered.push(notes[si]);
+          seen[notes[si].filename] = true;
+        }
+      }
+      return ordered.slice(0, 12);
+    }
+    var scored = [];
+    for (var i = 0; i < notes.length; i++) {
+      var s = quickJumpScore(notes[i], query);
+      if (s > 0) scored.push({ note: notes[i], score: s });
+    }
+    scored.sort(function(a, b) {
+      if (b.score !== a.score) return b.score - a.score;
+      return (a.note.title || "").localeCompare(b.note.title || "");
+    });
+    return scored.slice(0, 12).map(function(x) {
+      return x.note;
+    });
+  }
+  function renderQuickJumpResults(container, results, selectedIndex) {
+    var html = "";
+    if (results.length === 0) {
+      html = '<div class="cl-jump-empty">No matching projects or areas</div>';
+    } else {
+      for (var i = 0; i < results.length; i++) {
+        var n = results[i];
+        var folderPath = (n.filename || "").replace(/\/[^/]+$/, "");
+        var icon = renderProjectIcon(n, 16);
+        var sel = i === selectedIndex ? " cl-jump-result-active" : "";
+        html += '<div class="cl-jump-result' + sel + '" data-filename="' + esc(n.filename) + '" data-index="' + i + '"><span class="cl-jump-icon">' + icon + '</span><span class="cl-jump-title">' + esc(n.title || "") + '</span><span class="cl-jump-folder">' + esc(folderPath) + "</span></div>";
+      }
+    }
+    container.innerHTML = html;
+  }
+  function openQuickJump() {
+    var existing = document.querySelector(".cl-jump-overlay");
+    if (existing) {
+      existing.remove();
+      return;
+    }
+    var overlay = document.createElement("div");
+    overlay.className = "cl-jump-overlay";
+    overlay.innerHTML = '<div class="cl-jump-modal"><input class="cl-jump-input" type="text" placeholder="Jump to project or area\u2026" autocomplete="off" spellcheck="false"><div class="cl-jump-results"></div></div>';
+    document.body.appendChild(overlay);
+    var input = overlay.querySelector(".cl-jump-input");
+    var resultsEl = overlay.querySelector(".cl-jump-results");
+    var state = { results: quickJumpResults(""), selected: 0 };
+    renderQuickJumpResults(resultsEl, state.results, state.selected);
+    function close() {
+      overlay.remove();
+    }
+    function jumpTo(filename) {
+      if (!filename) return;
+      close();
+      navigateToProjectNote(filename);
+    }
+    input.addEventListener("input", function() {
+      state.results = quickJumpResults(input.value);
+      state.selected = 0;
+      renderQuickJumpResults(resultsEl, state.results, state.selected);
+    });
+    input.addEventListener("keydown", function(e) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+        return;
+      }
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (state.results.length === 0) return;
+        state.selected = Math.min(state.selected + 1, state.results.length - 1);
+        renderQuickJumpResults(resultsEl, state.results, state.selected);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (state.results.length === 0) return;
+        state.selected = Math.max(state.selected - 1, 0);
+        renderQuickJumpResults(resultsEl, state.results, state.selected);
+        return;
+      }
+      if (e.key === "Enter") {
+        e.preventDefault();
+        var pick = state.results[state.selected];
+        if (pick) jumpTo(pick.filename);
+        return;
+      }
+    });
+    resultsEl.addEventListener("click", function(e) {
+      var row = e.target.closest(".cl-jump-result");
+      if (!row) return;
+      jumpTo(row.dataset.filename);
+    });
+    overlay.addEventListener("click", function(e) {
+      if (e.target === overlay) close();
+    });
+    setTimeout(function() {
+      input.focus();
+    }, 0);
+  }
 
   // src/webview/keyboard.js
   document.addEventListener("keydown", function(e) {
