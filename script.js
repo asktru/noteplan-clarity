@@ -8,6 +8,7 @@ function getSettings() {
   var s = DataStore.settings || {};
   return {
     inboxLookbackDays: s.inboxLookbackDays || 14,
+    upcomingLookaheadDays: s.upcomingLookaheadDays || 30,
     excludedFolders: (s.excludedFolders || '').split(',').map(function(f) { return f.trim(); }).filter(Boolean),
     lastView: s.lastView || 'inbox',
   };
@@ -235,6 +236,22 @@ async function onMessageFromHTMLView(actionType, data) {
       case 'saveViewPrefs':
         saveSetting('viewPrefs', msg.viewPrefs || '{}');
         break;
+      case 'saveInboxLookback': {
+        var ilb = parseInt(msg.days, 10);
+        if (!isNaN(ilb) && ilb >= 1 && ilb <= 365) {
+          saveSetting('inboxLookbackDays', ilb);
+          await handleReady();
+        }
+        break;
+      }
+      case 'saveUpcomingLookahead': {
+        var ula = parseInt(msg.days, 10);
+        if (!isNaN(ula) && ula >= 1 && ula <= 365) {
+          saveSetting('upcomingLookaheadDays', ula);
+          await handleReady();
+        }
+        break;
+      }
 
       case 'toggleHeadingCollapse': {
         var hNote = findNoteByFilename(msg.filename);
@@ -680,6 +697,8 @@ async function handleReady() {
     recentNotes: s.recentNotes || '[]',
     sidebarWidth: s.sidebarWidth || null,
     visibleViews: s.visibleViews || '{}',
+    inboxLookbackDays: config.inboxLookbackDays,
+    upcomingLookaheadDays: config.upcomingLookaheadDays,
   });
 }
 
@@ -893,15 +912,21 @@ function gatherAllTasks() {
   }
 
   var calNotes = DataStore.calendarNotes;
-  var lookbackDate = new Date();
-  lookbackDate.setDate(lookbackDate.getDate() - config.inboxLookbackDays);
-  var lookbackStr = lookbackDate.getFullYear() + '-' + String(lookbackDate.getMonth() + 1).padStart(2, '0') + '-' + String(lookbackDate.getDate()).padStart(2, '0');
+  function shiftDate(days) {
+    var d = new Date();
+    d.setDate(d.getDate() + days);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  var lookbackStr = shiftDate(-config.inboxLookbackDays);
+  var lookaheadStr = shiftDate(config.upcomingLookaheadDays);
 
   for (var ci = 0; ci < calNotes.length; ci++) {
     var calNote = calNotes[ci];
     var calInfo = getCalendarNoteInfo(calNote);
     if (!calInfo.isCalendar || calInfo.calendarType !== 'day') continue;
-    if (calInfo.date < lookbackStr || calInfo.date > today) continue;
+    // Past/today: respect inboxLookbackDays (drives Inbox).
+    // Future: respect upcomingLookaheadDays (drives Upcoming's daily-note tasks).
+    if (calInfo.date < lookbackStr || calInfo.date > lookaheadStr) continue;
     extractTasksFromNote(calNote, tasks, 'calendar', calInfo.date);
   }
 

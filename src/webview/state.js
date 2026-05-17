@@ -29,6 +29,11 @@ export var State = {
   visibleViews: { inbox: true, today: true, upcoming: true, anytime: true, someday: true },
   settingsPopoverOpen: false,
   recentNotes: [],
+  // How far back the plugin scans daily notes for Inbox, and how far ahead
+  // for Upcoming. Live-adjustable from each view's header dropdown — changing
+  // either re-fetches tasks from the plugin.
+  inboxLookbackDays: 14,
+  upcomingLookaheadDays: 30,
 };
 
 export var MAX_RECENT_NOTES = 12;

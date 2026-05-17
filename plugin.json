@@ -6,8 +6,8 @@
   "plugin.description": "Things 3-inspired task clarity layer. Smart views for Inbox, Today, Upcoming, Anytime, Someday with inline task editing.",
   "plugin.icon": "🔮",
   "plugin.author": "asktru",
-  "plugin.version": "1.7.0",
-  "plugin.lastUpdateInfo": "Review cadence: amber recolor + footer when a project/area is overdue for review. Paused projects now surface in the Someday view. New \"Show in Clarity\" command. Tags and mentions accept non-ASCII letters. Closed tasks no longer draw the eye with priority badges or today-stars.",
+  "plugin.version": "1.7.1",
+  "plugin.lastUpdateInfo": "Upcoming view now includes tasks from future daily notes. Range dropdown in the Inbox and Upcoming headers lets you widen / narrow the daily-note scan window without opening Settings. Light-mode sidebar folder titles are bolder and more readable.",
   "plugin.script": "script.js",
   "plugin.isRemote": "false",
   "plugin.dependsOn": [
@@ -36,9 +36,17 @@
     {
       "key": "inboxLookbackDays",
       "title": "Inbox Lookback Days",
-      "description": "How many days back to scan daily notes for inbox tasks.",
+      "description": "How many days back to scan daily notes for inbox tasks. Adjustable per-session from the Inbox view header.",
       "type": "number",
       "default": 14,
+      "required": false
+    },
+    {
+      "key": "upcomingLookaheadDays",
+      "title": "Upcoming Lookahead Days",
+      "description": "How many days into the future to scan daily notes for upcoming tasks. Adjustable per-session from the Upcoming view header.",
+      "type": "number",
+      "default": 30,
       "required": false
     },
     {

@@ -23,7 +23,12 @@
     hidePaused: false,
     visibleViews: { inbox: true, today: true, upcoming: true, anytime: true, someday: true },
     settingsPopoverOpen: false,
-    recentNotes: []
+    recentNotes: [],
+    // How far back the plugin scans daily notes for Inbox, and how far ahead
+    // for Upcoming. Live-adjustable from each view's header dropdown — changing
+    // either re-fetches tasks from the plugin.
+    inboxLookbackDays: 14,
+    upcomingLookaheadDays: 30
   };
   var MAX_RECENT_NOTES = 12;
   function pushRecentNote(filename) {
@@ -371,7 +376,10 @@
           if (t.scheduledDate && t.scheduledDate <= today) match = true;
           break;
         case "upcoming":
-          if (t.scheduledDate && t.scheduledDate > today || t.scheduledWeek && t.scheduledWeek > currentWeek) match = true;
+          if (t.scheduledDate && t.scheduledDate > today || t.scheduledWeek && t.scheduledWeek > currentWeek || // Calendar-source tasks living on a future daily note. Symmetric to
+          // Inbox's sourceDate <= today filter — the source date IS the
+          // scheduled date for these.
+          t.sourceType === "calendar" && t.sourceDate && t.sourceDate > today) match = true;
           break;
         case "anytime":
           if (t.sourceType !== "calendar") {
@@ -776,11 +784,28 @@
     el.innerHTML = html;
     attachMainEventListeners();
   }
+  var RANGE_OPTIONS = [7, 14, 30, 60, 90, 180];
+  function renderRangeDropdown(action, currentDays, label) {
+    var opts = RANGE_OPTIONS.slice();
+    if (opts.indexOf(currentDays) < 0) opts.push(currentDays);
+    opts.sort(function(a, b) {
+      return a - b;
+    });
+    var html = '<select class="cl-range-dropdown" data-action="' + action + '" title="' + label + '">';
+    for (var i = 0; i < opts.length; i++) {
+      var sel = opts[i] === currentDays ? " selected" : "";
+      html += '<option value="' + opts[i] + '"' + sel + ">" + opts[i] + " days</option>";
+    }
+    html += "</select>";
+    return html;
+  }
   function renderInboxView() {
     var tasks = getFilteredTasks("inbox");
     var html = '<div class="cl-view-header">';
     html += '<div class="cl-view-title"><span class="cl-view-icon">' + getViewIcon("inbox", 24) + "</span><h1>Inbox</h1>";
-    html += '<span class="cl-view-count">' + tasks.length + "</span></div></div>";
+    html += '<span class="cl-view-count">' + tasks.length + "</span>";
+    html += renderRangeDropdown("setInboxLookback", State.inboxLookbackDays, "How far back to scan daily notes");
+    html += "</div></div>";
     html += renderFilterBar(tasks);
     if (State.movedFromInbox.length > 0) {
       html += '<div class="cl-moved-banner">';
@@ -854,23 +879,28 @@
   function renderUpcomingView() {
     var tasks = getFilteredTasks("upcoming");
     var html = '<div class="cl-view-header">';
-    html += '<div class="cl-view-title"><span class="cl-view-icon">' + getViewIcon("upcoming", 24) + "</span><h1>Upcoming</h1></div></div>";
+    html += '<div class="cl-view-title"><span class="cl-view-icon">' + getViewIcon("upcoming", 24) + "</span><h1>Upcoming</h1>";
+    html += renderRangeDropdown("setUpcomingLookahead", State.upcomingLookaheadDays, "How far ahead to scan daily notes");
+    html += "</div></div>";
     html += renderFilterBar(tasks);
     html += renderQuickAdd("upcoming");
     html += '<div class="cl-task-list">';
+    function upcomingDateOf(t) {
+      return t.scheduledDate || (t.sourceType === "calendar" ? t.sourceDate : null);
+    }
     var dayTasks = [];
     var weekTasks = [];
     for (var i = 0; i < tasks.length; i++) {
-      if (tasks[i].scheduledWeek && !tasks[i].scheduledDate) weekTasks.push(tasks[i]);
+      if (tasks[i].scheduledWeek && !upcomingDateOf(tasks[i])) weekTasks.push(tasks[i]);
       else dayTasks.push(tasks[i]);
     }
     dayTasks.sort(function(a, b) {
-      return (a.scheduledDate || "").localeCompare(b.scheduledDate || "");
+      return (upcomingDateOf(a) || "").localeCompare(upcomingDateOf(b) || "");
     });
     var dayGroups = {};
     var dayOrder = [];
     for (var di = 0; di < dayTasks.length; di++) {
-      var dk = dayTasks[di].scheduledDate || "unknown";
+      var dk = upcomingDateOf(dayTasks[di]) || "unknown";
       if (!dayGroups[dk]) {
         dayGroups[dk] = [];
         dayOrder.push(dk);
@@ -2413,6 +2443,8 @@
         State.hideEmptyProjects = !!data.hideEmptyProjects;
         State.hideNonProjects = !!data.hideNonProjects;
         State.hidePaused = !!data.hidePaused;
+        if (typeof data.inboxLookbackDays === "number") State.inboxLookbackDays = data.inboxLookbackDays;
+        if (typeof data.upcomingLookaheadDays === "number") State.upcomingLookaheadDays = data.upcomingLookaheadDays;
         if (data.recentNotes) {
           try {
             var parsedRecents = JSON.parse(data.recentNotes);
@@ -3454,6 +3486,24 @@
             lineIndex: lineIdx
           }));
           break;
+        }
+      }
+    });
+    main.addEventListener("change", function(e) {
+      var target = e.target.closest("[data-action]");
+      if (!target) return;
+      var action = target.dataset.action;
+      if (action === "setInboxLookback") {
+        var days = parseInt(target.value, 10);
+        if (!isNaN(days) && days > 0) {
+          State.inboxLookbackDays = days;
+          sendMessageToPlugin("saveInboxLookback", JSON.stringify({ days }));
+        }
+      } else if (action === "setUpcomingLookahead") {
+        var days = parseInt(target.value, 10);
+        if (!isNaN(days) && days > 0) {
+          State.upcomingLookaheadDays = days;
+          sendMessageToPlugin("saveUpcomingLookahead", JSON.stringify({ days }));
         }
       }
     });

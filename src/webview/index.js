@@ -254,6 +254,26 @@ export function attachMainEventListeners() {
     }
   });
 
+  // Range dropdowns in Inbox / Upcoming headers
+  main.addEventListener('change', function(e) {
+    var target = e.target.closest('[data-action]');
+    if (!target) return;
+    var action = target.dataset.action;
+    if (action === 'setInboxLookback') {
+      var days = parseInt(target.value, 10);
+      if (!isNaN(days) && days > 0) {
+        State.inboxLookbackDays = days;
+        sendMessageToPlugin('saveInboxLookback', JSON.stringify({ days: days }));
+      }
+    } else if (action === 'setUpcomingLookahead') {
+      var days = parseInt(target.value, 10);
+      if (!isNaN(days) && days > 0) {
+        State.upcomingLookaheadDays = days;
+        sendMessageToPlugin('saveUpcomingLookahead', JSON.stringify({ days: days }));
+      }
+    }
+  });
+
   // Quick add Enter key
   main.addEventListener('keydown', function(e) {
     if (e.key === 'Enter' && e.target.classList.contains('cl-quick-add-input')) {

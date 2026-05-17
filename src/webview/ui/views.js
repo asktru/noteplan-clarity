@@ -35,11 +35,31 @@ export function renderCurrentView() {
   attachMainEventListeners();
 }
 
+// "Range: N days" dropdown shown in the Inbox and Upcoming headers. Lets the
+// user widen / narrow the daily-note scan window without touching settings.
+// On change, the value flows back to the plugin, which persists it and
+// re-emits INIT_DATA.
+var RANGE_OPTIONS = [7, 14, 30, 60, 90, 180];
+function renderRangeDropdown(action, currentDays, label) {
+  var opts = RANGE_OPTIONS.slice();
+  if (opts.indexOf(currentDays) < 0) opts.push(currentDays);
+  opts.sort(function(a, b) { return a - b; });
+  var html = '<select class="cl-range-dropdown" data-action="' + action + '" title="' + label + '">';
+  for (var i = 0; i < opts.length; i++) {
+    var sel = opts[i] === currentDays ? ' selected' : '';
+    html += '<option value="' + opts[i] + '"' + sel + '>' + opts[i] + ' days</option>';
+  }
+  html += '</select>';
+  return html;
+}
+
 function renderInboxView() {
   var tasks = getFilteredTasks('inbox');
   var html = '<div class="cl-view-header">';
   html += '<div class="cl-view-title"><span class="cl-view-icon">' + getViewIcon('inbox', 24) + '</span><h1>Inbox</h1>';
-  html += '<span class="cl-view-count">' + tasks.length + '</span></div></div>';
+  html += '<span class="cl-view-count">' + tasks.length + '</span>';
+  html += renderRangeDropdown('setInboxLookback', State.inboxLookbackDays, 'How far back to scan daily notes');
+  html += '</div></div>';
   html += renderFilterBar(tasks);
 
   if (State.movedFromInbox.length > 0) {
@@ -127,23 +147,31 @@ function renderTodayView() {
 function renderUpcomingView() {
   var tasks = getFilteredTasks('upcoming');
   var html = '<div class="cl-view-header">';
-  html += '<div class="cl-view-title"><span class="cl-view-icon">' + getViewIcon('upcoming', 24) + '</span><h1>Upcoming</h1></div></div>';
+  html += '<div class="cl-view-title"><span class="cl-view-icon">' + getViewIcon('upcoming', 24) + '</span><h1>Upcoming</h1>';
+  html += renderRangeDropdown('setUpcomingLookahead', State.upcomingLookaheadDays, 'How far ahead to scan daily notes');
+  html += '</div></div>';
   html += renderFilterBar(tasks);
   html += renderQuickAdd('upcoming');
   html += '<div class="cl-task-list">';
 
+  // For calendar-source tasks living on a future daily note, the source
+  // date IS the upcoming date — fall back to it when scheduledDate is absent.
+  function upcomingDateOf(t) {
+    return t.scheduledDate || (t.sourceType === 'calendar' ? t.sourceDate : null);
+  }
+
   var dayTasks = [];
   var weekTasks = [];
   for (var i = 0; i < tasks.length; i++) {
-    if (tasks[i].scheduledWeek && !tasks[i].scheduledDate) weekTasks.push(tasks[i]);
+    if (tasks[i].scheduledWeek && !upcomingDateOf(tasks[i])) weekTasks.push(tasks[i]);
     else dayTasks.push(tasks[i]);
   }
 
-  dayTasks.sort(function(a, b) { return (a.scheduledDate || '').localeCompare(b.scheduledDate || ''); });
+  dayTasks.sort(function(a, b) { return (upcomingDateOf(a) || '').localeCompare(upcomingDateOf(b) || ''); });
   var dayGroups = {};
   var dayOrder = [];
   for (var di = 0; di < dayTasks.length; di++) {
-    var dk = dayTasks[di].scheduledDate || 'unknown';
+    var dk = upcomingDateOf(dayTasks[di]) || 'unknown';
     if (!dayGroups[dk]) { dayGroups[dk] = []; dayOrder.push(dk); }
     dayGroups[dk].push(dayTasks[di]);
   }

@@ -29,6 +29,8 @@ export function onMessageFromPlugin(type, data) {
       State.hideEmptyProjects = !!data.hideEmptyProjects;
       State.hideNonProjects = !!data.hideNonProjects;
       State.hidePaused = !!data.hidePaused;
+      if (typeof data.inboxLookbackDays === 'number') State.inboxLookbackDays = data.inboxLookbackDays;
+      if (typeof data.upcomingLookaheadDays === 'number') State.upcomingLookaheadDays = data.upcomingLookaheadDays;
       if (data.recentNotes) {
         try {
           var parsedRecents = JSON.parse(data.recentNotes);

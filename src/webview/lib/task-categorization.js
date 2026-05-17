@@ -26,7 +26,14 @@ export function getTasksForView(view) {
         if (t.scheduledDate && t.scheduledDate <= today) match = true;
         break;
       case 'upcoming':
-        if ((t.scheduledDate && t.scheduledDate > today) || (t.scheduledWeek && t.scheduledWeek > currentWeek)) match = true;
+        if (
+          (t.scheduledDate && t.scheduledDate > today) ||
+          (t.scheduledWeek && t.scheduledWeek > currentWeek) ||
+          // Calendar-source tasks living on a future daily note. Symmetric to
+          // Inbox's sourceDate <= today filter — the source date IS the
+          // scheduled date for these.
+          (t.sourceType === 'calendar' && t.sourceDate && t.sourceDate > today)
+        ) match = true;
         break;
       case 'anytime':
         if (t.sourceType !== 'calendar') {

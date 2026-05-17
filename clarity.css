@@ -254,6 +254,7 @@ body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
 
 .cl-area-header {
   font-size: 10px;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   opacity: 0.3;
@@ -265,6 +266,9 @@ body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
   user-select: none;
 }
 .cl-area-header:hover { opacity: 0.5; }
+/* Light mode: gray-on-white at 30% is too faint to read. Bump weight and opacity. */
+[data-theme="light"] .cl-area-header { opacity: 0.55; }
+[data-theme="light"] .cl-area-header:hover { opacity: 0.8; }
 .cl-area-chevron {
   font-size: 8px;
   transition: transform 0.15s;
@@ -306,6 +310,21 @@ body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
   margin-bottom: 16px;
 }
 .cl-view-title h1 { font-size: 22px; font-weight: 600; color: var(--cl-text); }
+/* Range dropdown sits at the end of the view header (Inbox / Upcoming). */
+.cl-range-dropdown {
+  margin-left: auto;
+  font: inherit;
+  font-size: 11px;
+  color: var(--cl-text);
+  opacity: 0.65;
+  background: transparent;
+  border: 1px solid var(--cl-border);
+  border-radius: 5px;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+.cl-range-dropdown:hover { opacity: 1; }
+.cl-range-dropdown:focus { outline: none; opacity: 1; border-color: var(--cl-accent, #3B82F6); }
 .cl-view-icon {
   display: inline-flex;
   align-items: center;
