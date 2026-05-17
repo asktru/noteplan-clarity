@@ -53,43 +53,55 @@ export function hideToc() {
   el.innerHTML = '';
 }
 
-// Smooth-scroll #cl-main to a heading by lineIndex.
+// The note-view scroll container. #cl-main itself is overflow:hidden; the
+// scrollable region is `.cl-task-list.cl-note-content` inside it, which is
+// re-created each render.
+function getScroller() {
+  return document.querySelector('#cl-main .cl-note-content');
+}
+
+// Smooth-scroll the note-view scroller to a heading by lineIndex. Uses
+// bounding rects because the heading's offsetParent isn't the scroller.
 export function scrollToHeading(lineIndex) {
-  var main = document.getElementById('cl-main');
-  if (!main) return;
-  var heading = main.querySelector('.cl-note-heading[data-line-index="' + lineIndex + '"]');
+  var scroller = getScroller();
+  if (!scroller) return;
+  var heading = scroller.querySelector('.cl-note-heading[data-line-index="' + lineIndex + '"]');
   if (!heading) return;
-  main.scrollTo({ top: heading.offsetTop - 20, behavior: 'smooth' });
+  var delta = heading.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+  scroller.scrollTo({ top: scroller.scrollTop + delta - 20, behavior: 'smooth' });
 }
 
 // Scroll-spy: highlights the TOC item matching the topmost visible heading.
-// Idempotent — calling repeatedly only attaches the listener once per main element.
-var _spyAttached = false;
+// The scroller is re-created on every render, so we re-attach when we see a
+// new element.
+var _spyScroller = null;
 export function attachTocScrollSpy() {
-  if (_spyAttached) return;
-  var main = document.getElementById('cl-main');
-  if (!main) return;
-  _spyAttached = true;
+  var scroller = getScroller();
+  if (!scroller || scroller === _spyScroller) return;
+  _spyScroller = scroller;
   var debounce = null;
-  main.addEventListener('scroll', function() {
+  scroller.addEventListener('scroll', function() {
     if (debounce) return;
     debounce = setTimeout(function() {
       debounce = null;
       updateActiveTocItem();
     }, 50);
   });
+  // Initial pass after layout so the topmost heading is highlighted on open.
+  setTimeout(updateActiveTocItem, 0);
 }
 
 function updateActiveTocItem() {
   var sidebar = document.getElementById('cl-right-sidebar');
   if (!sidebar || sidebar.hidden) return;
-  var main = document.getElementById('cl-main');
-  if (!main) return;
-  var headings = main.querySelectorAll('.cl-note-heading');
-  var scrollTop = main.scrollTop;
+  var scroller = getScroller();
+  if (!scroller) return;
+  var headings = scroller.querySelectorAll('.cl-note-heading');
+  var scrollerTop = scroller.getBoundingClientRect().top;
   var activeLineIndex = null;
   for (var i = 0; i < headings.length; i++) {
-    if (headings[i].offsetTop <= scrollTop + 60) {
+    var hTop = headings[i].getBoundingClientRect().top - scrollerTop;
+    if (hTop <= 60) {
       activeLineIndex = headings[i].dataset.lineIndex;
     } else {
       break;

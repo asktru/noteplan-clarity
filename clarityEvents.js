@@ -870,38 +870,43 @@
     el.hidden = true;
     el.innerHTML = "";
   }
-  function scrollToHeading(lineIndex) {
-    var main = document.getElementById("cl-main");
-    if (!main) return;
-    var heading = main.querySelector('.cl-note-heading[data-line-index="' + lineIndex + '"]');
-    if (!heading) return;
-    main.scrollTo({ top: heading.offsetTop - 20, behavior: "smooth" });
+  function getScroller() {
+    return document.querySelector("#cl-main .cl-note-content");
   }
-  var _spyAttached = false;
+  function scrollToHeading(lineIndex) {
+    var scroller = getScroller();
+    if (!scroller) return;
+    var heading = scroller.querySelector('.cl-note-heading[data-line-index="' + lineIndex + '"]');
+    if (!heading) return;
+    var delta = heading.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+    scroller.scrollTo({ top: scroller.scrollTop + delta - 20, behavior: "smooth" });
+  }
+  var _spyScroller = null;
   function attachTocScrollSpy() {
-    if (_spyAttached) return;
-    var main = document.getElementById("cl-main");
-    if (!main) return;
-    _spyAttached = true;
+    var scroller = getScroller();
+    if (!scroller || scroller === _spyScroller) return;
+    _spyScroller = scroller;
     var debounce = null;
-    main.addEventListener("scroll", function() {
+    scroller.addEventListener("scroll", function() {
       if (debounce) return;
       debounce = setTimeout(function() {
         debounce = null;
         updateActiveTocItem();
       }, 50);
     });
+    setTimeout(updateActiveTocItem, 0);
   }
   function updateActiveTocItem() {
     var sidebar = document.getElementById("cl-right-sidebar");
     if (!sidebar || sidebar.hidden) return;
-    var main = document.getElementById("cl-main");
-    if (!main) return;
-    var headings = main.querySelectorAll(".cl-note-heading");
-    var scrollTop = main.scrollTop;
+    var scroller = getScroller();
+    if (!scroller) return;
+    var headings = scroller.querySelectorAll(".cl-note-heading");
+    var scrollerTop = scroller.getBoundingClientRect().top;
     var activeLineIndex = null;
     for (var i = 0; i < headings.length; i++) {
-      if (headings[i].offsetTop <= scrollTop + 60) {
+      var hTop = headings[i].getBoundingClientRect().top - scrollerTop;
+      if (hTop <= 60) {
         activeLineIndex = headings[i].dataset.lineIndex;
       } else {
         break;
