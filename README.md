@@ -54,6 +54,24 @@ Click a project in the sidebar to open it inline:
 - Click the project title to open the underlying note in NotePlan's split-view editor
 - Quick-add creates tasks directly in the viewed project
 
+### Clarity View Options (opt-in)
+
+Each project note can opt into extra UI affordances via a single `clarity:` front-matter key with a comma-separated list of tokens. All four are off by default and configurable from the metadata modal as chip toggles:
+
+- `toc` — Table of contents in a right sidebar. Only renders when the note has at least one subheading. Click an entry to smooth-scroll the note; the entry under the viewport top gets highlighted as you scroll.
+- `indent` — Colors headings (H1 gold, H2 blue, H3 orange, H4 green) and indents each section body by 20px per level, so deeply-structured project notes get a visible hierarchy.
+- `focus` — Adds an eye icon to each heading. Clicking it dims the rest of the note to 22% opacity so you can concentrate on one section. Multiple sections can be focused simultaneously. State persists on disk via a trailing `👀` marker on the heading and is shared with the Donote plugin.
+- `progress` — Shows a Things-3-style pie indicator on every heading that contains tasks, summing tasks across the whole section (so an H1 pie reflects completion of everything beneath it). Cancelled tasks are excluded.
+
+Example front matter:
+
+```yaml
+---
+title: Q3 Plan
+clarity: toc, indent, progress
+---
+```
+
 ### Project / Area Metadata
 
 The **Edit metadata…** dialog edits the note's frontmatter directly:
