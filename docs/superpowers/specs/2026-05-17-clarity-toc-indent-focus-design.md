@@ -5,7 +5,7 @@ Status: Approved for planning
 
 ## Goal
 
-Port three optional view enhancements from the Donote plugin into the Clarity plugin's project (note) view. All three are off by default and opt-in per note via a single `clarity:` front-matter key. The Focus mode is wire-compatible with Donote (shares the `👀` heading marker).
+Port four optional view enhancements from the Donote plugin into the Clarity plugin's project (note) view. All four are off by default and opt-in per note via a single `clarity:` front-matter key. The Focus mode is wire-compatible with Donote (shares the `👀` heading marker).
 
 ## User-facing surface
 
@@ -16,6 +16,7 @@ A single key, `clarity`, whose value is a comma-separated list of tokens. Recogn
 - `toc` — show the table-of-contents panel in the right sidebar.
 - `indent` — apply heading colors and section-body indentation.
 - `focus` — show eye icons on headings and enable focus-mode dimming.
+- `progress` — show task-completion pie-slice indicators on headings that contain tasks.
 
 Examples:
 
@@ -37,9 +38,9 @@ Token parsing is case-insensitive, whitespace-tolerant. Unknown tokens are ignor
 
 ### Project metadata modal
 
-`openNoteMetaModal()` gains a new row labeled **Clarity view** containing three pill-shaped toggle buttons: `TOC`, `Indent`, `Focus`. Active state uses the existing accent/filled-pill styling used by status buttons in the same modal; inactive is the bordered/transparent variant.
+`openNoteMetaModal()` gains a new row labeled **Clarity view** containing four pill-shaped toggle buttons: `TOC`, `Indent`, `Focus`, `Progress`. Active state uses the existing accent/filled-pill styling used by status buttons in the same modal; inactive is the bordered/transparent variant.
 
-On Save, the modal computes the `clarity` value by joining the active token names with `, ` in canonical order (`toc, indent, focus`). If none are active, it sends `clarity: null` so the existing `applyFrontmatterUpdates` removes the key entirely.
+On Save, the modal computes the `clarity` value by joining the active token names with `, ` in canonical order (`toc, indent, focus, progress`). If none are active, it sends `clarity: null` so the existing `applyFrontmatterUpdates` removes the key entirely.
 
 The new field is included in the existing `updateNoteFrontmatter` message — no new message type for metadata.
 
@@ -149,10 +150,51 @@ Multiple focused headings are allowed — the spared set is a union.
 
 Focus state is persisted on disk via the `👀` marker, so it survives refresh, app restart, and is shared with Donote. No webview-local state.
 
+## Feature: Heading progress pies (token `progress`)
+
+### Counting rules
+
+Mirrors Donote's `computeHeadingTaskStats` exactly so the two plugins always show the same number:
+
+- Walk note body lines once. Maintain a stack of open headings (level-aware: a heading pops every entry on the stack with `level >= incoming`).
+- Skip code fences (`` ``` `` toggles in/out).
+- Skip separator headings (text matches `^[-*_]{3,}$` after stripping collapse/focus markers).
+- A task line is any of: checklist (`+ `), bracket task (`- [ ]`, `- [x]`, `- [-]`, also `*` variant), or bare-star task (`* …` not followed by bold/bracket).
+- Cancelled tasks (`[-]`) are excluded from both total and done.
+- Done tasks (`[x]` or containing `@done(`) count toward done.
+- Every counted task is credited to **all** ancestor headings on the stack, so an H1 pie reflects completion across its entire section.
+
+The result is an array of `{ total, done }` indexed in heading-render order. Headings with `total === 0` get no pie.
+
+### Rendering
+
+When `progress` is active, `renderNoteView` computes the stats array once per render and passes `{ done, total }` per heading. The pie is inserted as the first child of `.cl-note-heading`, before the heading text:
+
+```html
+<span class="cl-heading-progress" aria-hidden="true">
+  <svg viewBox="0 0 18 18" width="18" height="18">…</svg>
+</span>
+```
+
+SVG output matches Donote (`buildHeadingProgressSVG`): 18×18, radius 7, stroke-width 2.25. Background ring at 40% opacity in `currentColor`. Progress wedge as a filled `path` from 12 o'clock clockwise. At 100% complete, switches to Things-3 style: filled disk with a checkmark punched through in the page background color (`var(--cl-bg)`).
+
+### CSS
+
+```css
+.cl-heading-progress { display: inline-block; vertical-align: -3px; margin-right: 8px; flex-shrink: 0; }
+```
+
+Combines cleanly with the `indent` heading colors: the pie inherits `currentColor`, so an H2 pie will be blue, H3 orange, etc. Without `indent`, the pie inherits the default text color.
+
+### Interaction with focus mode
+
+Pies inside `.cl-dimmed` regions are dimmed along with everything else (no special rule needed — `opacity` cascades to the SVG).
+
 ## Files touched
 
-- `src/webview/ui/modals.js` — three pill toggles in `openNoteMetaModal`, include `clarity` token list in save payload.
-- `src/webview/ui/views.js` — render `#cl-right-sidebar` conditionally; add stable IDs to `.cl-note-heading`; add `cl-note-indented` root class; render eye icon when focus flag set; strip `👀` from displayed heading text and set `data-focused`.
+- `src/webview/ui/modals.js` — four pill toggles in `openNoteMetaModal`, include `clarity` token list in save payload.
+- `src/webview/ui/views.js` — render `#cl-right-sidebar` conditionally; add stable IDs to `.cl-note-heading`; add `cl-note-indented` root class; render eye icon when focus flag set; strip `👀` from displayed heading text and set `data-focused`; compute + inject progress pies when progress flag set.
+- `src/webview/lib/heading-progress.js` *(new)* — `computeHeadingTaskStats(paragraphs)` and `buildHeadingProgressSVG(done, total)`, ported from Donote.
 - `src/webview/lib/clarity-flags.js` *(new)* — `parseClarityFlags(frontmatter)` → `{ toc, indent, focus }`.
 - `src/webview/ui/toc.js` *(new)* — `buildTocHTML(paragraphs, flags)`, `attachTocScrollSpy()`, click handler for `scrollToHeading`.
 - `src/webview/ui/focus-mode.js` *(new)* — `applyFocusMode(rootEl)` and `toggleHeadingFocus` click handler that posts to host.
