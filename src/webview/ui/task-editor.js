@@ -79,6 +79,27 @@ export function expandTask(taskId) {
   }
 
   attachEditorListeners(editor);
+
+  // Scroll the editor into view if it (or its sub-rows) extend past the
+  // viewport, leaving a `margin` of breathing room between the editor edge
+  // and the scroller edge. Run on next tick so layout has finalized.
+  setTimeout(function() {
+    var subRows = editor.parentNode ? editor.parentNode.querySelectorAll('.cl-subtask-row') : [];
+    var last = subRows.length ? subRows[subRows.length - 1] : editor;
+    var scroller = editor.closest('.cl-note-content') || editor.closest('.cl-task-list');
+    if (!scroller) return;
+    var margin = 24;
+    var scrollerRect = scroller.getBoundingClientRect();
+    var topRect = editor.getBoundingClientRect();
+    var bottomRect = last.getBoundingClientRect();
+    var overshoot = bottomRect.bottom - (scrollerRect.bottom - margin);
+    var undershoot = (scrollerRect.top + margin) - topRect.top;
+    if (overshoot > 0) {
+      scroller.scrollTo({ top: scroller.scrollTop + overshoot, behavior: 'smooth' });
+    } else if (undershoot > 0) {
+      scroller.scrollTo({ top: scroller.scrollTop - undershoot, behavior: 'smooth' });
+    }
+  }, 0);
 }
 
 export function collapseTask() {

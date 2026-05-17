@@ -25,6 +25,11 @@ import { applyFocusMode } from './focus-mode.js';
 export function renderCurrentView() {
   var el = document.getElementById('cl-main');
   if (!el) return;
+  // Preserve scroll position across re-renders (TASK_SAVED, frontmatter
+  // updates, etc.) so the user doesn't get jumped back to the top.
+  var prevScroller = el.querySelector('.cl-note-content') || el.querySelector('.cl-task-list');
+  var prevScrollTop = prevScroller ? prevScroller.scrollTop : 0;
+  var prevView = el.getAttribute('data-rendered-view');
   var html = '';
   switch (State.currentView) {
     case 'inbox': html = renderInboxView(); break;
@@ -36,7 +41,14 @@ export function renderCurrentView() {
     default: html = renderInboxView();
   }
   el.innerHTML = html;
+  el.setAttribute('data-rendered-view', State.currentView);
   attachMainEventListeners();
+  // Restore only when re-rendering the same view (so switching views always
+  // lands at the top of the new view).
+  if (prevView === State.currentView && prevScrollTop > 0) {
+    var newScroller = el.querySelector('.cl-note-content') || el.querySelector('.cl-task-list');
+    if (newScroller) newScroller.scrollTop = prevScrollTop;
+  }
 
   // Post-mount: TOC + focus dimming, gated by clarity flags. Non-note views
   // always hide the right sidebar.

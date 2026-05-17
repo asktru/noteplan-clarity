@@ -6,8 +6,8 @@
   "plugin.description": "Things 3-inspired task clarity layer. Smart views for Inbox, Today, Upcoming, Anytime, Someday with inline task editing.",
   "plugin.icon": "🔮",
   "plugin.author": "asktru",
-  "plugin.version": "1.8.0",
-  "plugin.lastUpdateInfo": "Per-note Clarity view options via a `clarity:` front-matter key: table of contents in a right sidebar, colored + indented heading hierarchy, focus mode with an eye icon to mute everything outside the current section (state shared with Donote via the 👀 marker), and Things-3-style progress pies on headings with tasks. Toggle the options as chips in the Project metadata modal.",
+  "plugin.version": "1.8.1",
+  "plugin.lastUpdateInfo": "Hotfixes: date-picker month-navigation arrows now work, calendar day cells render as uniform circles on narrow widths, the inline task editor auto-scrolls into view with breathing room when opened near the viewport edge, and saving a task no longer jumps the note scroll back to the top.",
   "plugin.script": "script.js",
   "plugin.isRemote": "false",
   "plugin.dependsOn": [

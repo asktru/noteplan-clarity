@@ -995,6 +995,9 @@
   function renderCurrentView() {
     var el = document.getElementById("cl-main");
     if (!el) return;
+    var prevScroller = el.querySelector(".cl-note-content") || el.querySelector(".cl-task-list");
+    var prevScrollTop = prevScroller ? prevScroller.scrollTop : 0;
+    var prevView = el.getAttribute("data-rendered-view");
     var html = "";
     switch (State.currentView) {
       case "inbox":
@@ -1019,7 +1022,12 @@
         html = renderInboxView();
     }
     el.innerHTML = html;
+    el.setAttribute("data-rendered-view", State.currentView);
     attachMainEventListeners();
+    if (prevView === State.currentView && prevScrollTop > 0) {
+      var newScroller = el.querySelector(".cl-note-content") || el.querySelector(".cl-task-list");
+      if (newScroller) newScroller.scrollTop = prevScrollTop;
+    }
     if (State.currentView === "note") {
       var __fm = State.noteContent && State.noteContent.frontmatter || {};
       var __flags = parseClarityFlags(__fm);
@@ -1520,7 +1528,10 @@
     var tmr = addDays(today, 1);
     var nextMon = getNextMonday(today);
     var inAWeek = addDays(today, 7);
-    picker.innerHTML = '<div class="cl-picker-tabs"><div class="cl-picker-tab cl-picker-tab-active" data-tab="day">Day</div><div class="cl-picker-tab" data-tab="week">Week</div></div><div class="cl-picker-body" id="cl-date-body">' + renderDateDayTab(today, tmr, nextMon, inAWeek) + '</div><div class="cl-picker-footer"><div class="cl-picker-action" data-action="removeDate"><span>\u2715</span> Remove date <span class="cl-shortcut">\u2318O</span></div></div>';
+    var todayParts = today.split("-");
+    var viewYear = parseInt(todayParts[0], 10);
+    var viewMonth = parseInt(todayParts[1], 10) - 1;
+    picker.innerHTML = '<div class="cl-picker-tabs"><div class="cl-picker-tab cl-picker-tab-active" data-tab="day">Day</div><div class="cl-picker-tab" data-tab="week">Week</div></div><div class="cl-picker-body" id="cl-date-body">' + renderDateDayTab(today, tmr, nextMon, inAWeek, viewYear, viewMonth) + '</div><div class="cl-picker-footer"><div class="cl-picker-action" data-action="removeDate"><span>\u2715</span> Remove date <span class="cl-shortcut">\u2318O</span></div></div>';
     document.body.appendChild(picker);
     positionPickerVertically(picker, anchor);
     picker.addEventListener("click", function(e) {
@@ -1532,9 +1543,27 @@
           for (var i = 0; i < tabs.length; i++) tabs[i].classList.remove("cl-picker-tab-active");
           tab.classList.add("cl-picker-tab-active");
           var body = picker.querySelector("#cl-date-body");
-          if (tab.dataset.tab === "day") body.innerHTML = renderDateDayTab(today, tmr, nextMon, inAWeek);
+          if (tab.dataset.tab === "day") body.innerHTML = renderDateDayTab(today, tmr, nextMon, inAWeek, viewYear, viewMonth);
           else body.innerHTML = renderDateWeekTab();
         }
+        return;
+      }
+      if (target.dataset.action === "calPrev" || target.dataset.action === "calNext") {
+        if (target.dataset.action === "calPrev") {
+          viewMonth--;
+          if (viewMonth < 0) {
+            viewMonth = 11;
+            viewYear--;
+          }
+        } else {
+          viewMonth++;
+          if (viewMonth > 11) {
+            viewMonth = 0;
+            viewYear++;
+          }
+        }
+        var dayBody = picker.querySelector("#cl-date-body");
+        if (dayBody) dayBody.innerHTML = renderDateDayTab(today, tmr, nextMon, inAWeek, viewYear, viewMonth);
         return;
       }
       if (target.dataset.action === "selectDate") {
@@ -1561,7 +1590,7 @@
       }
     });
   }
-  function renderDateDayTab(today, tmr, nextMon, inAWeek) {
+  function renderDateDayTab(today, tmr, nextMon, inAWeek, viewYear, viewMonth) {
     var html = '<div class="cl-picker-options">';
     html += '<div class="cl-picker-option cl-picker-today" data-action="selectDate" data-date="' + today + '"><span>\u2B50</span><span class="cl-picker-opt-label">Today</span><span class="cl-picker-opt-date">' + formatShortDate(today) + "</span></div>";
     html += '<div class="cl-picker-option" data-action="selectDate" data-date="' + tmr + '"><span>\u2192</span><span class="cl-picker-opt-label">Tomorrow</span><span class="cl-picker-opt-date">' + formatShortDate(tmr) + "</span></div>";
@@ -1569,25 +1598,27 @@
     html += '<div class="cl-picker-option" data-action="selectDate" data-date="' + inAWeek + '"><span>+7</span><span class="cl-picker-opt-label">In a week</span><span class="cl-picker-opt-date">' + formatShortDate(inAWeek) + "</span></div>";
     html += "</div>";
     html += '<div class="cl-picker-divider"></div>';
-    html += renderMiniCalendar(today);
+    html += renderMiniCalendar(today, viewYear, viewMonth);
     return html;
   }
-  function renderMiniCalendar(todayStr) {
-    var parts = todayStr.split("-");
-    var year = parseInt(parts[0]);
-    var month = parseInt(parts[1]) - 1;
+  function renderMiniCalendar(todayStr, viewYear, viewMonth) {
+    if (viewYear == null || viewMonth == null) {
+      var parts = todayStr.split("-");
+      viewYear = parseInt(parts[0], 10);
+      viewMonth = parseInt(parts[1], 10) - 1;
+    }
     var months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    var firstDay = new Date(year, month, 1);
+    var firstDay = new Date(viewYear, viewMonth, 1);
     var startOffset = (firstDay.getDay() + 6) % 7;
-    var daysInMonth = new Date(year, month + 1, 0).getDate();
+    var daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
     var html = '<div class="cl-mini-cal">';
-    html += '<div class="cl-cal-nav"><span class="cl-cal-arrow">\u25C0</span><span class="cl-cal-month">' + months[month] + " " + year + '</span><span class="cl-cal-arrow">\u25B6</span></div>';
+    html += '<div class="cl-cal-nav"><span class="cl-cal-arrow" data-action="calPrev" title="Previous month">\u25C0</span><span class="cl-cal-month">' + months[viewMonth] + " " + viewYear + '</span><span class="cl-cal-arrow" data-action="calNext" title="Next month">\u25B6</span></div>';
     html += '<div class="cl-cal-grid">';
     var dayNames = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
     for (var di = 0; di < 7; di++) html += '<span class="cl-cal-day-name">' + dayNames[di] + "</span>";
-    for (var gap = 0; gap < startOffset; gap++) html += '<span class="cl-cal-day"></span>';
+    for (var gap = 0; gap < startOffset; gap++) html += '<span class="cl-cal-day cl-cal-empty"></span>';
     for (var d = 1; d <= daysInMonth; d++) {
-      var dateStr = year + "-" + String(month + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+      var dateStr = viewYear + "-" + String(viewMonth + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
       var cls = "cl-cal-day";
       if (dateStr === todayStr) cls += " cl-cal-today";
       if (dateStr < todayStr) cls += " cl-cal-past";
@@ -1861,6 +1892,23 @@
       editor.parentNode.insertBefore(subRow, editor.nextSibling);
     }
     attachEditorListeners(editor);
+    setTimeout(function() {
+      var subRows = editor.parentNode ? editor.parentNode.querySelectorAll(".cl-subtask-row") : [];
+      var last = subRows.length ? subRows[subRows.length - 1] : editor;
+      var scroller = editor.closest(".cl-note-content") || editor.closest(".cl-task-list");
+      if (!scroller) return;
+      var margin = 24;
+      var scrollerRect = scroller.getBoundingClientRect();
+      var topRect = editor.getBoundingClientRect();
+      var bottomRect = last.getBoundingClientRect();
+      var overshoot = bottomRect.bottom - (scrollerRect.bottom - margin);
+      var undershoot = scrollerRect.top + margin - topRect.top;
+      if (overshoot > 0) {
+        scroller.scrollTo({ top: scroller.scrollTop + overshoot, behavior: "smooth" });
+      } else if (undershoot > 0) {
+        scroller.scrollTo({ top: scroller.scrollTop - undershoot, behavior: "smooth" });
+      }
+    }, 0);
   }
   function collapseTask() {
     if (!State.expandedTaskId) return;

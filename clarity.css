@@ -868,11 +868,35 @@ body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
 .cl-mini-cal { padding: 8px 12px 12px; }
 .cl-cal-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .cl-cal-month { font-size: 12px; font-weight: 600; }
-.cl-cal-arrow { font-size: 12px; opacity: 0.3; cursor: pointer; padding: 2px 4px; }
-.cl-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; text-align: center; }
-.cl-cal-day-name { font-size: 10px; opacity: 0.25; padding: 2px; }
-.cl-cal-day { font-size: 11px; padding: 4px; cursor: pointer; border-radius: 50%; }
-.cl-cal-day:hover { background: var(--cl-hover); }
+.cl-cal-arrow { font-size: 12px; opacity: 0.55; cursor: pointer; padding: 2px 8px; user-select: none; }
+.cl-cal-arrow:hover { opacity: 1; }
+.cl-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  text-align: center;
+  justify-items: center;
+}
+.cl-cal-day-name {
+  font-size: 10px;
+  opacity: 0.35;
+  width: 26px;
+  height: 22px;
+  line-height: 22px;
+}
+.cl-cal-day {
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  line-height: 26px;
+  padding: 0;
+  display: inline-block;
+  text-align: center;
+}
+.cl-cal-day.cl-cal-empty { cursor: default; }
+.cl-cal-day:hover:not(.cl-cal-empty) { background: var(--cl-hover); }
 .cl-cal-today { background: rgba(234, 179, 8, 0.3); color: var(--cl-yellow); }
 .cl-cal-selected { background: rgba(59, 130, 246, 0.3); color: var(--cl-accent); }
 .cl-cal-past { opacity: 0.15; pointer-events: none; }
