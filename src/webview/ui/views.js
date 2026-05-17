@@ -129,12 +129,38 @@ function renderInboxView() {
 function renderTodayView() {
   var tasks = getFilteredTasks('today');
   var today = State.today;
+
+  // Repeat filter (only meaningful when at least one task in the view repeats).
+  var hasAnyRepeat = false;
+  for (var ri = 0; ri < tasks.length; ri++) {
+    if (tasks[ri].repeat) { hasAnyRepeat = true; break; }
+  }
+  var repeatFilter = State.filters.todayRepeat || 'all';
+  if (hasAnyRepeat && repeatFilter !== 'all') {
+    tasks = tasks.filter(function(t) {
+      return repeatFilter === 'repeating' ? !!t.repeat : !t.repeat;
+    });
+  }
+
+  var repeatExtras = '';
+  if (hasAnyRepeat) {
+    var repeatOpts = [
+      { key: 'all', label: 'All' },
+      { key: 'repeating', label: 'Repeating' },
+      { key: 'non-repeating', label: 'Non-repeating' },
+    ];
+    for (var roi = 0; roi < repeatOpts.length; roi++) {
+      var rActive = (repeatFilter === repeatOpts[roi].key) ? ' cl-filter-active' : '';
+      repeatExtras += '<span class="cl-filter-pill' + rActive + '" data-action="filterTodayRepeat" data-repeat="' + repeatOpts[roi].key + '">' + repeatOpts[roi].label + '</span>';
+    }
+  }
+
   var html = '<div class="cl-view-header">';
   html += '<div class="cl-view-title"><span class="cl-view-icon">' + getViewIcon('today', 24) + '</span><h1>Today</h1>';
   html += '<span class="cl-view-count">' + tasks.length + '</span></div>';
   html += renderGroupingToggle('today');
   html += '</div>';
-  html += renderFilterBar(tasks, 'today');
+  html += renderFilterBar(tasks, 'today', repeatExtras);
   html += renderQuickAdd('today');
   html += '<div class="cl-task-list">';
 

@@ -7,7 +7,7 @@
     currentView: "inbox",
     currentNoteFilename: null,
     expandedTaskId: null,
-    filters: { tag: null, folder: null, mention: null, text: "", noteStatus: "all" },
+    filters: { tag: null, folder: null, mention: null, text: "", noteStatus: "all", todayRepeat: "all" },
     grouping: "note",
     movedFromInbox: [],
     editDraft: null,
@@ -49,7 +49,9 @@
     if (State.currentView === "note") {
       State.viewPrefs[key] = { noteStatus: State.filters.noteStatus, tasksOnly: State.tasksOnly };
     } else {
-      State.viewPrefs[key] = { tag: State.filters.tag, folder: State.filters.folder, grouping: State.grouping };
+      var prefs = { tag: State.filters.tag, folder: State.filters.folder, grouping: State.grouping };
+      if (State.currentView === "today") prefs.todayRepeat = State.filters.todayRepeat;
+      State.viewPrefs[key] = prefs;
     }
   }
   function restoreViewPrefs(view, filename) {
@@ -62,6 +64,7 @@
       State.filters.tag = saved && saved.tag || null;
       State.filters.folder = saved && saved.folder || null;
       State.grouping = saved && saved.grouping || defaultGrouping(view);
+      State.filters.todayRepeat = view === "today" && saved && saved.todayRepeat || "all";
     }
   }
   function defaultGrouping(view) {
@@ -638,26 +641,34 @@
     html += "</div>";
     return html;
   }
-  function renderFilterBar(tasks, view) {
+  function renderFilterBar(tasks, view, extrasHTML) {
     var sourceTasks = view ? getTasksForView(view) : tasks;
     var tags = extractUniqueTags(sourceTasks);
     var folders = view ? extractUniqueFolders(sourceTasks) : [];
-    if (tags.length === 0 && folders.length < 2) return "";
+    var hasTagOrFolder = tags.length > 0 || folders.length >= 2;
+    var hasExtras = !!extrasHTML;
+    if (!hasTagOrFolder && !hasExtras) return "";
     var html = '<div class="cl-filter-bar">';
-    var activeTag = State.filters.tag;
-    var activeFolder = State.filters.folder;
-    var noFilter = !activeTag && !activeFolder;
-    html += '<span class="cl-filter-pill' + (noFilter ? " cl-filter-active" : "") + '" data-action="clearTaskFilters">All</span>';
-    for (var i = 0; i < tags.length; i++) {
-      var active = activeTag === tags[i] ? " cl-filter-active" : "";
-      html += '<span class="cl-filter-pill' + active + '" data-action="filterTag" data-tag="' + esc(tags[i]) + '">' + esc(tags[i]) + "</span>";
-    }
-    if (folders.length >= 2) {
-      if (tags.length > 0) html += '<span class="cl-filter-divider"></span>';
-      for (var fi = 0; fi < folders.length; fi++) {
-        var fActive = activeFolder === folders[fi] ? " cl-filter-active" : "";
-        html += '<span class="cl-filter-pill cl-filter-pill-folder' + fActive + '" data-action="filterFolder" data-folder="' + esc(folders[fi]) + '">' + esc(folders[fi]) + "</span>";
+    if (hasTagOrFolder) {
+      var activeTag = State.filters.tag;
+      var activeFolder = State.filters.folder;
+      var noFilter = !activeTag && !activeFolder;
+      html += '<span class="cl-filter-pill' + (noFilter ? " cl-filter-active" : "") + '" data-action="clearTaskFilters">All</span>';
+      for (var i = 0; i < tags.length; i++) {
+        var active = activeTag === tags[i] ? " cl-filter-active" : "";
+        html += '<span class="cl-filter-pill' + active + '" data-action="filterTag" data-tag="' + esc(tags[i]) + '">' + esc(tags[i]) + "</span>";
       }
+      if (folders.length >= 2) {
+        if (tags.length > 0) html += '<span class="cl-filter-divider"></span>';
+        for (var fi = 0; fi < folders.length; fi++) {
+          var fActive = activeFolder === folders[fi] ? " cl-filter-active" : "";
+          html += '<span class="cl-filter-pill cl-filter-pill-folder' + fActive + '" data-action="filterFolder" data-folder="' + esc(folders[fi]) + '">' + esc(folders[fi]) + "</span>";
+        }
+      }
+    }
+    if (hasExtras) {
+      if (hasTagOrFolder) html += '<span class="cl-filter-divider"></span>';
+      html += extrasHTML;
     }
     html += "</div>";
     return html;
@@ -1100,12 +1111,37 @@
   function renderTodayView() {
     var tasks = getFilteredTasks("today");
     var today = State.today;
+    var hasAnyRepeat = false;
+    for (var ri = 0; ri < tasks.length; ri++) {
+      if (tasks[ri].repeat) {
+        hasAnyRepeat = true;
+        break;
+      }
+    }
+    var repeatFilter = State.filters.todayRepeat || "all";
+    if (hasAnyRepeat && repeatFilter !== "all") {
+      tasks = tasks.filter(function(t2) {
+        return repeatFilter === "repeating" ? !!t2.repeat : !t2.repeat;
+      });
+    }
+    var repeatExtras = "";
+    if (hasAnyRepeat) {
+      var repeatOpts = [
+        { key: "all", label: "All" },
+        { key: "repeating", label: "Repeating" },
+        { key: "non-repeating", label: "Non-repeating" }
+      ];
+      for (var roi = 0; roi < repeatOpts.length; roi++) {
+        var rActive = repeatFilter === repeatOpts[roi].key ? " cl-filter-active" : "";
+        repeatExtras += '<span class="cl-filter-pill' + rActive + '" data-action="filterTodayRepeat" data-repeat="' + repeatOpts[roi].key + '">' + repeatOpts[roi].label + "</span>";
+      }
+    }
     var html = '<div class="cl-view-header">';
     html += '<div class="cl-view-title"><span class="cl-view-icon">' + getViewIcon("today", 24) + "</span><h1>Today</h1>";
     html += '<span class="cl-view-count">' + tasks.length + "</span></div>";
     html += renderGroupingToggle("today");
     html += "</div>";
-    html += renderFilterBar(tasks, "today");
+    html += renderFilterBar(tasks, "today", repeatExtras);
     html += renderQuickAdd("today");
     html += '<div class="cl-task-list">';
     var overdue = [];
@@ -3705,6 +3741,12 @@
           break;
         case "filterNoteStatus":
           State.filters.noteStatus = target.dataset.status || "all";
+          saveCurrentViewPrefs();
+          persistViewPrefs();
+          renderCurrentView();
+          break;
+        case "filterTodayRepeat":
+          State.filters.todayRepeat = target.dataset.repeat || "all";
           saveCurrentViewPrefs();
           persistViewPrefs();
           renderCurrentView();

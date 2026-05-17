@@ -115,26 +115,34 @@ export function renderTaskRow(task, options) {
 // `view`, when provided, makes the filter bar derive its tag/folder pills
 // from the unfiltered task set for that view, so users can switch between
 // active filters without having to clear them first.
-export function renderFilterBar(tasks, view) {
+export function renderFilterBar(tasks, view, extrasHTML) {
   var sourceTasks = view ? getTasksForView(view) : tasks;
   var tags = extractUniqueTags(sourceTasks);
   var folders = view ? extractUniqueFolders(sourceTasks) : [];
-  if (tags.length === 0 && folders.length < 2) return '';
+  var hasTagOrFolder = tags.length > 0 || folders.length >= 2;
+  var hasExtras = !!extrasHTML;
+  if (!hasTagOrFolder && !hasExtras) return '';
   var html = '<div class="cl-filter-bar">';
-  var activeTag = State.filters.tag;
-  var activeFolder = State.filters.folder;
-  var noFilter = !activeTag && !activeFolder;
-  html += '<span class="cl-filter-pill' + (noFilter ? ' cl-filter-active' : '') + '" data-action="clearTaskFilters">All</span>';
-  for (var i = 0; i < tags.length; i++) {
-    var active = (activeTag === tags[i]) ? ' cl-filter-active' : '';
-    html += '<span class="cl-filter-pill' + active + '" data-action="filterTag" data-tag="' + esc(tags[i]) + '">' + esc(tags[i]) + '</span>';
-  }
-  if (folders.length >= 2) {
-    if (tags.length > 0) html += '<span class="cl-filter-divider"></span>';
-    for (var fi = 0; fi < folders.length; fi++) {
-      var fActive = (activeFolder === folders[fi]) ? ' cl-filter-active' : '';
-      html += '<span class="cl-filter-pill cl-filter-pill-folder' + fActive + '" data-action="filterFolder" data-folder="' + esc(folders[fi]) + '">' + esc(folders[fi]) + '</span>';
+  if (hasTagOrFolder) {
+    var activeTag = State.filters.tag;
+    var activeFolder = State.filters.folder;
+    var noFilter = !activeTag && !activeFolder;
+    html += '<span class="cl-filter-pill' + (noFilter ? ' cl-filter-active' : '') + '" data-action="clearTaskFilters">All</span>';
+    for (var i = 0; i < tags.length; i++) {
+      var active = (activeTag === tags[i]) ? ' cl-filter-active' : '';
+      html += '<span class="cl-filter-pill' + active + '" data-action="filterTag" data-tag="' + esc(tags[i]) + '">' + esc(tags[i]) + '</span>';
     }
+    if (folders.length >= 2) {
+      if (tags.length > 0) html += '<span class="cl-filter-divider"></span>';
+      for (var fi = 0; fi < folders.length; fi++) {
+        var fActive = (activeFolder === folders[fi]) ? ' cl-filter-active' : '';
+        html += '<span class="cl-filter-pill cl-filter-pill-folder' + fActive + '" data-action="filterFolder" data-folder="' + esc(folders[fi]) + '">' + esc(folders[fi]) + '</span>';
+      }
+    }
+  }
+  if (hasExtras) {
+    if (hasTagOrFolder) html += '<span class="cl-filter-divider"></span>';
+    html += extrasHTML;
   }
   html += '</div>';
   return html;

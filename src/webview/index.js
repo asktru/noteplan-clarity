@@ -151,6 +151,11 @@ export function attachMainEventListeners() {
         saveCurrentViewPrefs(); persistViewPrefs();
         renderCurrentView();
         break;
+      case 'filterTodayRepeat':
+        State.filters.todayRepeat = target.dataset.repeat || 'all';
+        saveCurrentViewPrefs(); persistViewPrefs();
+        renderCurrentView();
+        break;
       case 'toggleTasksOnly':
         State.tasksOnly = !State.tasksOnly;
         saveCurrentViewPrefs(); persistViewPrefs();

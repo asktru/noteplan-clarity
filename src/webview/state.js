@@ -12,7 +12,7 @@ export var State = {
   currentView: 'inbox',
   currentNoteFilename: null,
   expandedTaskId: null,
-  filters: { tag: null, folder: null, mention: null, text: '', noteStatus: 'all' },
+  filters: { tag: null, folder: null, mention: null, text: '', noteStatus: 'all', todayRepeat: 'all' },
   grouping: 'note',
   movedFromInbox: [],
   editDraft: null,
@@ -58,7 +58,9 @@ export function saveCurrentViewPrefs() {
   if (State.currentView === 'note') {
     State.viewPrefs[key] = { noteStatus: State.filters.noteStatus, tasksOnly: State.tasksOnly };
   } else {
-    State.viewPrefs[key] = { tag: State.filters.tag, folder: State.filters.folder, grouping: State.grouping };
+    var prefs = { tag: State.filters.tag, folder: State.filters.folder, grouping: State.grouping };
+    if (State.currentView === 'today') prefs.todayRepeat = State.filters.todayRepeat;
+    State.viewPrefs[key] = prefs;
   }
 }
 
@@ -72,6 +74,7 @@ export function restoreViewPrefs(view, filename) {
     State.filters.tag = (saved && saved.tag) || null;
     State.filters.folder = (saved && saved.folder) || null;
     State.grouping = (saved && saved.grouping) || defaultGrouping(view);
+    State.filters.todayRepeat = (view === 'today' && saved && saved.todayRepeat) || 'all';
   }
 }
 
