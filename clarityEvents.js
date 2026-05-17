@@ -754,6 +754,211 @@
     return '<div class="cl-quick-add" data-view="' + view + '"><span class="cl-quick-add-icon">+</span><input class="cl-quick-add-input" placeholder="New Task" data-action="quickAdd"/></div>';
   }
 
+  // src/webview/lib/clarity-flags.js
+  function parseClarityFlags(frontmatter) {
+    var flags = { toc: false, indent: false, focus: false, progress: false };
+    if (!frontmatter) return flags;
+    var raw = frontmatter.clarity;
+    if (typeof raw !== "string" || !raw) return flags;
+    var tokens = raw.split(",");
+    for (var i = 0; i < tokens.length; i++) {
+      var t = tokens[i].trim().toLowerCase();
+      if (t === "toc") flags.toc = true;
+      else if (t === "indent") flags.indent = true;
+      else if (t === "focus") flags.focus = true;
+      else if (t === "progress") flags.progress = true;
+    }
+    return flags;
+  }
+
+  // src/webview/lib/heading-progress.js
+  function computeHeadingTaskStats(paragraphs) {
+    var stats = /* @__PURE__ */ new Map();
+    var stack = [];
+    for (var i = 0; i < (paragraphs || []).length; i++) {
+      var p = paragraphs[i];
+      if (p.type === "title") {
+        var hText = (p.content || "").trim().replace(/\s*…\s*$/, "").replace(/\s*👀\s*$/, "");
+        if (/^[-*_]{3,}$/.test(hText)) continue;
+        var level = p.headingLevel || 1;
+        while (stack.length > 0 && stack[stack.length - 1].level >= level) stack.pop();
+        stats.set(p.lineIndex, { total: 0, done: 0 });
+        stack.push({ level, lineIndex: p.lineIndex });
+        continue;
+      }
+      var isOpen = p.type === "open" || p.type === "checklist";
+      var isDone = p.type === "done" || p.type === "checklistDone";
+      if (!isOpen && !isDone) continue;
+      for (var s = 0; s < stack.length; s++) {
+        var entry = stats.get(stack[s].lineIndex);
+        if (!entry) continue;
+        entry.total++;
+        if (isDone) entry.done++;
+      }
+    }
+    return stats;
+  }
+  function buildHeadingProgressSVG(done, total) {
+    if (!total) return "";
+    var pct = done / total;
+    var size = 18, cx = 9, cy = 9, r = 7, sw = 2.25;
+    var html = '<svg class="cl-h-progress" viewBox="0 0 ' + size + " " + size + '" width="' + size + '" height="' + size + '" aria-hidden="true">';
+    html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="currentColor" stroke-width="' + sw + '" opacity="0.4"/>';
+    if (pct >= 1) {
+      html += '<circle cx="' + cx + '" cy="' + cy + '" r="' + (r + sw / 2) + '" fill="currentColor"/>';
+      html += '<path d="M 5.5 9.2 L 8 11.6 L 12.7 6.6" fill="none" stroke="var(--cl-bg)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
+    } else if (pct > 0) {
+      var angle = 2 * Math.PI * pct;
+      var endX = cx + r * Math.sin(angle);
+      var endY = cy - r * Math.cos(angle);
+      var largeArc = pct > 0.5 ? 1 : 0;
+      var d = "M " + cx + " " + cy + " L " + cx + " " + (cy - r) + " A " + r + " " + r + " 0 " + largeArc + " 1 " + endX.toFixed(3) + " " + endY.toFixed(3) + " Z";
+      html += '<path d="' + d + '" fill="currentColor"/>';
+    }
+    html += "</svg>";
+    return html;
+  }
+
+  // src/webview/ui/toc.js
+  function collectTocHeadings(paragraphs) {
+    var out = [];
+    var firstH1Skipped = false;
+    for (var i = 0; i < (paragraphs || []).length; i++) {
+      var p = paragraphs[i];
+      if (p.type !== "title") continue;
+      var level = p.headingLevel || 1;
+      if (!firstH1Skipped && level === 1) {
+        firstH1Skipped = true;
+        continue;
+      }
+      var text = (p.content || "").replace(/\s*…\s*$/, "").replace(/\s*👀\s*$/, "");
+      if (/^[-*_]{3,}$/.test(text.trim())) continue;
+      out.push({ lineIndex: p.lineIndex, level, text });
+    }
+    return out;
+  }
+  function renderToc(paragraphs) {
+    var el = document.getElementById("cl-right-sidebar");
+    if (!el) return;
+    var headings = collectTocHeadings(paragraphs);
+    if (headings.length === 0) {
+      el.hidden = true;
+      el.innerHTML = "";
+      return;
+    }
+    var html = '<div class="cl-toc-title">Contents</div><div class="cl-toc-list">';
+    for (var i = 0; i < headings.length; i++) {
+      var h = headings[i];
+      html += '<button class="cl-toc-item cl-toc-level-' + h.level + '" data-action="scrollToHeading" data-line-index="' + h.lineIndex + '">' + renderInlineMarkdown(h.text) + "</button>";
+    }
+    html += "</div>";
+    el.innerHTML = html;
+    el.hidden = false;
+  }
+  function hideToc() {
+    var el = document.getElementById("cl-right-sidebar");
+    if (!el) return;
+    el.hidden = true;
+    el.innerHTML = "";
+  }
+  function scrollToHeading(lineIndex) {
+    var main = document.getElementById("cl-main");
+    if (!main) return;
+    var heading = main.querySelector('.cl-note-heading[data-line-index="' + lineIndex + '"]');
+    if (!heading) return;
+    main.scrollTo({ top: heading.offsetTop - 20, behavior: "smooth" });
+  }
+  var _spyAttached = false;
+  function attachTocScrollSpy() {
+    if (_spyAttached) return;
+    var main = document.getElementById("cl-main");
+    if (!main) return;
+    _spyAttached = true;
+    var debounce = null;
+    main.addEventListener("scroll", function() {
+      if (debounce) return;
+      debounce = setTimeout(function() {
+        debounce = null;
+        updateActiveTocItem();
+      }, 50);
+    });
+  }
+  function updateActiveTocItem() {
+    var sidebar = document.getElementById("cl-right-sidebar");
+    if (!sidebar || sidebar.hidden) return;
+    var main = document.getElementById("cl-main");
+    if (!main) return;
+    var headings = main.querySelectorAll(".cl-note-heading");
+    var scrollTop = main.scrollTop;
+    var activeLineIndex = null;
+    for (var i = 0; i < headings.length; i++) {
+      if (headings[i].offsetTop <= scrollTop + 60) {
+        activeLineIndex = headings[i].dataset.lineIndex;
+      } else {
+        break;
+      }
+    }
+    var items = sidebar.querySelectorAll(".cl-toc-item");
+    for (var j = 0; j < items.length; j++) {
+      if (items[j].dataset.lineIndex === activeLineIndex) items[j].classList.add("active");
+      else items[j].classList.remove("active");
+    }
+  }
+  var _clickAttached = false;
+  function attachTocClickHandler() {
+    if (_clickAttached) return;
+    var el = document.getElementById("cl-right-sidebar");
+    if (!el) return;
+    _clickAttached = true;
+    el.addEventListener("click", function(e) {
+      var btn = e.target.closest('[data-action="scrollToHeading"]');
+      if (!btn) return;
+      var idx = parseInt(btn.dataset.lineIndex, 10);
+      if (isNaN(idx)) return;
+      scrollToHeading(idx);
+    });
+  }
+
+  // src/webview/ui/focus-mode.js
+  function applyFocusMode() {
+    var main = document.getElementById("cl-main");
+    if (!main) return;
+    var focused = main.querySelectorAll('.cl-note-heading[data-focused="true"]');
+    var prev = main.querySelectorAll(".cl-dimmed");
+    for (var p = 0; p < prev.length; p++) prev[p].classList.remove("cl-dimmed");
+    if (focused.length === 0) return;
+    var allHeadings = Array.prototype.slice.call(main.querySelectorAll(".cl-note-heading"));
+    function levelOf(el) {
+      var cls = el.className.match(/cl-note-h(\d+)/);
+      return cls ? parseInt(cls[1], 10) : 1;
+    }
+    var spared = /* @__PURE__ */ new Set();
+    for (var f = 0; f < focused.length; f++) {
+      var fh = focused[f];
+      spared.add(fh);
+      var sib = fh.nextElementSibling;
+      if (sib && sib.classList.contains("cl-section-body")) spared.add(sib);
+      var fhLevel = levelOf(fh);
+      var fhIdx = allHeadings.indexOf(fh);
+      for (var k = fhIdx - 1; k >= 0 && fhLevel > 1; k--) {
+        var anc = allHeadings[k];
+        var ancLevel = levelOf(anc);
+        if (ancLevel < fhLevel) {
+          spared.add(anc);
+          var ancSib = anc.nextElementSibling;
+          if (ancSib && ancSib.classList.contains("cl-section-body")) spared.add(ancSib);
+          fhLevel = ancLevel;
+        }
+      }
+    }
+    var contentRoot = main.querySelector(".cl-note-content");
+    if (!contentRoot) return;
+    var direct = contentRoot.children;
+    for (var d = 0; d < direct.length; d++) {
+      if (!spared.has(direct[d])) direct[d].classList.add("cl-dimmed");
+    }
+  }
+
   // src/webview/ui/views.js
   function renderCurrentView() {
     var el = document.getElementById("cl-main");
@@ -783,6 +988,19 @@
     }
     el.innerHTML = html;
     attachMainEventListeners();
+    if (State.currentView === "note") {
+      var __fm = State.noteContent && State.noteContent.frontmatter || {};
+      var __flags = parseClarityFlags(__fm);
+      if (__flags.toc) {
+        renderToc(State.noteContent && State.noteContent.paragraphs || []);
+        attachTocScrollSpy();
+      } else {
+        hideToc();
+      }
+      if (__flags.focus) applyFocusMode();
+    } else {
+      hideToc();
+    }
   }
   var RANGE_OPTIONS = [7, 14, 30, 60, 90, 180];
   function renderRangeDropdown(action, currentDays, label) {
@@ -994,6 +1212,8 @@
     if (!nc) return '<div class="cl-view-header"><div class="cl-view-title"><h1>Loading...</h1></div></div>';
     var paras = nc.paragraphs || [];
     var fm = nc.frontmatter || {};
+    var flags = parseClarityFlags(fm);
+    var headingStats = flags.progress ? computeHeadingTaskStats(paras) : null;
     var taskCount = 0;
     var doneCount = 0;
     for (var ci = 0; ci < paras.length; ci++) {
@@ -1037,7 +1257,7 @@
     html += "</div>";
     html += "</div>";
     html += renderQuickAdd("note");
-    html += '<div class="cl-task-list cl-note-content">';
+    html += '<div class="cl-task-list cl-note-content' + (flags.indent ? " cl-note-indented" : "") + '">';
     var skipUntilIndent = -1;
     var sectionStack = [];
     var firstH1Skipped = false;
@@ -1103,11 +1323,20 @@
         }
         var hRawContent = p.content || "";
         var hCollapsed = /…\s*$/.test(hRawContent);
-        var hDisplay = hRawContent.replace(/\s*…\s*$/, "");
+        var hFocused = flags.focus && /👀/.test(hRawContent);
+        var hDisplay = hRawContent.replace(/\s*…\s*$/, "").replace(/\s*👀\s*$/, "");
         var hClass = State.tasksOnly ? "cl-section-heading" : "cl-note-heading cl-note-h" + hLevel;
         var chevronDir = hCollapsed ? "right" : "down";
-        html += '<div class="' + hClass + '" data-line-index="' + p.lineIndex + '">';
+        var focusedAttr = hFocused ? ' data-focused="true"' : "";
+        html += '<div class="' + hClass + '" data-line-index="' + p.lineIndex + '"' + focusedAttr + ">";
+        if (flags.progress && headingStats) {
+          var st = headingStats.get(p.lineIndex);
+          if (st) html += buildHeadingProgressSVG(st.done, st.total);
+        }
         html += '<span class="cl-heading-text">' + renderInlineMarkdown(hDisplay) + "</span>";
+        if (flags.focus) {
+          html += '<span class="cl-heading-focus" data-action="toggleHeadingFocus" data-line-index="' + p.lineIndex + '" title="Focus on this section"><i class="' + (hFocused ? "fa-solid" : "fa-regular") + ' fa-eye"></i></span>';
+        }
         html += '<span class="cl-heading-toggle' + (hCollapsed ? " cl-always-visible" : "") + '" data-action="toggleHeadingCollapse" data-line-index="' + p.lineIndex + '" title="Toggle collapse">';
         html += '<svg width="10" height="10" viewBox="0 0 10 10" class="cl-heading-chevron cl-chevron-' + chevronDir + '"><polyline points="2,3 5,7 8,3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
         html += "</span>";
@@ -2902,29 +3131,6 @@
         e.preventDefault();
         dragCancel();
       }
-    });
-  }
-
-  // src/webview/ui/toc.js
-  function scrollToHeading(lineIndex) {
-    var main = document.getElementById("cl-main");
-    if (!main) return;
-    var heading = main.querySelector('.cl-note-heading[data-line-index="' + lineIndex + '"]');
-    if (!heading) return;
-    main.scrollTo({ top: heading.offsetTop - 20, behavior: "smooth" });
-  }
-  var _clickAttached = false;
-  function attachTocClickHandler() {
-    if (_clickAttached) return;
-    var el = document.getElementById("cl-right-sidebar");
-    if (!el) return;
-    _clickAttached = true;
-    el.addEventListener("click", function(e) {
-      var btn = e.target.closest('[data-action="scrollToHeading"]');
-      if (!btn) return;
-      var idx = parseInt(btn.dataset.lineIndex, 10);
-      if (isNaN(idx)) return;
-      scrollToHeading(idx);
     });
   }
 

@@ -17,6 +17,10 @@ import {
   renderQuickAdd,
 } from './task-list.js';
 import { attachMainEventListeners } from '../index.js';
+import { parseClarityFlags } from '../lib/clarity-flags.js';
+import { computeHeadingTaskStats, buildHeadingProgressSVG } from '../lib/heading-progress.js';
+import { renderToc, hideToc, attachTocScrollSpy } from './toc.js';
+import { applyFocusMode } from './focus-mode.js';
 
 export function renderCurrentView() {
   var el = document.getElementById('cl-main');
@@ -33,6 +37,22 @@ export function renderCurrentView() {
   }
   el.innerHTML = html;
   attachMainEventListeners();
+
+  // Post-mount: TOC + focus dimming, gated by clarity flags. Non-note views
+  // always hide the right sidebar.
+  if (State.currentView === 'note') {
+    var __fm = (State.noteContent && State.noteContent.frontmatter) || {};
+    var __flags = parseClarityFlags(__fm);
+    if (__flags.toc) {
+      renderToc((State.noteContent && State.noteContent.paragraphs) || []);
+      attachTocScrollSpy();
+    } else {
+      hideToc();
+    }
+    if (__flags.focus) applyFocusMode();
+  } else {
+    hideToc();
+  }
 }
 
 // "Range: N days" dropdown shown in the Inbox and Upcoming headers. Lets the
@@ -274,6 +294,8 @@ function renderNoteView() {
 
   var paras = nc.paragraphs || [];
   var fm = nc.frontmatter || {};
+  var flags = parseClarityFlags(fm);
+  var headingStats = flags.progress ? computeHeadingTaskStats(paras) : null;
 
   var taskCount = 0;
   var doneCount = 0;
@@ -321,7 +343,7 @@ function renderNoteView() {
 
   html += renderQuickAdd('note');
 
-  html += '<div class="cl-task-list cl-note-content">';
+  html += '<div class="cl-task-list cl-note-content' + (flags.indent ? ' cl-note-indented' : '') + '">';
   var skipUntilIndent = -1; // when > 0, skip children of a task at this indent level
   var sectionStack = []; // stack of { level, collapsed } for open <div class="cl-section-body">
   var firstH1Skipped = false; // the top-level title duplicates the header, so skip it
@@ -384,19 +406,29 @@ function renderNoteView() {
 
     if (isHeading) {
       var hLevel = p.headingLevel || 1;
-      // Close open section-bodies at same or deeper heading level
       while (sectionStack.length > 0 && sectionStack[sectionStack.length - 1].level >= hLevel) {
         html += '</div>';
         sectionStack.pop();
       }
-      // NotePlan convention: trailing "…" (U+2026) marks a collapsed heading
+      // Strip NotePlan's collapse marker (…) and Donote's focus marker (👀).
       var hRawContent = p.content || '';
       var hCollapsed = /…\s*$/.test(hRawContent);
-      var hDisplay = hRawContent.replace(/\s*…\s*$/, '');
+      var hFocused = flags.focus && /👀/.test(hRawContent);
+      var hDisplay = hRawContent.replace(/\s*…\s*$/, '').replace(/\s*👀\s*$/, '');
       var hClass = State.tasksOnly ? 'cl-section-heading' : 'cl-note-heading cl-note-h' + hLevel;
       var chevronDir = hCollapsed ? 'right' : 'down';
-      html += '<div class="' + hClass + '" data-line-index="' + p.lineIndex + '">';
+      var focusedAttr = hFocused ? ' data-focused="true"' : '';
+      html += '<div class="' + hClass + '" data-line-index="' + p.lineIndex + '"' + focusedAttr + '>';
+      if (flags.progress && headingStats) {
+        var st = headingStats.get(p.lineIndex);
+        if (st) html += buildHeadingProgressSVG(st.done, st.total);
+      }
       html += '<span class="cl-heading-text">' + renderInlineMarkdown(hDisplay) + '</span>';
+      if (flags.focus) {
+        html += '<span class="cl-heading-focus" data-action="toggleHeadingFocus" data-line-index="' +
+          p.lineIndex + '" title="Focus on this section">' +
+          '<i class="' + (hFocused ? 'fa-solid' : 'fa-regular') + ' fa-eye"></i></span>';
+      }
       html += '<span class="cl-heading-toggle' + (hCollapsed ? ' cl-always-visible' : '') + '" data-action="toggleHeadingCollapse" data-line-index="' + p.lineIndex + '" title="Toggle collapse">';
       html += '<svg width="10" height="10" viewBox="0 0 10 10" class="cl-heading-chevron cl-chevron-' + chevronDir + '"><polyline points="2,3 5,7 8,3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
       html += '</span>';
