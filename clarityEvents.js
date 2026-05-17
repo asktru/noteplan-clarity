@@ -770,6 +770,15 @@
     }
     return flags;
   }
+  function serializeClarityFlags(flags) {
+    if (!flags) return null;
+    var out = [];
+    if (flags.toc) out.push("toc");
+    if (flags.indent) out.push("indent");
+    if (flags.focus) out.push("focus");
+    if (flags.progress) out.push("progress");
+    return out.length ? out.join(", ") : null;
+  }
 
   // src/webview/lib/heading-progress.js
   function computeHeadingTaskStats(paragraphs) {
@@ -2313,9 +2322,10 @@
     var dueVal = fm.due || "";
     var reviewedVal = fm.reviewed || "";
     var reviewVal = fm.review || "";
+    var clarityFlags = parseClarityFlags(fm);
     var overlay = document.createElement("div");
     overlay.className = "cl-meta-overlay";
-    overlay.innerHTML = '<div class="cl-meta-modal"><div class="cl-meta-modal-title">Project metadata</div><div class="cl-meta-row"><label class="cl-meta-label">Type</label><select class="cl-meta-input" data-field="type"><option value=""' + (typeVal === "" ? " selected" : "") + '>\u2014</option><option value="project"' + (typeVal === "project" ? " selected" : "") + '>Project</option><option value="area"' + (typeVal === "area" ? " selected" : "") + '>Area</option></select></div><div class="cl-meta-row"><label class="cl-meta-label">Status</label><select class="cl-meta-input" data-field="status"><option value=""' + (statusVal === "" ? " selected" : "") + '>Active</option><option value="paused"' + (statusVal === "paused" ? " selected" : "") + '>Paused</option><option value="someday"' + (statusVal === "someday" ? " selected" : "") + ">Someday</option>" + (typeVal === "project" ? '<option value="completed"' + (statusVal === "completed" ? " selected" : "") + '>Completed</option><option value="canceled"' + (statusVal === "canceled" ? " selected" : "") + ">Canceled</option>" : "") + '</select></div><div class="cl-meta-row"><label class="cl-meta-label">Deadline</label><div class="cl-meta-inline" data-field="due-row">' + (dueVal ? '<input class="cl-meta-input" type="date" data-field="due" value="' + esc(dueVal) + '"><button class="cl-meta-link" type="button" data-action="metaClearDue">Clear</button>' : '<span class="cl-meta-readonly" data-field="due-display">\u2014</span><button class="cl-meta-link" type="button" data-action="metaSetDue">Set deadline</button>') + '</div></div><div class="cl-meta-row"><label class="cl-meta-label">Last Review</label><div class="cl-meta-inline"><span class="cl-meta-readonly" data-field="reviewed-display">' + esc(reviewedVal || "\u2014") + '</span><button class="cl-meta-link" type="button" data-action="metaMarkReviewed">Mark as reviewed</button></div></div><div class="cl-meta-row"><label class="cl-meta-label">Review Schedule</label><input class="cl-meta-input" type="text" data-field="review" placeholder="e.g. 1w, 2w, 1m" value="' + esc(reviewVal) + '"></div><div class="cl-meta-actions"><button class="cl-meta-cancel" type="button">Cancel</button><button class="cl-meta-save" type="button">Save</button></div></div>';
+    overlay.innerHTML = '<div class="cl-meta-modal"><div class="cl-meta-modal-title">Project metadata</div><div class="cl-meta-row"><label class="cl-meta-label">Type</label><select class="cl-meta-input" data-field="type"><option value=""' + (typeVal === "" ? " selected" : "") + '>\u2014</option><option value="project"' + (typeVal === "project" ? " selected" : "") + '>Project</option><option value="area"' + (typeVal === "area" ? " selected" : "") + '>Area</option></select></div><div class="cl-meta-row"><label class="cl-meta-label">Status</label><select class="cl-meta-input" data-field="status"><option value=""' + (statusVal === "" ? " selected" : "") + '>Active</option><option value="paused"' + (statusVal === "paused" ? " selected" : "") + '>Paused</option><option value="someday"' + (statusVal === "someday" ? " selected" : "") + ">Someday</option>" + (typeVal === "project" ? '<option value="completed"' + (statusVal === "completed" ? " selected" : "") + '>Completed</option><option value="canceled"' + (statusVal === "canceled" ? " selected" : "") + ">Canceled</option>" : "") + '</select></div><div class="cl-meta-row"><label class="cl-meta-label">Deadline</label><div class="cl-meta-inline" data-field="due-row">' + (dueVal ? '<input class="cl-meta-input" type="date" data-field="due" value="' + esc(dueVal) + '"><button class="cl-meta-link" type="button" data-action="metaClearDue">Clear</button>' : '<span class="cl-meta-readonly" data-field="due-display">\u2014</span><button class="cl-meta-link" type="button" data-action="metaSetDue">Set deadline</button>') + '</div></div><div class="cl-meta-row"><label class="cl-meta-label">Last Review</label><div class="cl-meta-inline"><span class="cl-meta-readonly" data-field="reviewed-display">' + esc(reviewedVal || "\u2014") + '</span><button class="cl-meta-link" type="button" data-action="metaMarkReviewed">Mark as reviewed</button></div></div><div class="cl-meta-row"><label class="cl-meta-label">Review Schedule</label><input class="cl-meta-input" type="text" data-field="review" placeholder="e.g. 1w, 2w, 1m" value="' + esc(reviewVal) + '"></div><div class="cl-meta-row"><label class="cl-meta-label">Clarity view</label><div class="cl-meta-chips" data-field="clarity-chips"><button type="button" class="cl-meta-chip' + (clarityFlags.toc ? " cl-meta-chip-active" : "") + '" data-flag="toc">TOC</button><button type="button" class="cl-meta-chip' + (clarityFlags.indent ? " cl-meta-chip-active" : "") + '" data-flag="indent">Indent</button><button type="button" class="cl-meta-chip' + (clarityFlags.focus ? " cl-meta-chip-active" : "") + '" data-flag="focus">Focus</button><button type="button" class="cl-meta-chip' + (clarityFlags.progress ? " cl-meta-chip-active" : "") + '" data-flag="progress">Progress</button></div></div><div class="cl-meta-actions"><button class="cl-meta-cancel" type="button">Cancel</button><button class="cl-meta-save" type="button">Save</button></div></div>';
     document.body.appendChild(overlay);
     var draft = { type: typeVal, status: statusVal, due: dueVal, reviewed: reviewedVal, review: reviewVal };
     function close() {
@@ -2333,18 +2343,31 @@
     }
     function save() {
       readInputs();
+      var chipFlags = { toc: false, indent: false, focus: false, progress: false };
+      var chips = overlay.querySelectorAll(".cl-meta-chip");
+      for (var ci = 0; ci < chips.length; ci++) {
+        if (chips[ci].classList.contains("cl-meta-chip-active")) {
+          chipFlags[chips[ci].dataset.flag] = true;
+        }
+      }
       var updates = {
         type: draft.type || null,
         status: draft.status || null,
         due: draft.due || null,
         reviewed: draft.reviewed || null,
-        review: draft.review || null
+        review: draft.review || null,
+        clarity: serializeClarityFlags(chipFlags)
       };
       sendMessageToPlugin("updateNoteFrontmatter", JSON.stringify({ filename: nc.filename, updates }));
       close();
     }
     overlay.addEventListener("click", function(e) {
       if (e.target === overlay) close();
+      var chip = e.target.closest(".cl-meta-chip");
+      if (chip && overlay.contains(chip)) {
+        chip.classList.toggle("cl-meta-chip-active");
+        return;
+      }
       var target = e.target.closest("[data-action]");
       if (!target) return;
       var action = target.dataset.action;

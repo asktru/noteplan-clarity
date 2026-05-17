@@ -10,6 +10,7 @@ import { State } from '../state.js';
 import { esc } from '../lib/helpers.js';
 import { renderCurrentView } from './views.js';
 import { collapseTask } from './task-editor.js';
+import { parseClarityFlags, serializeClarityFlags } from '../lib/clarity-flags.js';
 
 // ─── Confirmation Modal ─────────────────────────────────────
 export function openConfirmModal(opts) {
@@ -231,6 +232,7 @@ export function openNoteMetaModal() {
   var dueVal = fm.due || '';
   var reviewedVal = fm.reviewed || '';
   var reviewVal = fm.review || '';
+  var clarityFlags = parseClarityFlags(fm);
 
   var overlay = document.createElement('div');
   overlay.className = 'cl-meta-overlay';
@@ -278,6 +280,15 @@ export function openNoteMetaModal() {
         '<label class="cl-meta-label">Review Schedule</label>' +
         '<input class="cl-meta-input" type="text" data-field="review" placeholder="e.g. 1w, 2w, 1m" value="' + esc(reviewVal) + '">' +
       '</div>' +
+      '<div class="cl-meta-row">' +
+        '<label class="cl-meta-label">Clarity view</label>' +
+        '<div class="cl-meta-chips" data-field="clarity-chips">' +
+          '<button type="button" class="cl-meta-chip' + (clarityFlags.toc ? ' cl-meta-chip-active' : '') + '" data-flag="toc">TOC</button>' +
+          '<button type="button" class="cl-meta-chip' + (clarityFlags.indent ? ' cl-meta-chip-active' : '') + '" data-flag="indent">Indent</button>' +
+          '<button type="button" class="cl-meta-chip' + (clarityFlags.focus ? ' cl-meta-chip-active' : '') + '" data-flag="focus">Focus</button>' +
+          '<button type="button" class="cl-meta-chip' + (clarityFlags.progress ? ' cl-meta-chip-active' : '') + '" data-flag="progress">Progress</button>' +
+        '</div>' +
+      '</div>' +
       '<div class="cl-meta-actions">' +
         '<button class="cl-meta-cancel" type="button">Cancel</button>' +
         '<button class="cl-meta-save" type="button">Save</button>' +
@@ -301,12 +312,20 @@ export function openNoteMetaModal() {
   }
   function save() {
     readInputs();
+    var chipFlags = { toc: false, indent: false, focus: false, progress: false };
+    var chips = overlay.querySelectorAll('.cl-meta-chip');
+    for (var ci = 0; ci < chips.length; ci++) {
+      if (chips[ci].classList.contains('cl-meta-chip-active')) {
+        chipFlags[chips[ci].dataset.flag] = true;
+      }
+    }
     var updates = {
       type: draft.type || null,
       status: draft.status || null,
       due: draft.due || null,
       reviewed: draft.reviewed || null,
       review: draft.review || null,
+      clarity: serializeClarityFlags(chipFlags),
     };
     sendMessageToPlugin('updateNoteFrontmatter', JSON.stringify({ filename: nc.filename, updates: updates }));
     close();
@@ -314,6 +333,11 @@ export function openNoteMetaModal() {
 
   overlay.addEventListener('click', function(e) {
     if (e.target === overlay) close();
+    var chip = e.target.closest('.cl-meta-chip');
+    if (chip && overlay.contains(chip)) {
+      chip.classList.toggle('cl-meta-chip-active');
+      return;
+    }
     var target = e.target.closest('[data-action]');
     if (!target) return;
     var action = target.dataset.action;
