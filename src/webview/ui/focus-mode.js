@@ -4,49 +4,66 @@
 // so it survives reload and is shared with the Donote plugin.
 
 // Recompute dimming based on which headings have data-focused="true".
-// Builds the "spared set" = focused headings + their following section-body +
-// all ancestor headings + their section-bodies. Everything else inside
-// .cl-note-content gets `.cl-dimmed`.
+//
+// The DOM nests sections: each heading is followed by a `.cl-section-body` that
+// contains its descendants (sub-headings + their bodies, paragraphs, tasks).
+// To focus correctly on a nested heading we must dim *inside* each ancestor's
+// section-body — sparing only the chain leading to the focused descendant —
+// rather than sparing the whole ancestor section.
+//
+// Walk strategy per container:
+//   - heading is the focused one              → leave it + skip-and-keep its body subtree
+//   - heading is on the chain to a focused descendant → leave it visible, recurse into its body
+//   - everything else                         → dim it
 export function applyFocusMode() {
   var main = document.getElementById('cl-main');
   if (!main) return;
-  var focused = main.querySelectorAll('.cl-note-heading[data-focused="true"]');
-  var prev = main.querySelectorAll('.cl-dimmed');
-  for (var p = 0; p < prev.length; p++) prev[p].classList.remove('cl-dimmed');
-  if (focused.length === 0) return;
+  var contentRoot = main.querySelector('.cl-note-content');
+  if (!contentRoot) return;
 
-  var allHeadings = Array.prototype.slice.call(main.querySelectorAll('.cl-note-heading'));
-  function levelOf(el) {
-    var cls = el.className.match(/cl-note-h(\d+)/);
-    return cls ? parseInt(cls[1], 10) : 1;
+  var prev = contentRoot.querySelectorAll('.cl-dimmed');
+  for (var p = 0; p < prev.length; p++) prev[p].classList.remove('cl-dimmed');
+
+  var focusedNodes = contentRoot.querySelectorAll('.cl-note-heading[data-focused="true"]');
+  if (focusedNodes.length === 0) return;
+  var focusedSet = new Set();
+  for (var fi = 0; fi < focusedNodes.length; fi++) focusedSet.add(focusedNodes[fi]);
+
+  function containsFocused(el) {
+    if (focusedSet.has(el)) return true;
+    return !!el.querySelector('.cl-note-heading[data-focused="true"]');
   }
 
-  var spared = new Set();
-  for (var f = 0; f < focused.length; f++) {
-    var fh = focused[f];
-    spared.add(fh);
-    var sib = fh.nextElementSibling;
-    if (sib && sib.classList.contains('cl-section-body')) spared.add(sib);
-    var fhLevel = levelOf(fh);
-    var fhIdx = allHeadings.indexOf(fh);
-    for (var k = fhIdx - 1; k >= 0 && fhLevel > 1; k--) {
-      var anc = allHeadings[k];
-      var ancLevel = levelOf(anc);
-      if (ancLevel < fhLevel) {
-        spared.add(anc);
-        var ancSib = anc.nextElementSibling;
-        if (ancSib && ancSib.classList.contains('cl-section-body')) spared.add(ancSib);
-        fhLevel = ancLevel;
+  function processContainer(container) {
+    var children = container.children;
+    for (var i = 0; i < children.length; i++) {
+      var c = children[i];
+      var next = children[i + 1];
+      var nextIsBody = next && next.classList && next.classList.contains('cl-section-body');
+      if (c.classList && c.classList.contains('cl-note-heading')) {
+        if (focusedSet.has(c)) {
+          // Focused heading: spare it and its whole subtree.
+          if (nextIsBody) i++;
+        } else if (nextIsBody && containsFocused(next)) {
+          // Chain heading: visible, but recurse into the body to dim siblings.
+          processContainer(next);
+          i++;
+        } else {
+          c.classList.add('cl-dimmed');
+          if (nextIsBody) { next.classList.add('cl-dimmed'); i++; }
+        }
+      } else if (c.classList && c.classList.contains('cl-section-body')) {
+        // Orphan body (no preceding heading in this container). Treat as
+        // chain-or-dim based on whether it contains a focused descendant.
+        if (containsFocused(c)) processContainer(c);
+        else c.classList.add('cl-dimmed');
+      } else {
+        c.classList.add('cl-dimmed');
       }
     }
   }
 
-  var contentRoot = main.querySelector('.cl-note-content');
-  if (!contentRoot) return;
-  var direct = contentRoot.children;
-  for (var d = 0; d < direct.length; d++) {
-    if (!spared.has(direct[d])) direct[d].classList.add('cl-dimmed');
-  }
+  processContainer(contentRoot);
 }
 
 // Click-handler entry point. Optimistically flips data-focused + the eye icon
