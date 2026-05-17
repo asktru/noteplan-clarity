@@ -2,3 +2,4 @@
 _MCP-console.log
 node_modules/
 clarityEvents.js.map
+.DS_Store

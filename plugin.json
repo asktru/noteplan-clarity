@@ -6,8 +6,8 @@
   "plugin.description": "Things 3-inspired task clarity layer. Smart views for Inbox, Today, Upcoming, Anytime, Someday with inline task editing.",
   "plugin.icon": "🔮",
   "plugin.author": "asktru",
-  "plugin.version": "1.6.0",
-  "plugin.lastUpdateInfo": "This Evening section in Today (#evening tag, Cmd+E shortcut), keyboard shortcuts cheatsheet (press ?), improved light-mode contrast for task circles and overlays, square checkbox in the expanded editor for checklist items",
+  "plugin.version": "1.7.0",
+  "plugin.lastUpdateInfo": "Review cadence: amber recolor + footer when a project/area is overdue for review. Paused projects now surface in the Someday view. New \"Show in Clarity\" command. Tags and mentions accept non-ASCII letters. Closed tasks no longer draw the eye with priority badges or today-stars.",
   "plugin.script": "script.js",
   "plugin.isRemote": "false",
   "plugin.dependsOn": [
