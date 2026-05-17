@@ -268,6 +268,33 @@ async function onMessageFromHTMLView(actionType, data) {
         break;
       }
 
+      case 'toggleHeadingFocus': {
+        var fNote = findNoteByFilename(msg.filename);
+        if (!fNote) break;
+        var fPara = findParagraph(fNote, msg.lineIndex);
+        if (!fPara) break;
+        var fContent = (fPara.content || '');
+        // Donote/Clarity convention: trailing 👀 (U+1F440) marks a focused heading.
+        // Preserve the collapse marker (…) if present; the canonical order is
+        // "👀 …" so collapse always comes last.
+        var hasCollapse = /…\s*$/.test(fContent);
+        var withoutMarkers = fContent
+          .replace(/\s*…\s*$/, '')
+          .replace(/\s*👀\s*$/, '');
+        var hadFocus = /👀/.test(fContent);
+        var rebuilt;
+        if (hadFocus) {
+          rebuilt = hasCollapse ? (withoutMarkers + ' …') : withoutMarkers;
+        } else {
+          rebuilt = hasCollapse
+            ? (withoutMarkers + ' 👀 …')
+            : (withoutMarkers + ' 👀');
+        }
+        fPara.content = rebuilt;
+        fNote.updateParagraph(fPara);
+        break;
+      }
+
       case 'toggleTask': {
         var tNote = findNoteByFilename(msg.filename);
         if (!tNote) break;
