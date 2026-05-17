@@ -958,6 +958,18 @@
       if (!spared.has(direct[d])) direct[d].classList.add("cl-dimmed");
     }
   }
+  function toggleHeadingFocusUI(headingEl) {
+    if (!headingEl) return false;
+    var now = headingEl.getAttribute("data-focused") === "true";
+    headingEl.setAttribute("data-focused", now ? "false" : "true");
+    var icon = headingEl.querySelector(".cl-heading-focus i");
+    if (icon) {
+      icon.classList.toggle("fa-regular", now);
+      icon.classList.toggle("fa-solid", !now);
+    }
+    applyFocusMode();
+    return true;
+  }
 
   // src/webview/ui/views.js
   function renderCurrentView() {
@@ -3697,6 +3709,18 @@
           State.movedFromInbox = [];
           renderCurrentView();
           break;
+        case "toggleHeadingFocus": {
+          var fLine = parseInt(target.dataset.lineIndex, 10);
+          if (isNaN(fLine) || !State.currentNoteFilename) break;
+          var heading = target.closest(".cl-note-heading");
+          if (!heading) break;
+          toggleHeadingFocusUI(heading);
+          sendMessageToPlugin("toggleHeadingFocus", JSON.stringify({
+            filename: State.currentNoteFilename,
+            lineIndex: fLine
+          }));
+          break;
+        }
         case "toggleHeadingCollapse": {
           var lineIdx = parseInt(target.dataset.lineIndex, 10);
           if (isNaN(lineIdx) || !State.currentNoteFilename) break;

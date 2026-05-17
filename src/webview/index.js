@@ -21,6 +21,7 @@ import { openNoteMetaModal } from './ui/modals.js';
 import { renderSidebar } from './ui/sidebar.js';
 import { renderCurrentView } from './ui/views.js';
 import { expandTask, collapseTask } from './ui/task-editor.js';
+import { toggleHeadingFocusUI } from './ui/focus-mode.js';
 // Side-effect imports: register DOMContentLoaded + global keydown listeners.
 import './init.js';
 import './keyboard.js';
@@ -230,6 +231,18 @@ export function attachMainEventListeners() {
         State.movedFromInbox = [];
         renderCurrentView();
         break;
+      case 'toggleHeadingFocus': {
+        var fLine = parseInt(target.dataset.lineIndex, 10);
+        if (isNaN(fLine) || !State.currentNoteFilename) break;
+        var heading = target.closest('.cl-note-heading');
+        if (!heading) break;
+        toggleHeadingFocusUI(heading);
+        sendMessageToPlugin('toggleHeadingFocus', JSON.stringify({
+          filename: State.currentNoteFilename,
+          lineIndex: fLine,
+        }));
+        break;
+      }
       case 'toggleHeadingCollapse': {
         var lineIdx = parseInt(target.dataset.lineIndex, 10);
         if (isNaN(lineIdx) || !State.currentNoteFilename) break;
