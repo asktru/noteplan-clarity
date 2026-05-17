@@ -7,6 +7,7 @@
 
 import { attachDragListeners } from './ui/dnd.js';
 import { setupSidebarResizer } from './ui/sidebar.js';
+import { attachTocClickHandler } from './ui/toc.js';
 
 function renderInitialLoading() {
   var sidebar = document.getElementById('cl-sidebar');
@@ -54,6 +55,7 @@ document.addEventListener('DOMContentLoaded', function() {
   }, 100);
 
   attachDragListeners(document.getElementById('cl-main'));
+  attachTocClickHandler();
 
   // Mobile sidebar toggle
   var toggle = document.getElementById('cl-sidebar-toggle');
