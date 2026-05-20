@@ -747,6 +747,7 @@ body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
 .cl-cl-done .cl-cl-check { background: rgba(59, 130, 246, 0.3); border-color: rgba(59, 130, 246, 0.5); }
 .cl-cl-done .cl-cl-check::after { content: '\2713'; font-size: 10px; }
 .cl-cl-done .cl-cl-text { text-decoration: line-through; opacity: 0.35; }
+.cl-cl-done .cl-cl-text .cl-link { text-decoration: line-through; }
 .cl-cl-text { font-size: 13px; opacity: 0.7; flex: 1; cursor: text; }
 .cl-cl-text-input {
   background: transparent;

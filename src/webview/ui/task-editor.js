@@ -125,7 +125,9 @@ function renderTaskEditorHTML(task) {
   // Title: view mode (rendered markdown) or edit mode (input)
   html += '<div class="cl-editor-row">';
   var editorCbClass = task.type === 'checklist' ? 'cl-cb cl-cb-square' : 'cl-cb';
-  html += '<div class="' + editorCbClass + '" data-action="toggle"></div>';
+  if (task.status === 'done') editorCbClass += ' cl-cb-done';
+  else if (task.status === 'cancelled') editorCbClass += ' cl-cb-cancelled';
+  html += '<div class="' + editorCbClass + '" data-action="toggleTask"></div>';
   if (draft.activeField === 'title') {
     html += '<input class="cl-editor-title cl-editor-field-active" value="' + esc(draft.content) + '" data-field="title"/>';
   } else {
@@ -288,6 +290,20 @@ function attachEditorListeners(editor) {
     if (!target) return;
     var action = target.dataset.action;
     switch (action) {
+      case 'toggleTask':
+        var taskObj = null;
+        for (var ti = 0; ti < State.tasks.length; ti++) {
+          if (State.tasks[ti].id === State.expandedTaskId) { taskObj = State.tasks[ti]; break; }
+        }
+        if (taskObj) {
+          taskObj.status = taskObj.status === 'open' ? 'done' : 'open';
+          target.classList.toggle('cl-cb-done');
+          var idParts = State.expandedTaskId.split(':');
+          var fname = idParts.slice(0, -1).join(':');
+          var lineIdx = parseInt(idParts[idParts.length - 1]);
+          sendMessageToPlugin('toggleTask', JSON.stringify({ filename: fname, lineIndex: lineIdx }));
+        }
+        break;
       case 'toggleChecklist':
         var item = target.closest('.cl-checklist-item');
         if (item) {
