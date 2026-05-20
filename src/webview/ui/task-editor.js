@@ -58,7 +58,8 @@ export function expandTask(taskId) {
     if (child.type === 'note') State.editDraft.notes.push({ content: child.content, rawContent: child.rawContent || child.content, lineIndex: child.lineIndex });
     else if (child.type === 'checklist') State.editDraft.checklists.push({ content: child.content, status: child.status, lineIndex: child.lineIndex });
   }
-  State.editDraft.activeField = null; // null = view mode, 'title' or 'notes' = editing
+  State.editDraft.activeField = null; // null = view mode, 'title'|'notes'|'checklist' = editing
+  State.editDraft.editingChecklistIndex = null;
 
   var row = document.querySelector('.cl-task-row[data-task-id="' + CSS.escape(taskId) + '"]');
   if (!row) return;
@@ -152,7 +153,11 @@ function renderTaskEditorHTML(task) {
       var clDone = cl.status === 'done' ? ' cl-cl-done' : '';
       html += '<div class="cl-checklist-item' + clDone + '" data-index="' + ci + '">';
       html += '<div class="cl-cl-check" data-action="toggleChecklist"></div>';
-      html += '<span class="cl-cl-text">' + esc(cl.content) + '</span>';
+      if (draft.activeField === 'checklist' && draft.editingChecklistIndex === ci) {
+        html += '<input class="cl-cl-text cl-cl-text-input cl-editor-field-active" data-field="checklist" data-index="' + ci + '" value="' + esc(cl.content) + '"/>';
+      } else {
+        html += '<span class="cl-cl-text" data-field-view="checklist" data-index="' + ci + '">' + renderInlineMarkdown(cl.content) + '</span>';
+      }
       html += '</div>';
     }
     html += '</div>';
@@ -209,11 +214,12 @@ function renderNotesMarkdown(notes) {
   return html;
 }
 
-function activateEditorField(fieldName) {
+function activateEditorField(fieldName, checklistIndex) {
   if (!State.editDraft) return;
   // Save current field value before switching
   saveActiveFieldValue();
   State.editDraft.activeField = fieldName;
+  State.editDraft.editingChecklistIndex = fieldName === 'checklist' ? checklistIndex : null;
   // Re-render the editor
   var task = null;
   for (var i = 0; i < State.tasks.length; i++) {
@@ -231,6 +237,9 @@ function activateEditorField(fieldName) {
   } else if (fieldName === 'notes') {
     var el = editor.querySelector('.cl-editor-notes');
     if (el) { el.focus(); }
+  } else if (fieldName === 'checklist') {
+    var el = editor.querySelector('.cl-cl-text-input');
+    if (el) { el.focus(); el.select(); }
   }
 }
 
@@ -252,15 +261,27 @@ function saveActiveFieldValue() {
         return { content: l, rawContent: orig ? orig.rawContent : '\t' + l, lineIndex: orig ? orig.lineIndex : -1 };
       });
     }
+  } else if (State.editDraft.activeField === 'checklist') {
+    var clEl = editor.querySelector('.cl-cl-text-input');
+    if (clEl) {
+      var idx = parseInt(clEl.dataset.index);
+      if (State.editDraft.checklists[idx]) State.editDraft.checklists[idx].content = clEl.value;
+    }
   }
 }
 
 function attachEditorListeners(editor) {
   // Click on view fields to enter edit mode
   editor.addEventListener('click', function(e) {
+    if (e.target.closest('a.cl-link')) return;
     var viewField = e.target.closest('[data-field-view]');
     if (viewField) {
-      activateEditorField(viewField.dataset.fieldView);
+      var fv = viewField.dataset.fieldView;
+      if (fv === 'checklist') {
+        activateEditorField('checklist', parseInt(viewField.dataset.index));
+      } else {
+        activateEditorField(fv);
+      }
       return;
     }
     var target = e.target.closest('[data-action]');
@@ -272,6 +293,7 @@ function attachEditorListeners(editor) {
         if (item) {
           var idx = parseInt(item.dataset.index);
           if (State.editDraft.checklists[idx]) {
+            saveActiveFieldValue();
             State.editDraft.checklists[idx].status = State.editDraft.checklists[idx].status === 'done' ? 'open' : 'done';
             item.classList.toggle('cl-cl-done');
           }
