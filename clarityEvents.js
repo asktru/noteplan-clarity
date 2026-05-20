@@ -1370,6 +1370,33 @@
         if (State.filters.noteStatus !== taskStatus) continue;
       }
       if (!isTask && !isChecklist && !isHeading) {
+        var rawCb = (p.rawContent || p.content || "").replace(/^\s+/, "");
+        if (rawCb.indexOf("```") === 0) {
+          var cbLang = rawCb.slice(3).trim();
+          var cbLines = [];
+          var cbEnd = paras.length - 1;
+          for (var cbi = pi + 1; cbi < paras.length; cbi++) {
+            var cbRaw = paras[cbi].rawContent || paras[cbi].content || "";
+            if (/^\s*```\s*$/.test(cbRaw)) {
+              cbEnd = cbi;
+              break;
+            }
+            cbLines.push(cbRaw);
+          }
+          if (State.tasksOnly) {
+            pi = cbEnd;
+            continue;
+          }
+          var cbLangAttr = cbLang ? ' data-lang="' + esc(cbLang) + '"' : "";
+          var cbLangLabel = cbLang ? '<span class="cl-code-lang">' + esc(cbLang) + "</span>" : '<span class="cl-code-lang">code</span>';
+          html += '<pre class="cl-code-block"' + cbLangAttr + ">";
+          html += '<div class="cl-code-header">' + cbLangLabel + '<button type="button" class="cl-code-copy" data-action="copyCodeBlock" title="Copy"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span class="cl-code-copy-label">Copy</span></button></div>';
+          html += "<code>" + esc(cbLines.join("\n")) + "</code></pre>";
+          pi = cbEnd;
+          continue;
+        }
+      }
+      if (!isTask && !isChecklist && !isHeading) {
         var rawTrim0 = (p.rawContent || p.content || "").trim();
         if (rawTrim0.charAt(0) === "|" && rawTrim0.length > 1) {
           var tableLines = [];
@@ -3652,6 +3679,21 @@
   });
 
   // src/webview/index.js
+  function fallbackCopy(text, onDone) {
+    try {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      if (onDone) onDone();
+    } catch (e) {
+      console.log("Clarity: copy failed: " + String(e));
+    }
+  }
   globalThis.onMessageFromPlugin = onMessageFromPlugin;
   function navigateToProjectNote(filename) {
     if (!filename) return;
@@ -3833,6 +3875,32 @@
           State.movedFromInbox = [];
           renderCurrentView();
           break;
+        case "copyCodeBlock": {
+          var pre = target.closest(".cl-code-block");
+          if (!pre) break;
+          var codeEl = pre.querySelector("code");
+          if (!codeEl) break;
+          var text = codeEl.textContent || "";
+          var done = function() {
+            var label = target.querySelector(".cl-code-copy-label");
+            if (!label) return;
+            var prev = label.textContent;
+            label.textContent = "Copied";
+            target.classList.add("cl-code-copy-done");
+            setTimeout(function() {
+              label.textContent = prev;
+              target.classList.remove("cl-code-copy-done");
+            }, 1200);
+          };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done, function() {
+              fallbackCopy(text, done);
+            });
+          } else {
+            fallbackCopy(text, done);
+          }
+          break;
+        }
         case "toggleHeadingFocus": {
           var fLine = parseInt(target.dataset.lineIndex, 10);
           if (isNaN(fLine) || !State.currentNoteFilename) break;

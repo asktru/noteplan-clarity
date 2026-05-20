@@ -420,6 +420,33 @@ function renderNoteView() {
       if (State.filters.noteStatus !== taskStatus) continue;
     }
 
+    // --- Fenced code blocks: ``` ... ``` ---
+    if (!isTask && !isChecklist && !isHeading) {
+      var rawCb = ((p.rawContent || p.content) || '').replace(/^\s+/, '');
+      if (rawCb.indexOf('```') === 0) {
+        var cbLang = rawCb.slice(3).trim();
+        var cbLines = [];
+        var cbEnd = paras.length - 1; // run to EOF if no closing fence
+        for (var cbi = pi + 1; cbi < paras.length; cbi++) {
+          var cbRaw = (paras[cbi].rawContent || paras[cbi].content) || '';
+          if (/^\s*```\s*$/.test(cbRaw)) { cbEnd = cbi; break; }
+          cbLines.push(cbRaw);
+        }
+        if (State.tasksOnly) { pi = cbEnd; continue; }
+        var cbLangAttr = cbLang ? ' data-lang="' + esc(cbLang) + '"' : '';
+        var cbLangLabel = cbLang ? '<span class="cl-code-lang">' + esc(cbLang) + '</span>' : '<span class="cl-code-lang">code</span>';
+        html += '<pre class="cl-code-block"' + cbLangAttr + '>';
+        html += '<div class="cl-code-header">' + cbLangLabel +
+          '<button type="button" class="cl-code-copy" data-action="copyCodeBlock" title="Copy">' +
+          '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>' +
+          '<span class="cl-code-copy-label">Copy</span></button>' +
+          '</div>';
+        html += '<code>' + esc(cbLines.join('\n')) + '</code></pre>';
+        pi = cbEnd;
+        continue;
+      }
+    }
+
     // --- Markdown tables: consecutive lines beginning with "|" ---
     if (!isTask && !isChecklist && !isHeading) {
       var rawTrim0 = ((p.rawContent || p.content) || '').trim();

@@ -22,6 +22,22 @@ import { renderSidebar } from './ui/sidebar.js';
 import { renderCurrentView } from './ui/views.js';
 import { expandTask, collapseTask } from './ui/task-editor.js';
 import { toggleHeadingFocusUI } from './ui/focus-mode.js';
+
+function fallbackCopy(text, onDone) {
+  try {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    if (onDone) onDone();
+  } catch (e) {
+    console.log('Clarity: copy failed: ' + String(e));
+  }
+}
 // Side-effect imports: register DOMContentLoaded + global keydown listeners.
 import './init.js';
 import './keyboard.js';
@@ -236,6 +252,30 @@ export function attachMainEventListeners() {
         State.movedFromInbox = [];
         renderCurrentView();
         break;
+      case 'copyCodeBlock': {
+        var pre = target.closest('.cl-code-block');
+        if (!pre) break;
+        var codeEl = pre.querySelector('code');
+        if (!codeEl) break;
+        var text = codeEl.textContent || '';
+        var done = function() {
+          var label = target.querySelector('.cl-code-copy-label');
+          if (!label) return;
+          var prev = label.textContent;
+          label.textContent = 'Copied';
+          target.classList.add('cl-code-copy-done');
+          setTimeout(function() {
+            label.textContent = prev;
+            target.classList.remove('cl-code-copy-done');
+          }, 1200);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done, function() { fallbackCopy(text, done); });
+        } else {
+          fallbackCopy(text, done);
+        }
+        break;
+      }
       case 'toggleHeadingFocus': {
         var fLine = parseInt(target.dataset.lineIndex, 10);
         if (isNaN(fLine) || !State.currentNoteFilename) break;
