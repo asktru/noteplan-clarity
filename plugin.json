@@ -11,12 +11,6 @@
   "plugin.lastUpdateInfo": "Hotfixes: date-picker month-navigation arrows now work, calendar day cells render as uniform circles on narrow widths, the inline task editor auto-scrolls into view with breathing room when opened near the viewport edge, and saving a task no longer jumps the note scroll back to the top.",
   "plugin.script": "script.js",
   "plugin.isRemote": "false",
-  "plugin.dependsOn": [
-    {
-      "id": "np.Shared",
-      "minVersion": "1.0.0"
-    }
-  ],
   "plugin.requiredFiles": [
     "clarityEvents.js",
     "clarity.css"
