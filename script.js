@@ -1174,3 +1174,43 @@ function findParagraph(note, lineIndex) {
   }
   return null;
 }
+
+// ============================================
+// DEPENDENCY BOOTSTRAP
+// Ensure np.Shared (FontAwesome CSS/fonts, comms bridge) is installed.
+// plugin.dependsOn alone is inert for side-loaded plugins, so we install it
+// ourselves. NotePlan calls onUpdateOrInstall automatically after install/update.
+// ============================================
+
+async function ensureSharedResources() {
+  var id = 'np.Shared';
+
+  // Already installed? Nothing to do.
+  var installed = DataStore.installedPlugins() || [];
+  for (var i = 0; i < installed.length; i++) {
+    if (installed[i] && installed[i].id === id) return;
+  }
+
+  // Find it among GitHub-released plugins and install.
+  var released = (await DataStore.listPlugins(false, true, false)) || [];
+  var match = null;
+  for (var j = 0; j < released.length; j++) {
+    if (released[j] && released[j].id === id) { match = released[j]; break; }
+  }
+  if (!match) {
+    await CommandBar.prompt('Shared Resources needed',
+      'Clarity needs the "Shared Resources" (np.Shared) plugin. Please install it from NotePlan\'s plugin list.');
+    return;
+  }
+  await DataStore.installPlugin(match, false);
+}
+
+async function onUpdateOrInstall() {
+  try { await ensureSharedResources(); }
+  catch (e) { console.log('Clarity onUpdateOrInstall failed: ' + (e && e.message ? e.message : String(e))); }
+}
+
+globalThis.showClarity = showClarity;
+globalThis.showCurrentNoteInClarity = showCurrentNoteInClarity;
+globalThis.onMessageFromHTMLView = onMessageFromHTMLView;
+globalThis.onUpdateOrInstall = onUpdateOrInstall;

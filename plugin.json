@@ -91,6 +91,12 @@
       "description": "Callback for HTML window messages",
       "jsFunction": "onMessageFromHTMLView",
       "hidden": true
+    },
+    {
+      "name": "onUpdateOrInstall",
+      "description": "Install dependencies after install/update",
+      "jsFunction": "onUpdateOrInstall",
+      "hidden": true
     }
   ]
 }
