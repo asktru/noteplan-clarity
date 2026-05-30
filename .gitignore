@@ -1,5 +1,12 @@
+# macOS
+.DS_Store
+
+# Dependencies
+node_modules/
+
+# NotePlan plugin runtime artifacts
 .*.html
 _MCP-console.log
-node_modules/
-clarityEvents.js.map
-.DS_Store
+
+# Build artifacts / source maps
+*.js.map
