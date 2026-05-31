@@ -394,18 +394,22 @@
           if (t.scheduledDate && t.scheduledDate <= today) match = true;
           break;
         case "upcoming":
-          if (t.scheduledDate && t.scheduledDate > today || t.scheduledWeek && t.scheduledWeek > currentWeek || // Calendar-source tasks living on a future daily note. Symmetric to
-          // Inbox's sourceDate <= today filter — the source date IS the
-          // scheduled date for these.
-          t.sourceType === "calendar" && t.sourceDate && t.sourceDate > today) match = true;
+          // Future day-scheduled, future week-scheduled, calendar-source tasks
+          // living on a future daily note, or living in a future weekly note.
+          if ((t.scheduledDate && t.scheduledDate > today) ||
+              (t.scheduledWeek && t.scheduledWeek > currentWeek) ||
+              (t.sourceType === "calendar" && t.sourceDate && t.sourceDate > today) ||
+              (t.sourceType === "calendar" && t.sourceWeek && t.sourceWeek > currentWeek)) match = true;
           break;
         case "anytime":
-          if (t.sourceType !== "calendar") {
-            if (!t.tags || t.tags.indexOf("#someday") === -1) {
-              if (!t.scheduledDate || t.scheduledDate <= today) {
-                if (!t.scheduledWeek || t.scheduledWeek <= currentWeek) match = true;
-              }
-            }
+          if (t.tags && t.tags.indexOf("#someday") >= 0) break;
+          if (t.sourceType === "calendar") {
+            // Tasks living in a weekly note (have sourceWeek, no sourceDate) for
+            // the current or a past week. Daily-note calendar tasks stay excluded.
+            if (t.sourceWeek && t.sourceWeek <= currentWeek) match = true;
+          } else if ((!t.scheduledDate || t.scheduledDate <= today) &&
+                     (!t.scheduledWeek || t.scheduledWeek <= currentWeek)) {
+            match = true;
           }
           break;
         case "someday":
@@ -757,11 +761,24 @@
         return (priRank[b] || 0) - (priRank[a] || 0);
       });
     }
+    if (grouping === "folder" || grouping === "note") {
+      // Weekly-note groups sort above project/area groups; among themselves by
+      // week. Non-weekly groups keep their existing relative order (stable sort).
+      groupOrder.sort(function(a, b) {
+        var aw = (groups[a][0] && groups[a][0].sourceWeek) ? 1 : 0;
+        var bw = (groups[b][0] && groups[b][0].sourceWeek) ? 1 : 0;
+        if (aw !== bw) return bw - aw;
+        if (aw && bw) return (groups[a][0].sourceWeek || "").localeCompare(groups[b][0].sourceWeek || "");
+        return 0;
+      });
+    }
     var html = "";
     for (var gi = 0; gi < groupOrder.length; gi++) {
       var name = groupOrder[gi];
-      var displayName = grouping === "date" ? formatDateHeader(name) : name;
       var group = groups[groupOrder[gi]];
+      var group0 = group[0];
+      var displayName = grouping === "date" ? formatDateHeader(name)
+        : (group0 && group0.sourceWeek ? formatWeekHeader(group0.sourceWeek) : name);
       if (grouping === "note" && group[0] && group[0].noteFilename) {
         html += '<div class="cl-group-header cl-group-clickable" data-action="jumpToProjectNote" data-filename="' + esc(group[0].noteFilename) + '">' + esc(displayName) + "</div>";
       } else {
@@ -1197,10 +1214,13 @@
     function upcomingDateOf(t) {
       return t.scheduledDate || (t.sourceType === "calendar" ? t.sourceDate : null);
     }
+    function upcomingWeekOf(t) {
+      return t.scheduledWeek || t.sourceWeek || null;
+    }
     var dayTasks = [];
     var weekTasks = [];
     for (var i = 0; i < tasks.length; i++) {
-      if (tasks[i].scheduledWeek && !upcomingDateOf(tasks[i])) weekTasks.push(tasks[i]);
+      if (upcomingWeekOf(tasks[i]) && !upcomingDateOf(tasks[i])) weekTasks.push(tasks[i]);
       else dayTasks.push(tasks[i]);
     }
     dayTasks.sort(function(a, b) {
@@ -1224,12 +1244,12 @@
       }
     }
     weekTasks.sort(function(a, b) {
-      return (a.scheduledWeek || "").localeCompare(b.scheduledWeek || "");
+      return (upcomingWeekOf(a) || "").localeCompare(upcomingWeekOf(b) || "");
     });
     var weekGroups = {};
     var weekOrder = [];
     for (var wi = 0; wi < weekTasks.length; wi++) {
-      var wk = weekTasks[wi].scheduledWeek || "unknown";
+      var wk = upcomingWeekOf(weekTasks[wi]) || "unknown";
       if (!weekGroups[wk]) {
         weekGroups[wk] = [];
         weekOrder.push(wk);

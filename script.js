@@ -988,14 +988,27 @@ function gatherAllTasks() {
   var lookbackStr = shiftDate(-config.inboxLookbackDays);
   var lookaheadStr = shiftDate(config.upcomingLookaheadDays);
 
+  function fmtYMD(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
   for (var ci = 0; ci < calNotes.length; ci++) {
     var calNote = calNotes[ci];
     var calInfo = getCalendarNoteInfo(calNote);
-    if (!calInfo.isCalendar || calInfo.calendarType !== 'day') continue;
-    // Past/today: respect inboxLookbackDays (drives Inbox).
-    // Future: respect upcomingLookaheadDays (drives Upcoming's daily-note tasks).
-    if (calInfo.date < lookbackStr || calInfo.date > lookaheadStr) continue;
-    extractTasksFromNote(calNote, tasks, 'calendar', calInfo.date);
+    if (!calInfo.isCalendar) continue;
+    if (calInfo.calendarType === 'day') {
+      // Past/today: respect inboxLookbackDays (drives Inbox).
+      // Future: respect upcomingLookaheadDays (drives Upcoming's daily-note tasks).
+      if (calInfo.date < lookbackStr || calInfo.date > lookaheadStr) continue;
+      extractTasksFromNote(calNote, tasks, 'calendar', calInfo.date, null);
+    } else if (calInfo.calendarType === 'week') {
+      // Window weekly notes by their start date (calNote.date), same range as
+      // daily notes. Their tasks get sourceWeek (no sourceDate) — they reach
+      // Upcoming (future weeks) and Anytime (current/past weeks), never Inbox/Today.
+      var wd = calNote.date;
+      var wdStr = wd ? fmtYMD(wd) : null;
+      if (wdStr && (wdStr < lookbackStr || wdStr > lookaheadStr)) continue;
+      extractTasksFromNote(calNote, tasks, 'calendar', null, calInfo.week);
+    }
   }
 
   var projNotes = DataStore.projectNotes;
@@ -1027,7 +1040,7 @@ function getParaIndent(p) {
   return indent;
 }
 
-function extractTasksFromNote(note, tasks, sourceType, sourceDate) {
+function extractTasksFromNote(note, tasks, sourceType, sourceDate, sourceWeek) {
   var paras = note.paragraphs;
   if (!paras || paras.length === 0) return;
 
@@ -1084,6 +1097,7 @@ function extractTasksFromNote(note, tasks, sourceType, sourceDate) {
       priority: parsed.priority,
       scheduledDate: parsed.scheduledDate,
       scheduledWeek: parsed.scheduledWeek,
+      sourceWeek: sourceWeek || null,
       tags: parsed.tags,
       mentions: parsed.mentions,
       blockId: parsed.blockId,
