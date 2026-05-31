@@ -777,8 +777,13 @@
       var name = groupOrder[gi];
       var group = groups[groupOrder[gi]];
       var group0 = group[0];
+      // The weekly-note header/grouping only applies to folder/note grouping
+      // (where weekly notes form their own group above project/area notes). In
+      // priority grouping, weekly-note tasks are ordinary tasks in their
+      // priority group, so keep the normal (priority) header.
+      var isWeekGroup = (grouping === "folder" || grouping === "note") && group0 && group0.sourceWeek;
       var displayName = grouping === "date" ? formatDateHeader(name)
-        : (group0 && group0.sourceWeek ? formatWeekHeader(group0.sourceWeek) : name);
+        : (isWeekGroup ? formatWeekHeader(group0.sourceWeek) : name);
       if (grouping === "note" && group[0] && group[0].noteFilename) {
         html += '<div class="cl-group-header cl-group-clickable" data-action="jumpToProjectNote" data-filename="' + esc(group[0].noteFilename) + '">' + esc(displayName) + "</div>";
       } else {
