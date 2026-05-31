@@ -681,8 +681,8 @@ async function onMessageFromHTMLView(actionType, data) {
             doneCount: rpDoneCount,
             openCount: rpOpenCount,
             bgColorDark: normalizeColor(rpFm['bg-color-dark']),
-            hasProjectOrAreaType: (rpFm.type === 'project' || rpFm.type === 'area'),
-            noteType: rpFm.type === 'area' ? 'area' : (rpFm.type === 'project' ? 'project' : ''),
+            hasProjectOrAreaType: (detectNoteType(rpFm) !== ''),
+            noteType: detectNoteType(rpFm),
             due: rpFm.due || null,
             status: (rpFm.status === 'paused' || rpFm.status === 'someday' || rpFm.status === 'completed' || rpFm.status === 'canceled') ? rpFm.status : null,
             reviewedDate: rpFm.reviewed || null,
@@ -1116,6 +1116,19 @@ function extractTasksFromNote(note, tasks, sourceType, sourceDate, sourceWeek) {
   }
 }
 
+// Detect project/area type from frontmatter, supporting our `type:` syntax and
+// jgclark.Reviews' `project:` syntax (#project/#goal => project, #area => area).
+// Our `type:` wins when both are present. Returns 'project' | 'area' | ''.
+function detectNoteType(fm) {
+  if (!fm) return '';
+  if (fm.type === 'project' || fm.type === 'area') return fm.type;
+  var pj = fm.project;
+  if (pj != null && String(pj).trim() !== '') {
+    return String(pj).indexOf('#area') >= 0 ? 'area' : 'project';
+  }
+  return '';
+}
+
 // ─── Folder/Note Tree ──────────────────────────────────────
 function getFolderTree() {
   var config = getSettings();
@@ -1152,7 +1165,8 @@ function getFolderTree() {
     if (content.indexOf('---') === 0) {
       fm = parseFrontmatter(content).frontmatter;
     }
-    var hasProjectOrAreaType = (fm.type === 'project' || fm.type === 'area');
+    var nt = detectNoteType(fm);
+    var hasProjectOrAreaType = (nt !== '');
     var bgColorDark = normalizeColor(fm['bg-color-dark']);
 
     var paras = note.paragraphs;
@@ -1186,7 +1200,7 @@ function getFolderTree() {
       doneCount: doneCount,
       openCount: openCount,
       hasProjectOrAreaType: hasProjectOrAreaType,
-      noteType: fm.type === 'area' ? 'area' : (fm.type === 'project' ? 'project' : ''),
+      noteType: nt,
       bgColorDark: bgColorDark,
       due: fm.due || null,
       status: (fm.status === 'paused' || fm.status === 'someday' || fm.status === 'completed' || fm.status === 'canceled') ? fm.status : null,
