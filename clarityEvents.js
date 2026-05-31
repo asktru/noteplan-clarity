@@ -1,4 +1,19 @@
+/* global sendMessageToPlugin, npWindowID */
 (() => {
+  // receivingPluginID and npWindowID are set in the inline script before the bridge
+  // loads. Route every outgoing message through sendToPlugin so each payload carries
+  // the originating window's ID; the plugin replies to that window (sidebar embed vs.
+  // separate floating window). sendMessageToPlugin is `const` in the bridge and can't
+  // be monkey-patched, so we wrap it.
+  function sendToPlugin(action, data) {
+    try {
+      var d = data ? JSON.parse(data) : {};
+      if (typeof npWindowID !== 'undefined' && npWindowID && d._windowID === undefined) d._windowID = npWindowID;
+      data = JSON.stringify(d);
+    } catch (e) {}
+    return sendMessageToPlugin(action, data);
+  }
+
   // src/webview/state.js
   var State = {
     tasks: [],
@@ -39,7 +54,7 @@
     arr.unshift(filename);
     if (arr.length > MAX_RECENT_NOTES) arr = arr.slice(0, MAX_RECENT_NOTES);
     State.recentNotes = arr;
-    sendMessageToPlugin("saveRecentNotes", JSON.stringify({ recentNotes: JSON.stringify(arr) }));
+    sendToPlugin("saveRecentNotes", JSON.stringify({ recentNotes: JSON.stringify(arr) }));
   }
   function viewPrefsKey(view, filename) {
     return view === "note" ? "note:" + (filename || "") : view;
@@ -73,7 +88,7 @@
     return "note";
   }
   function persistViewPrefs() {
-    sendMessageToPlugin("saveViewPrefs", JSON.stringify({ viewPrefs: JSON.stringify(State.viewPrefs) }));
+    sendToPlugin("saveViewPrefs", JSON.stringify({ viewPrefs: JSON.stringify(State.viewPrefs) }));
   }
 
   // src/webview/lib/review.js
@@ -2162,7 +2177,7 @@
             var idParts = State.expandedTaskId.split(":");
             var fname = idParts.slice(0, -1).join(":");
             var lineIdx = parseInt(idParts[idParts.length - 1]);
-            sendMessageToPlugin("toggleTask", JSON.stringify({ filename: fname, lineIndex: lineIdx }));
+            sendToPlugin("toggleTask", JSON.stringify({ filename: fname, lineIndex: lineIdx }));
           }
           break;
         case "toggleChecklist":
@@ -2278,7 +2293,7 @@
       checklists: draft.checklists,
       moveToFilename: draft.moveToFilename
     };
-    sendMessageToPlugin("saveTask", JSON.stringify(msg));
+    sendToPlugin("saveTask", JSON.stringify(msg));
     if (draft.moveToFilename && State.currentView === "inbox") {
       State.movedFromInbox.push(taskId);
     }
@@ -2358,7 +2373,7 @@
         if (State.expandedTaskId === taskId) collapseTask();
         State.focusedTaskIndex = -1;
         renderCurrentView();
-        sendMessageToPlugin("deleteTask", JSON.stringify({ filename, lineIndex }));
+        sendToPlugin("deleteTask", JSON.stringify({ filename, lineIndex }));
       }
     });
   }
@@ -2470,7 +2485,7 @@
       cancelLabel: "Cancel",
       destructive: true,
       onConfirm: function() {
-        sendMessageToPlugin("archiveProject", JSON.stringify({ filename: fn }));
+        sendToPlugin("archiveProject", JSON.stringify({ filename: fn }));
       }
     });
   }
@@ -2524,7 +2539,7 @@
         review: draft.review || null,
         clarity: serializeClarityFlags(chipFlags)
       };
-      sendMessageToPlugin("updateNoteFrontmatter", JSON.stringify({ filename: nc.filename, updates }));
+      sendToPlugin("updateNoteFrontmatter", JSON.stringify({ filename: nc.filename, updates }));
       close();
     }
     overlay.addEventListener("click", function(e) {
@@ -2661,7 +2676,7 @@
         var group = el.querySelector('[data-area-group="' + areaKey2 + '"]');
         if (chevron) chevron.classList.toggle("cl-collapsed");
         if (group) group.classList.toggle("cl-hidden");
-        sendMessageToPlugin("saveCollapsedAreas", JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
+        sendToPlugin("saveCollapsedAreas", JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
       });
     }
     attachSidebarFooterHandlers();
@@ -2717,36 +2732,36 @@
           break;
         case "toggleHideEmpty":
           State.hideEmptyProjects = !!target.checked;
-          sendMessageToPlugin("saveHideEmptyProjects", JSON.stringify({ hideEmptyProjects: State.hideEmptyProjects }));
+          sendToPlugin("saveHideEmptyProjects", JSON.stringify({ hideEmptyProjects: State.hideEmptyProjects }));
           renderSidebar();
           break;
         case "toggleHidePaused":
           State.hidePaused = !!target.checked;
-          sendMessageToPlugin("saveHidePaused", JSON.stringify({ hidePaused: State.hidePaused }));
+          sendToPlugin("saveHidePaused", JSON.stringify({ hidePaused: State.hidePaused }));
           renderSidebar();
           break;
         case "toggleHideNonProjects":
           State.hideNonProjects = !!target.checked;
-          sendMessageToPlugin("saveHideNonProjects", JSON.stringify({ hideNonProjects: State.hideNonProjects }));
+          sendToPlugin("saveHideNonProjects", JSON.stringify({ hideNonProjects: State.hideNonProjects }));
           renderSidebar();
           break;
         case "collapseAllAreas":
           for (var fi = 0; fi < State.folders.length; fi++) {
             State.collapsedAreas[State.folders[fi].path] = true;
           }
-          sendMessageToPlugin("saveCollapsedAreas", JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
+          sendToPlugin("saveCollapsedAreas", JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
           renderSidebar();
           break;
         case "expandAllAreas":
           State.collapsedAreas = {};
-          sendMessageToPlugin("saveCollapsedAreas", JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
+          sendToPlugin("saveCollapsedAreas", JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
           renderSidebar();
           break;
         case "toggleViewVisibility": {
           var vid = target.dataset.view;
           if (!vid) break;
           State.visibleViews[vid] = !!target.checked;
-          sendMessageToPlugin("saveVisibleViews", JSON.stringify({ visibleViews: JSON.stringify(State.visibleViews) }));
+          sendToPlugin("saveVisibleViews", JSON.stringify({ visibleViews: JSON.stringify(State.visibleViews) }));
           renderSidebar();
           break;
         }
@@ -2791,12 +2806,12 @@
     State.editDraft = null;
     if (view === "note") {
       State.currentNoteFilename = item.dataset.filename || null;
-      sendMessageToPlugin("requestNoteContent", JSON.stringify({ filename: State.currentNoteFilename }));
+      sendToPlugin("requestNoteContent", JSON.stringify({ filename: State.currentNoteFilename }));
       pushRecentNote(State.currentNoteFilename);
     }
     restoreViewPrefs(view, State.currentNoteFilename);
     persistViewPrefs();
-    sendMessageToPlugin("saveView", JSON.stringify({ view, noteFilename: State.currentNoteFilename }));
+    sendToPlugin("saveView", JSON.stringify({ view, noteFilename: State.currentNoteFilename }));
     var allNav = document.querySelectorAll(".cl-nav-item");
     for (var i = 0; i < allNav.length; i++) allNav[i].classList.remove("cl-nav-active");
     item.classList.add("cl-nav-active");
@@ -2841,7 +2856,7 @@
       document.body.classList.remove("cl-resizing");
       resizer.classList.remove("cl-resizer-active");
       var finalWidth = sidebar.getBoundingClientRect().width;
-      sendMessageToPlugin("saveSidebarWidth", JSON.stringify({ width: Math.round(finalWidth) }));
+      sendToPlugin("saveSidebarWidth", JSON.stringify({ width: Math.round(finalWidth) }));
     });
   }
 
@@ -2900,7 +2915,7 @@
         restoreViewPrefs(State.currentView, State.currentNoteFilename);
         renderSidebar();
         if (State.currentView === "note" && State.currentNoteFilename) {
-          sendMessageToPlugin("requestNoteContent", JSON.stringify({ filename: State.currentNoteFilename }));
+          sendToPlugin("requestNoteContent", JSON.stringify({ filename: State.currentNoteFilename }));
         }
         renderCurrentView();
         break;
@@ -2923,7 +2938,7 @@
       case "TASK_RESCHEDULED":
       case "TASK_DELETED":
       case "TASK_TAG_UPDATED":
-        sendMessageToPlugin("ready", "{}");
+        sendToPlugin("ready", "{}");
         break;
       case "PROJECT_ARCHIVED":
         if (data && data.success) {
@@ -2931,9 +2946,9 @@
             State.currentView = "inbox";
             State.currentNoteFilename = null;
             State.noteContent = null;
-            sendMessageToPlugin("saveView", JSON.stringify({ view: "inbox", noteFilename: null }));
+            sendToPlugin("saveView", JSON.stringify({ view: "inbox", noteFilename: null }));
           }
-          sendMessageToPlugin("ready", "{}");
+          sendToPlugin("ready", "{}");
         } else {
           console.log("Clarity: archive failed: " + (data && data.error));
         }
@@ -2971,7 +2986,7 @@
         })();
         renderSidebar();
         renderCurrentView();
-        sendMessageToPlugin("ready", "{}");
+        sendToPlugin("ready", "{}");
         break;
       default:
         console.log("Clarity WebView: unknown message type: " + type);
@@ -3137,7 +3152,7 @@
     } else {
       targetRef.parentNode.insertBefore(sourceRef, targetRef.nextSibling);
     }
-    sendMessageToPlugin("reorderTask", JSON.stringify({
+    sendToPlugin("reorderTask", JSON.stringify({
       filename: State.currentNoteFilename,
       sourceLineIndex,
       childCount,
@@ -3386,7 +3401,7 @@
   document.addEventListener("DOMContentLoaded", function() {
     renderInitialLoading();
     setTimeout(function() {
-      sendMessageToPlugin("ready", "{}");
+      sendToPlugin("ready", "{}");
     }, 100);
     attachDragListeners(document.getElementById("cl-main"));
     attachTocClickHandler();
@@ -3756,8 +3771,8 @@
     State.tasksOnly = false;
     State.expandedTaskId = null;
     State.editDraft = null;
-    sendMessageToPlugin("requestNoteContent", JSON.stringify({ filename }));
-    sendMessageToPlugin("saveView", JSON.stringify({ view: "note", noteFilename: filename }));
+    sendToPlugin("requestNoteContent", JSON.stringify({ filename }));
+    sendToPlugin("saveView", JSON.stringify({ view: "note", noteFilename: filename }));
     pushRecentNote(filename);
     renderSidebar();
     renderCurrentView();
@@ -3851,7 +3866,7 @@
           break;
         case "openInEditor":
           if (target.dataset.filename) {
-            sendMessageToPlugin("openNoteInEditor", JSON.stringify({ filename: target.dataset.filename }));
+            sendToPlugin("openNoteInEditor", JSON.stringify({ filename: target.dataset.filename }));
           }
           break;
         case "jumpToProjectNote": {
@@ -3868,7 +3883,7 @@
             navigateToProjectNote(jfn);
             break;
           }
-          sendMessageToPlugin("openNoteInEditor", JSON.stringify({ filename: jfn }));
+          sendToPlugin("openNoteInEditor", JSON.stringify({ filename: jfn }));
           break;
         }
         case "openNoteMetaModal":
@@ -3878,7 +3893,7 @@
         case "markReviewedFromFooter": {
           var nc = State.noteContent;
           if (!nc) break;
-          sendMessageToPlugin("updateNoteFrontmatter", JSON.stringify({
+          sendToPlugin("updateNoteFrontmatter", JSON.stringify({
             filename: nc.filename,
             updates: { reviewed: State.today }
           }));
@@ -3894,8 +3909,8 @@
           if (!rfn) break;
           closeProjectMenu();
           target.classList.add("cl-spinning");
-          sendMessageToPlugin("refreshProject", JSON.stringify({ filename: rfn }));
-          sendMessageToPlugin("requestNoteContent", JSON.stringify({ filename: rfn }));
+          sendToPlugin("refreshProject", JSON.stringify({ filename: rfn }));
+          sendToPlugin("requestNoteContent", JSON.stringify({ filename: rfn }));
           break;
         }
         case "archiveProject":
@@ -3951,7 +3966,7 @@
           var heading = target.closest(".cl-note-heading");
           if (!heading) break;
           toggleHeadingFocusUI(heading);
-          sendMessageToPlugin("toggleHeadingFocus", JSON.stringify({
+          sendToPlugin("toggleHeadingFocus", JSON.stringify({
             filename: State.currentNoteFilename,
             lineIndex: fLine
           }));
@@ -3971,7 +3986,7 @@
             }
             target.classList.toggle("cl-always-visible", nowHidden);
           }
-          sendMessageToPlugin("toggleHeadingCollapse", JSON.stringify({
+          sendToPlugin("toggleHeadingCollapse", JSON.stringify({
             filename: State.currentNoteFilename,
             lineIndex: lineIdx
           }));
@@ -3987,13 +4002,13 @@
         var days = parseInt(target.value, 10);
         if (!isNaN(days) && days > 0) {
           State.inboxLookbackDays = days;
-          sendMessageToPlugin("saveInboxLookback", JSON.stringify({ days }));
+          sendToPlugin("saveInboxLookback", JSON.stringify({ days }));
         }
       } else if (action === "setUpcomingLookahead") {
         var days = parseInt(target.value, 10);
         if (!isNaN(days) && days > 0) {
           State.upcomingLookaheadDays = days;
-          sendMessageToPlugin("saveUpcomingLookahead", JSON.stringify({ days }));
+          sendToPlugin("saveUpcomingLookahead", JSON.stringify({ days }));
         }
       }
     });
@@ -4009,7 +4024,7 @@
         if (view === "today") msg.scheduledDate = State.today;
         if (view === "someday") msg.tags = ["#someday"];
         if (view === "note") msg.prepend = true;
-        sendMessageToPlugin("createTask", JSON.stringify(msg));
+        sendToPlugin("createTask", JSON.stringify(msg));
         e.target.value = "";
       }
     });
@@ -4035,7 +4050,7 @@
       }
     }
     renderCurrentView();
-    sendMessageToPlugin("setTaskTag", JSON.stringify({
+    sendToPlugin("setTaskTag", JSON.stringify({
       filename,
       lineIndex,
       tag,
@@ -4056,7 +4071,7 @@
       }
     }
     renderCurrentView();
-    sendMessageToPlugin("rescheduleTask", JSON.stringify({
+    sendToPlugin("rescheduleTask", JSON.stringify({
       filename,
       lineIndex,
       scheduledDate: dateStr || null,
@@ -4082,7 +4097,7 @@
     var parts = taskId.split(":");
     var filename = parts.slice(0, -1).join(":");
     var lineIndex = parseInt(parts[parts.length - 1]);
-    sendMessageToPlugin("toggleTask", JSON.stringify({ filename, lineIndex }));
+    sendToPlugin("toggleTask", JSON.stringify({ filename, lineIndex }));
   }
 })();
 //# sourceMappingURL=clarityEvents.js.map

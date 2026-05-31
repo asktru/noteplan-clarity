@@ -2,6 +2,7 @@
 
 var PLUGIN_ID = 'asktru.Clarity';
 var WINDOW_ID = 'asktru.Clarity.dashboard';
+var WINDOW_ID_FLOATING = 'asktru.Clarity.dashboardWindow';
 
 // ─── Settings ──────────────────────────────────────────────
 function getSettings() {
@@ -94,7 +95,7 @@ function isLightTheme() {
 }
 
 // ─── HTML Shell ────────────────────────────────────────────
-function buildFullHTML() {
+function buildFullHTML(windowID) {
   var themeCSS = getThemeCSS();
   var themeAttr = isLightTheme() ? 'light' : 'dark';
   var faLinks =
@@ -113,45 +114,60 @@ function buildFullHTML() {
     '  <button class="cl-sidebar-toggle" id="cl-sidebar-toggle" aria-label="Toggle Clarity sidebar">\u2190</button>\n' +
     '  <div class="cl-sidebar-overlay" id="cl-sidebar-overlay"></div>\n' +
     '  <div id="cl-root"><div id="cl-sidebar"></div><div id="cl-resizer"></div><div id="cl-main"></div><div id="cl-right-sidebar" hidden></div></div>\n' +
-    '  <script>var receivingPluginID = \'' + PLUGIN_ID + '\';<\/script>\n' +
+    '  <script>var receivingPluginID = \'' + PLUGIN_ID + '\'; var npWindowID = \'' + (windowID || WINDOW_ID) + '\';<\/script>\n' +
     '  <script type="text/javascript" src="clarityEvents.js"><\/script>\n' +
     '  <script type="text/javascript" src="../np.Shared/pluginToHTMLCommsBridge.js"><\/script>\n' +
     '</body>\n</html>';
 }
 
 // ─── Entry Point ───────────────────────────────────────────
-async function showClarity() {
+async function showClarity(targetWindowID) {
   try {
     CommandBar.showLoading(true, 'Loading Clarity...');
     await CommandBar.onAsyncThread();
 
-    var fullHTML = buildFullHTML();
+    var winID = targetWindowID || WINDOW_ID;
+    var isFloating = winID === WINDOW_ID_FLOATING;
+
+    var fullHTML = buildFullHTML(winID);
 
     await CommandBar.onMainThread();
     CommandBar.showLoading(false);
 
     var winOptions = {
-      customId: WINDOW_ID,
-      savedFilename: '../../asktru.Clarity/clarity.html',
+      customId: winID,
+      savedFilename: isFloating ? '../../asktru.Clarity/clarity_window.html' : '../../asktru.Clarity/clarity.html',
       shouldFocus: true,
       reuseUsersWindowRect: true,
       headerBGColor: 'transparent',
       autoTopPadding: true,
       showReloadButton: true,
       reloadPluginID: PLUGIN_ID,
-      reloadCommandName: 'Clarity',
+      reloadCommandName: isFloating ? 'Open in separate window' : 'Open in sidebar',
       icon: 'fa-crystal-ball',
       iconColor: '#3B82F6',
     };
 
-    var result = await HTMLView.showInMainWindow(fullHTML, 'Clarity', winOptions);
-    if (!result || !result.success) {
+    if (isFloating) {
+      winOptions.width = 1100;
+      winOptions.height = 800;
       await HTMLView.showWindowWithOptions(fullHTML, 'Clarity', winOptions);
+    } else {
+      var result = await HTMLView.showInMainWindow(fullHTML, 'Clarity', winOptions);
+      if (!result || !result.success) {
+        await HTMLView.showWindowWithOptions(fullHTML, 'Clarity', winOptions);
+      }
     }
   } catch (err) {
     CommandBar.showLoading(false);
     console.log('Clarity error: ' + String(err));
   }
+}
+
+// Open the same dashboard in a separate (floating) window, distinct from the
+// sidebar embed so the two views stay independently routed.
+async function showClarityWindow() {
+  await showClarity(WINDOW_ID_FLOATING);
 }
 
 // ─── Show Current Note in Clarity ──────────────────────────
@@ -175,24 +191,47 @@ async function showCurrentNoteInClarity() {
     // If Clarity was already open, INIT_DATA won't re-fire, so push a
     // navigation message. Safe to send even on a cold open (it just becomes
     // a no-op redundant nudge after INIT_DATA has already navigated).
-    await sendToHTMLWindow('SHOW_NOTE', { filename: filename });
+    await sendToHTMLWindow(WINDOW_ID, 'SHOW_NOTE', { filename: filename });
   } catch (err) {
     console.log('showCurrentNoteInClarity error: ' + String(err));
   }
 }
 
+// ─── Open Current Note in Clarity (separate window) ────────
+// Same as showCurrentNoteInClarity but targets the floating window. Does NOT
+// write note frontmatter — only pre-seeds settings and sends SHOW_NOTE.
+async function openCurrentNoteInClarityWindow() {
+  try {
+    var note = Editor && Editor.note;
+    var filename = note && note.filename;
+    if (!filename) {
+      await CommandBar.prompt('Open current note in separate window', 'No note is currently open in the editor.');
+      return;
+    }
+    // Pre-seed settings so a cold open of Clarity lands on this note.
+    saveSetting('lastView', 'note');
+    saveSetting('lastNoteFilename', filename);
+    // Open (or focus) the floating Clarity window.
+    await showClarityWindow();
+    // Push navigation to the floating window (no-op redundant nudge on a cold open).
+    await sendToHTMLWindow(WINDOW_ID_FLOATING, 'SHOW_NOTE', { filename: filename });
+  } catch (err) {
+    console.log('openCurrentNoteInClarityWindow error: ' + String(err));
+  }
+}
+
 // ─── Send to HTML ──────────────────────────────────────────
-async function sendToHTMLWindow(type, data) {
+async function sendToHTMLWindow(windowId, type, data) {
   try {
     if (typeof HTMLView === 'undefined' || typeof HTMLView.runJavaScript !== 'function') return;
     var payload = {};
     var keys = Object.keys(data);
     for (var k = 0; k < keys.length; k++) payload[keys[k]] = data[keys[k]];
-    payload.NPWindowID = WINDOW_ID;
+    payload.NPWindowID = windowId;
     var stringifiedPayload = JSON.stringify(payload);
     var doubleStringified = JSON.stringify(stringifiedPayload);
     var jsCode = '(function(){try{var pd=' + doubleStringified + ';var p=JSON.parse(pd);window.postMessage({type:"' + type + '",payload:p},"*");}catch(e){console.error("sendToHTMLWindow error:",e);}})();';
-    await HTMLView.runJavaScript(jsCode, WINDOW_ID);
+    await HTMLView.runJavaScript(jsCode, windowId);
   } catch (err) {
     console.log('sendToHTMLWindow error: ' + String(err));
   }
@@ -202,9 +241,10 @@ async function sendToHTMLWindow(type, data) {
 async function onMessageFromHTMLView(actionType, data) {
   try {
     var msg = typeof data === 'string' ? JSON.parse(data) : data;
+    var replyWindowID = (msg && msg._windowID) || WINDOW_ID;
     switch (actionType) {
       case 'ready':
-        await handleReady();
+        await handleReady(replyWindowID);
         break;
       case 'saveView':
         saveSetting('lastView', msg.view || 'inbox');
@@ -240,7 +280,7 @@ async function onMessageFromHTMLView(actionType, data) {
         var ilb = parseInt(msg.days, 10);
         if (!isNaN(ilb) && ilb >= 1 && ilb <= 365) {
           saveSetting('inboxLookbackDays', ilb);
-          await handleReady();
+          await handleReady(replyWindowID);
         }
         break;
       }
@@ -248,7 +288,7 @@ async function onMessageFromHTMLView(actionType, data) {
         var ula = parseInt(msg.days, 10);
         if (!isNaN(ula) && ula >= 1 && ula <= 365) {
           saveSetting('upcomingLookaheadDays', ula);
-          await handleReady();
+          await handleReady(replyWindowID);
         }
         break;
       }
@@ -314,7 +354,7 @@ async function onMessageFromHTMLView(actionType, data) {
           tPara.content = (tPara.content || '').replace(/\s*@done\([^)]*\)/, '');
         }
         tNote.updateParagraph(tPara);
-        await sendToHTMLWindow('TASK_TOGGLED', { id: msg.filename + ':' + msg.lineIndex });
+        await sendToHTMLWindow(replyWindowID, 'TASK_TOGGLED', { id: msg.filename + ':' + msg.lineIndex });
         // Invoke Routine plugin for repeating tasks
         if (tHasRepeat && tWasOpen && (tPara.type === 'done' || tPara.type === 'checklistDone')) {
           try {
@@ -331,7 +371,7 @@ async function onMessageFromHTMLView(actionType, data) {
         var newContent = applyFrontmatterUpdates(fmNote.content || '', fmUpdates);
         fmNote.content = newContent;
         var fmAfter = parseFrontmatter(newContent).frontmatter;
-        await sendToHTMLWindow('NOTE_FRONTMATTER_UPDATED', {
+        await sendToHTMLWindow(replyWindowID, 'NOTE_FRONTMATTER_UPDATED', {
           filename: msg.filename,
           frontmatter: fmAfter,
           bgColorDark: normalizeColor(fmAfter['bg-color-dark']),
@@ -354,7 +394,7 @@ async function onMessageFromHTMLView(actionType, data) {
         for (var ddi = dIndices.length - 1; ddi >= 0; ddi--) {
           dNote.removeParagraphAtIndex(dIndices[ddi]);
         }
-        await sendToHTMLWindow('TASK_DELETED', { id: msg.filename + ':' + msg.lineIndex });
+        await sendToHTMLWindow(replyWindowID, 'TASK_DELETED', { id: msg.filename + ':' + msg.lineIndex });
         break;
       }
 
@@ -369,7 +409,7 @@ async function onMessageFromHTMLView(actionType, data) {
         else if (msg.scheduledWeek) rContent = rContent.trimEnd() + ' >' + msg.scheduledWeek;
         rPara.content = rContent;
         rNote.updateParagraph(rPara);
-        await sendToHTMLWindow('TASK_RESCHEDULED', {
+        await sendToHTMLWindow(replyWindowID, 'TASK_RESCHEDULED', {
           id: msg.filename + ':' + msg.lineIndex,
           scheduledDate: msg.scheduledDate || null,
           scheduledWeek: msg.scheduledWeek || null,
@@ -398,7 +438,7 @@ async function onMessageFromHTMLView(actionType, data) {
         }
         stPara.content = stContent;
         stNote.updateParagraph(stPara);
-        await sendToHTMLWindow('TASK_TAG_UPDATED', {
+        await sendToHTMLWindow(replyWindowID, 'TASK_TAG_UPDATED', {
           id: msg.filename + ':' + msg.lineIndex,
           tag: rawTag,
           added: !!msg.add,
@@ -495,7 +535,7 @@ async function onMessageFromHTMLView(actionType, data) {
           }
         }
 
-        await sendToHTMLWindow('TASK_SAVED', { id: msg.filename + ':' + msg.lineIndex });
+        await sendToHTMLWindow(replyWindowID, 'TASK_SAVED', { id: msg.filename + ':' + msg.lineIndex });
         break;
       }
 
@@ -533,7 +573,7 @@ async function onMessageFromHTMLView(actionType, data) {
         } else {
           ctNote.appendParagraph(ctContent, 'open');
         }
-        await sendToHTMLWindow('TASK_CREATED', { filename: ctFilename });
+        await sendToHTMLWindow(replyWindowID, 'TASK_CREATED', { filename: ctFilename });
         break;
       }
 
@@ -570,7 +610,7 @@ async function onMessageFromHTMLView(actionType, data) {
 
         rtNote.content = lines.join('\n');
 
-        await sendToHTMLWindow('TASK_REORDERED', { success: true });
+        await sendToHTMLWindow(replyWindowID, 'TASK_REORDERED', { success: true });
         break;
       }
 
@@ -594,7 +634,7 @@ async function onMessageFromHTMLView(actionType, data) {
           });
         }
         var rcFm = parseFrontmatter(rcNote.content || '');
-        await sendToHTMLWindow('NOTE_CONTENT', {
+        await sendToHTMLWindow(replyWindowID, 'NOTE_CONTENT', {
           filename: msg.filename, title: rcNote.title || '',
           paragraphs: rcResult, frontmatter: rcFm.frontmatter,
           bgColorDark: normalizeColor(rcFm.frontmatter['bg-color-dark']),
@@ -609,7 +649,7 @@ async function onMessageFromHTMLView(actionType, data) {
         var rpNote = findNoteByFilename(rpFilename);
         if (!rpNote) {
           await CommandBar.onMainThread();
-          await sendToHTMLWindow('PROJECT_REFRESHED', { filename: rpFilename, missing: true });
+          await sendToHTMLWindow(replyWindowID, 'PROJECT_REFRESHED', { filename: rpFilename, missing: true });
           break;
         }
         var rpTasks = [];
@@ -631,7 +671,7 @@ async function onMessageFromHTMLView(actionType, data) {
         }
 
         await CommandBar.onMainThread();
-        await sendToHTMLWindow('PROJECT_REFRESHED', {
+        await sendToHTMLWindow(replyWindowID, 'PROJECT_REFRESHED', {
           filename: rpFilename,
           tasks: rpTasks,
           noteMeta: {
@@ -658,7 +698,7 @@ async function onMessageFromHTMLView(actionType, data) {
         if (!aFn) break;
         var aNote = findNoteByFilename(aFn);
         if (!aNote) {
-          await sendToHTMLWindow('PROJECT_ARCHIVED', { oldFilename: aFn, success: false, error: 'Note not found' });
+          await sendToHTMLWindow(replyWindowID, 'PROJECT_ARCHIVED', { oldFilename: aFn, success: false, error: 'Note not found' });
           break;
         }
         var origFolder = aFn.replace(/\/[^/]+$/, '');
@@ -672,9 +712,9 @@ async function onMessageFromHTMLView(actionType, data) {
           console.log('Clarity: archiveProject moveNote threw: ' + String(e));
         }
         if (newFn) {
-          await sendToHTMLWindow('PROJECT_ARCHIVED', { oldFilename: aFn, newFilename: newFn, success: true });
+          await sendToHTMLWindow(replyWindowID, 'PROJECT_ARCHIVED', { oldFilename: aFn, newFilename: newFn, success: true });
         } else {
-          await sendToHTMLWindow('PROJECT_ARCHIVED', { oldFilename: aFn, success: false, error: 'moveNote failed' });
+          await sendToHTMLWindow(replyWindowID, 'PROJECT_ARCHIVED', { oldFilename: aFn, success: false, error: 'moveNote failed' });
         }
         break;
       }
@@ -701,14 +741,15 @@ async function onMessageFromHTMLView(actionType, data) {
   }
 }
 
-async function handleReady() {
+async function handleReady(replyWindowID) {
+  var winID = replyWindowID || WINDOW_ID;
   var config = getSettings();
   await CommandBar.onAsyncThread();
   var tasks = gatherAllTasks();
   var tree = getFolderTree();
   await CommandBar.onMainThread();
   var s = DataStore.settings || {};
-  await sendToHTMLWindow('INIT_DATA', {
+  await sendToHTMLWindow(winID, 'INIT_DATA', {
     tasks: tasks,
     folders: tree.folders,
     notes: tree.notes,
@@ -1208,6 +1249,8 @@ async function onUpdateOrInstall() {
 }
 
 globalThis.showClarity = showClarity;
+globalThis.showClarityWindow = showClarityWindow;
 globalThis.showCurrentNoteInClarity = showCurrentNoteInClarity;
+globalThis.openCurrentNoteInClarityWindow = openCurrentNoteInClarityWindow;
 globalThis.onMessageFromHTMLView = onMessageFromHTMLView;
 globalThis.onUpdateOrInstall = onUpdateOrInstall;

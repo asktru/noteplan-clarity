@@ -63,7 +63,7 @@
   ],
   "plugin.commands": [
     {
-      "name": "Clarity",
+      "name": "Open in sidebar",
       "alias": ["clarity", "things", "task clarity"],
       "description": "Open the Clarity task view",
       "jsFunction": "showClarity",
@@ -75,10 +75,20 @@
       }
     },
     {
-      "name": "Show in Clarity",
+      "name": "Open in separate window",
+      "jsFunction": "showClarityWindow",
+      "description": "Open Clarity in a separate window"
+    },
+    {
+      "name": "Open current note in sidebar",
       "alias": ["show in clarity", "clarity show", "open in clarity"],
       "description": "Open the current note in the Clarity view",
       "jsFunction": "showCurrentNoteInClarity"
+    },
+    {
+      "name": "Open current note in separate window",
+      "jsFunction": "openCurrentNoteInClarityWindow",
+      "description": "Open the current note in Clarity in a separate window"
     },
     {
       "name": "onMessageFromHTMLView",
