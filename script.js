@@ -518,15 +518,17 @@ async function onMessageFromHTMLView(actionType, data) {
         if (msg.moveToFilename && msg.moveToFilename !== msg.filename) {
           var targetNote = findNoteByFilename(msg.moveToFilename);
           if (targetNote) {
-            targetNote.appendParagraph(newContent, (sPara.type === 'checklist' || sPara.type === 'checklistDone') ? 'checklist' : 'open');
-            // Move children
+            // Gather the task + its children as one block, then insert above any
+            // ## Done section so the incomplete task isn't dropped among completed ones.
+            var moveItems = [{ content: newContent, type: (sPara.type === 'checklist' || sPara.type === 'checklistDone') ? 'checklist' : 'open' }];
             var srcParas = sNote.paragraphs;
             var childIndices = [];
             for (var cmi = msg.lineIndex + 1; cmi < srcParas.length; cmi++) {
               if ((srcParas[cmi].indentLevel || 0) <= (sPara.indentLevel || 0)) break;
               childIndices.push(cmi);
-              targetNote.appendParagraph(srcParas[cmi].content, srcParas[cmi].type);
+              moveItems.push({ content: srcParas[cmi].content, type: srcParas[cmi].type });
             }
+            insertTasksAboveDone(targetNote, moveItems);
             // Remove from source (reverse order)
             for (var ri = childIndices.length - 1; ri >= 0; ri--) {
               sNote.removeParagraphAtIndex(childIndices[ri]);
@@ -571,7 +573,7 @@ async function onMessageFromHTMLView(actionType, data) {
           }
           ctNote.insertParagraph(ctContent, insertIdx, 'open');
         } else {
-          ctNote.appendParagraph(ctContent, 'open');
+          insertTasksAboveDone(ctNote, [{ content: ctContent, type: 'open' }]);
         }
         await sendToHTMLWindow(replyWindowID, 'TASK_CREATED', { filename: ctFilename });
         break;
@@ -1218,6 +1220,36 @@ function getFolderTree() {
     folders.push(folderMap[folderKeys[fi]]);
   }
   return { folders: folders, notes: noteList };
+}
+
+// ─── Done-section-safe insertion ───────────────────────────
+// Insert task paragraph(s) above a "## Done" section (created by NotePlan's
+// "Move Completed to Bottom") so incomplete tasks don't land among completed
+// ones. Falls back to appending at the note bottom when there's no Done section.
+// items: array of { content, type }. Returns the line index of the first item.
+function insertTasksAboveDone(note, items) {
+  if (!items || !items.length) return -1;
+  var paras = note.paragraphs || [];
+  var doneIdx = -1;
+  for (var i = 0; i < paras.length; i++) {
+    var p = paras[i];
+    if (p.type === 'title' && p.headingLevel === 2 && (p.content || '').trim() === 'Done') { doneIdx = i; break; }
+  }
+  if (doneIdx < 0) {
+    var startIdx = paras.length;
+    for (var a = 0; a < items.length; a++) note.appendParagraph(items[a].content, items[a].type);
+    return startIdx;
+  }
+  var firstEmpty = doneIdx;
+  while (firstEmpty > 0 && paras[firstEmpty - 1].type === 'empty') firstEmpty--;
+  var hadBlank = firstEmpty < doneIdx;
+  var idx = firstEmpty;
+  for (var b = 0; b < items.length; b++) {
+    note.insertParagraph(items[b].content, idx, items[b].type);
+    idx++;
+  }
+  if (!hadBlank) note.insertParagraph('', idx, 'empty');
+  return firstEmpty;
 }
 
 // ─── Note Finder ───────────────────────────────────────────
