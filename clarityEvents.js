@@ -3610,7 +3610,7 @@
     var existing = document.querySelector(".cl-inline-new");
     if (existing) existing.remove();
     var wrap = document.createElement("div");
-    wrap.className = "cl-inline-new cl-quick-add cl-inline-new-" + kind;
+    wrap.className = "cl-inline-new cl-inline-new-" + kind;
     var input = document.createElement("input");
     input.type = "text";
     input.className = "cl-quick-add-input";
@@ -3623,10 +3623,19 @@
       if (!body) return;
       body.insertBefore(wrap, body.firstChild);
     }
+    // Drop task focus while the inline input is open: removes the focus
+    // highlight and stops the global Enter handler from also opening the
+    // focused task's editor (which would also set expandedTaskId and break
+    // arrow-key navigation afterwards).
+    var allRows = document.querySelectorAll(".cl-task-row");
+    for (var fr = 0; fr < allRows.length; fr++) allRows[fr].classList.remove("cl-focused");
+    State.focusedTaskIndex = -1;
+
     var done = false;
     input.addEventListener("keydown", function(ev) {
       if (ev.key === "Enter") {
         ev.preventDefault();
+        ev.stopPropagation();
         var text = input.value.trim();
         done = true;
         if (wrap.parentNode) wrap.remove();
@@ -3640,6 +3649,7 @@
         }
       } else if (ev.key === "Escape") {
         ev.preventDefault();
+        ev.stopPropagation();
         done = true;
         if (wrap.parentNode) wrap.remove();
       }

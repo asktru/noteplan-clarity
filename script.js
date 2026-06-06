@@ -590,24 +590,26 @@ async function onMessageFromHTMLView(actionType, data) {
         if (!ihNote) break;
         var ihText = (msg.content || '').replace(/^#+\s*/, '').trim();
         if (!ihText) break;
-        var ihLine = '## ' + ihText;
+        // Insert the literal "## text" line (a 'title'-typed insert makes NotePlan
+        // prepend another '#', yielding "# ## text"). lineIndex == content line.
+        var ihLines = (ihNote.content || '').split('\n');
+        var ihAt;
         if (msg.afterLineIndex !== undefined && msg.afterLineIndex !== null) {
-          ihNote.insertParagraph(ihLine, msg.afterLineIndex + 1, 'title');
+          ihAt = Math.min(msg.afterLineIndex + 1, ihLines.length);
         } else {
-          // Top of body: after the frontmatter block and the first H1 (same as createTask prepend).
-          var ihLines = (ihNote.content || '').split('\n');
-          var ihIdx = 0;
+          // Top of body: after the frontmatter block and the first H1.
+          ihAt = 0;
           if (ihLines[0] === '---') {
-            for (var ihfi = 1; ihfi < ihLines.length; ihfi++) { if (ihLines[ihfi] === '---') { ihIdx = ihfi + 1; break; } }
+            for (var ihfi = 1; ihfi < ihLines.length; ihfi++) { if (ihLines[ihfi] === '---') { ihAt = ihfi + 1; break; } }
           }
-          var ihParas = ihNote.paragraphs;
-          while (ihIdx < ihParas.length && ihParas[ihIdx].type === 'empty') ihIdx++;
-          if (ihIdx < ihParas.length && ihParas[ihIdx].type === 'title' && ihParas[ihIdx].headingLevel === 1) {
-            ihIdx++;
-            while (ihIdx < ihParas.length && ihParas[ihIdx].type === 'empty') ihIdx++;
+          while (ihAt < ihLines.length && ihLines[ihAt].trim() === '') ihAt++;
+          if (ihAt < ihLines.length && /^#\s/.test(ihLines[ihAt])) {
+            ihAt++;
+            while (ihAt < ihLines.length && ihLines[ihAt].trim() === '') ihAt++;
           }
-          ihNote.insertParagraph(ihLine, ihIdx, 'title');
         }
+        ihLines.splice(ihAt, 0, '## ' + ihText);
+        ihNote.content = ihLines.join('\n');
         await sendToHTMLWindow(replyWindowID, 'TASK_CREATED', { filename: msg.filename });
         break;
       }

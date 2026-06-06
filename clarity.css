@@ -467,6 +467,19 @@ body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
   transition: background 0.1s, border-color 0.1s;
 }
 .cl-task-row:hover { background: var(--cl-hover); }
+/* Inline "new task / new heading" input (cmd+ctrl+N / cmd+shift+N): align with
+   task rows — full width, same left edge — not a narrow nested-looking box. */
+.cl-inline-new { margin: 2px 0 8px; }
+.cl-inline-new .cl-quick-add-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  background: var(--cl-surface-1);
+  border: 1px solid var(--cl-accent);
+  border-radius: var(--cl-radius-sm);
+  color: var(--cl-text);
+  font-size: inherit;
+}
 
 .cl-cb {
   width: 18px; height: 18px;
