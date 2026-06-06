@@ -3112,6 +3112,14 @@
         siblings.push(rows[i]);
       }
     }
+    // Headings are valid drop targets for top-level tasks: dropping "after" a
+    // heading inserts as the first item of that (possibly empty) section, and
+    // "before" inserts just above it. Without this, an empty section between two
+    // headings has no droppable element, so tasks can't land between headings.
+    if (sourceIndent === 0) {
+      var heads = container.querySelectorAll(".cl-note-heading[data-line-index]");
+      for (var h = 0; h < heads.length; h++) siblings.push(heads[h]);
+    }
     return siblings;
   }
   function dragCreateClone(sourceRow, x, y) {
