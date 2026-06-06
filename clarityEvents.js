@@ -1372,8 +1372,8 @@
       html += '<span class="cl-filter-pill' + sfActive + '" data-action="filterNoteStatus" data-status="' + statusFilters[sf] + '">' + capitalize(statusFilters[sf]) + "</span>";
     }
     html += "</div>";
-    html += '<div class="cl-tasks-only-toggle' + (State.tasksOnly ? " cl-filter-active" : "") + '" data-action="toggleTasksOnly">' + (State.tasksOnly ? "\u2611" : "\u2610") + " Tasks only</div>";
     html += '<div class="cl-tasks-only-toggle' + (State.filters.hideFuture ? " cl-filter-active" : "") + '" data-action="toggleHideFuture" title="Hide tasks scheduled for a future date">' + (State.filters.hideFuture ? "\u2611" : "\u2610") + " Hide upcoming</div>";
+    html += '<div class="cl-tasks-only-toggle' + (State.tasksOnly ? " cl-filter-active" : "") + '" data-action="toggleTasksOnly">' + (State.tasksOnly ? "\u2611" : "\u2610") + " Tasks only</div>";
     html += "</div>";
     html += "</div>";
     html += renderQuickAdd("note");
