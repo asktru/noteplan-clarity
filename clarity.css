@@ -1584,6 +1584,9 @@ body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
 .cl-heading-focus:hover { opacity: 1 !important; }
 .cl-dimmed { opacity: 0.22; transition: opacity 0.2s; }
 .cl-dimmed .cl-heading-focus { opacity: 0 !important; }
+/* Future-scheduled open tasks in the note view: muted but readable (distinct
+   from the heavily-faded cl-dimmed used for Someday / focus-mode). */
+.cl-future { opacity: 0.55; }
 
 .cl-h-progress {
   display: inline-block;

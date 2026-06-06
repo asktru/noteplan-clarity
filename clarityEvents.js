@@ -22,7 +22,7 @@
     currentView: "inbox",
     currentNoteFilename: null,
     expandedTaskId: null,
-    filters: { tag: null, folder: null, mention: null, text: "", noteStatus: "all", todayRepeat: "all" },
+    filters: { tag: null, folder: null, mention: null, text: "", noteStatus: "all", todayRepeat: "all", hideFuture: false },
     grouping: "note",
     movedFromInbox: [],
     editDraft: null,
@@ -62,7 +62,7 @@
   function saveCurrentViewPrefs() {
     var key = viewPrefsKey(State.currentView, State.currentNoteFilename);
     if (State.currentView === "note") {
-      State.viewPrefs[key] = { noteStatus: State.filters.noteStatus, tasksOnly: State.tasksOnly };
+      State.viewPrefs[key] = { noteStatus: State.filters.noteStatus, tasksOnly: State.tasksOnly, hideFuture: State.filters.hideFuture };
     } else {
       var prefs = { tag: State.filters.tag, folder: State.filters.folder, grouping: State.grouping };
       if (State.currentView === "today") prefs.todayRepeat = State.filters.todayRepeat;
@@ -75,6 +75,7 @@
     if (view === "note") {
       State.filters.noteStatus = saved && saved.noteStatus || "all";
       State.tasksOnly = saved && saved.tasksOnly || false;
+      State.filters.hideFuture = saved && saved.hideFuture || false;
     } else {
       State.filters.tag = saved && saved.tag || null;
       State.filters.folder = saved && saved.folder || null;
@@ -579,11 +580,13 @@
     var isOverdue = options.isOverdue || false;
     var alwaysShowDate = options.alwaysShowDate || false;
     var dimmed = options.dimmed || false;
+    var future = options.future || false;
     var classes = "cl-task-row";
     if (task.status === "done") classes += " cl-done";
     if (task.status === "cancelled") classes += " cl-cancelled";
     if (isOverdue) classes += " cl-overdue";
     if (dimmed) classes += " cl-dimmed";
+    if (future) classes += " cl-future";
     var dragAttrs = "";
     if (options.lineIndex !== void 0) {
       dragAttrs = ' data-line-index="' + options.lineIndex + '" data-indent="' + (options.indentLevel || 0) + '" data-child-count="' + (options.childCount || 0) + '"';
@@ -1370,6 +1373,7 @@
     }
     html += "</div>";
     html += '<div class="cl-tasks-only-toggle' + (State.tasksOnly ? " cl-filter-active" : "") + '" data-action="toggleTasksOnly">' + (State.tasksOnly ? "\u2611" : "\u2610") + " Tasks only</div>";
+    html += '<div class="cl-tasks-only-toggle' + (State.filters.hideFuture ? " cl-filter-active" : "") + '" data-action="toggleHideFuture" title="Hide tasks scheduled for a future date">' + (State.filters.hideFuture ? "\u2611" : "\u2610") + " Hide upcoming</div>";
     html += "</div>";
     html += "</div>";
     html += renderQuickAdd("note");
@@ -1525,11 +1529,16 @@
           lineIndex: p.lineIndex,
           children
         };
+        var taskFuture = status === "open" && taskObj.scheduledDate && taskObj.scheduledDate > State.today;
+        // Hide-upcoming filter: skip future open tasks entirely (before any markup).
+        if (State.filters.hideFuture && taskFuture) {
+          if (children && children.length) skipUntilIndent = pIndent;
+          continue;
+        }
         var indent = pIndent * 20;
         if (indent > 0) html += '<div class="cl-indent-wrap" style="padding-left:' + indent + 'px;">';
         var taskOverdue = status === "open" && taskObj.scheduledDate && taskObj.scheduledDate < State.today;
-        var taskFuture = status === "open" && taskObj.scheduledDate && taskObj.scheduledDate > State.today;
-        html += renderTaskRow(taskObj, { showSource: false, lineIndex: p.lineIndex, indentLevel: pIndent, childCount: children.length, showStar: true, isOverdue: taskOverdue, alwaysShowDate: true, dimmed: taskFuture });
+        html += renderTaskRow(taskObj, { showSource: false, lineIndex: p.lineIndex, indentLevel: pIndent, childCount: children.length, showStar: true, isOverdue: taskOverdue, alwaysShowDate: true, future: taskFuture });
         if (indent > 0) html += "</div>";
       } else {
         var indent = pIndent * 20;
@@ -3879,6 +3888,12 @@
           break;
         case "toggleTasksOnly":
           State.tasksOnly = !State.tasksOnly;
+          saveCurrentViewPrefs();
+          persistViewPrefs();
+          renderCurrentView();
+          break;
+        case "toggleHideFuture":
+          State.filters.hideFuture = !State.filters.hideFuture;
           saveCurrentViewPrefs();
           persistViewPrefs();
           renderCurrentView();
