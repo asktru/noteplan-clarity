@@ -27,6 +27,7 @@
     movedFromInbox: [],
     editDraft: null,
     focusedTaskIndex: -1,
+    pendingFocusTaskId: null,
     today: "",
     currentWeek: "",
     tasksOnly: false,
@@ -1089,6 +1090,19 @@
         hideToc();
       }
       if (__flags.focus) applyFocusMode();
+      // Restore focus to a task moved by keyboard (cmd+ctrl+up/down) after re-render.
+      if (State.pendingFocusTaskId) {
+        var pfRows = el.querySelectorAll(".cl-task-row");
+        for (var pf = 0; pf < pfRows.length; pf++) {
+          if (pfRows[pf].dataset.taskId === State.pendingFocusTaskId) {
+            State.focusedTaskIndex = pf;
+            pfRows[pf].classList.add("cl-focused");
+            pfRows[pf].scrollIntoView({ block: "nearest" });
+            break;
+          }
+        }
+        State.pendingFocusTaskId = null;
+      }
     } else {
       hideToc();
     }
@@ -2418,6 +2432,7 @@
         { keys: ["\u23181", "..", "\u23185"], label: "Switch view (Inbox, Today, Upcoming, Anytime, Someday)" },
         { keys: ["\u2318/"], label: "Quick-jump to a project or area" },
         { keys: ["\u2191", "\u2193"], label: "Move focus between tasks" },
+        { keys: ["\u2318\u2303\u2191", "\u2318\u2303\u2193"], label: "Move the focused task up / down" },
         { keys: ["Enter"], label: "Open the focused task" },
         { keys: ["Esc"], label: "Close editor, picker, or palette" }
       ]
@@ -3830,6 +3845,22 @@
       e.preventDefault();
       var quickAdd = document.querySelector(".cl-quick-add-input");
       if (quickAdd) quickAdd.focus();
+      return;
+    }
+    // Move the focused task up/down one slot (reuses the drag reorder path).
+    if (e.metaKey && e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+      if (State.currentView !== "note") return;
+      var moveRow = focusedTaskRow();
+      if (!moveRow) return;
+      e.preventDefault();
+      var moveCands = dragFindSiblings(moveRow).slice();
+      moveCands.push(moveRow);
+      moveCands.sort(function(a, b) { return a.getBoundingClientRect().top - b.getBoundingClientRect().top; });
+      var moveIdx = moveCands.indexOf(moveRow);
+      var neighbor = e.key === "ArrowUp" ? moveCands[moveIdx - 1] : moveCands[moveIdx + 1];
+      if (!neighbor) return;
+      State.pendingFocusTaskId = moveRow.dataset.taskId;
+      dragCommit(moveRow, { el: neighbor, position: e.key === "ArrowUp" ? "before" : "after" });
       return;
     }
     if (!State.expandedTaskId && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
