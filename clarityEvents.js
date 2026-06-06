@@ -2438,6 +2438,9 @@
       title: "Other",
       items: [
         { keys: ["\u2318N"], label: "Focus the New Task input" },
+        { keys: ["\u2318\u2303N"], label: "New task below the focused task" },
+        { keys: ["\u2318\u21e7N"], label: "New heading below the focused task" },
+        { keys: ["\u2318\u2325N"], label: "New project note in this folder" },
         { keys: ["?"], label: "Show this cheatsheet" }
       ]
     }
@@ -3594,6 +3597,57 @@
     }, 0);
   }
 
+  // The .cl-task-row for the currently focused task, or null.
+  function focusedTaskRow() {
+    var rows = document.querySelectorAll(".cl-task-row");
+    if (State.focusedTaskIndex >= 0 && State.focusedTaskIndex < rows.length) return rows[State.focusedTaskIndex];
+    return null;
+  }
+
+  // One-off inline input for a new task or h2 heading, placed below the focused
+  // task row (or at the top of the note body when afterRow is null).
+  function showInlineNewItem(kind, afterRow) {
+    var existing = document.querySelector(".cl-inline-new");
+    if (existing) existing.remove();
+    var wrap = document.createElement("div");
+    wrap.className = "cl-inline-new cl-quick-add cl-inline-new-" + kind;
+    var input = document.createElement("input");
+    input.type = "text";
+    input.className = "cl-quick-add-input";
+    input.placeholder = kind === "heading" ? "New heading…" : "New task…";
+    wrap.appendChild(input);
+    if (afterRow) {
+      afterRow.insertAdjacentElement("afterend", wrap);
+    } else {
+      var body = document.querySelector("#cl-main .cl-note-content");
+      if (!body) return;
+      body.insertBefore(wrap, body.firstChild);
+    }
+    var done = false;
+    input.addEventListener("keydown", function(ev) {
+      if (ev.key === "Enter") {
+        ev.preventDefault();
+        var text = input.value.trim();
+        done = true;
+        if (wrap.parentNode) wrap.remove();
+        if (!text) return;
+        var afterIdx = afterRow ? parseInt(afterRow.dataset.lineIndex, 10) : null;
+        if (kind === "heading") {
+          sendToPlugin("insertHeading", JSON.stringify({ filename: State.currentNoteFilename, content: text, afterLineIndex: (afterIdx === null || isNaN(afterIdx)) ? null : afterIdx }));
+        } else {
+          var indent = afterRow ? (parseInt(afterRow.dataset.indent, 10) || 0) : 0;
+          sendToPlugin("createTask", JSON.stringify({ filename: State.currentNoteFilename, content: text, afterLineIndex: (afterIdx === null || isNaN(afterIdx)) ? null : afterIdx, indent: indent }));
+        }
+      } else if (ev.key === "Escape") {
+        ev.preventDefault();
+        done = true;
+        if (wrap.parentNode) wrap.remove();
+      }
+    });
+    input.addEventListener("blur", function() { if (!done && wrap.parentNode) wrap.remove(); });
+    input.focus();
+  }
+
   // src/webview/keyboard.js
   document.addEventListener("keydown", function(e) {
     if (e.metaKey && e.key === "Enter") {
@@ -3729,6 +3783,29 @@
     if (e.metaKey && !e.shiftKey && !e.altKey && !e.ctrlKey && e.key === "/") {
       e.preventDefault();
       openQuickJump();
+      return;
+    }
+    // New task below the focused task (fall back to the top input if none focused).
+    if (e.metaKey && e.ctrlKey && !e.shiftKey && !e.altKey && e.code === "KeyN") {
+      if (State.currentView !== "note") return;
+      e.preventDefault();
+      var ctrlRow = focusedTaskRow();
+      if (ctrlRow) showInlineNewItem("task", ctrlRow);
+      else { var ctrlQa = document.querySelector(".cl-quick-add-input"); if (ctrlQa) ctrlQa.focus(); }
+      return;
+    }
+    // New h2 heading below the focused task (or at the top of the body if none).
+    if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && e.code === "KeyN") {
+      if (State.currentView !== "note") return;
+      e.preventDefault();
+      showInlineNewItem("heading", focusedTaskRow());
+      return;
+    }
+    // New project note in the same folder as the current note, then open it.
+    if (e.metaKey && e.altKey && !e.ctrlKey && !e.shiftKey && e.code === "KeyN") {
+      if (State.currentView !== "note" || !State.currentNoteFilename) return;
+      e.preventDefault();
+      sendToPlugin("createProjectNote", JSON.stringify({ filename: State.currentNoteFilename }));
       return;
     }
     if (e.metaKey && e.key === "n") {

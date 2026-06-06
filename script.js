@@ -555,7 +555,13 @@ async function onMessageFromHTMLView(actionType, data) {
         if (msg.scheduledDate) ctContent += ' >' + msg.scheduledDate;
         var ctTags = msg.tags || [];
         for (var cti = 0; cti < ctTags.length; cti++) ctContent += ' ' + ctTags[cti];
-        if (msg.prepend) {
+        if (msg.afterLineIndex !== undefined && msg.afterLineIndex !== null) {
+          // Insert right after a specific task, preserving its indent.
+          var ctIndent = '';
+          var ctN = parseInt(msg.indent, 10) || 0;
+          for (var ctt = 0; ctt < ctN; ctt++) ctIndent += '\t';
+          ctNote.insertParagraph(ctIndent + ctContent, msg.afterLineIndex + 1, 'open');
+        } else if (msg.prepend) {
           // Insert after the frontmatter block and the first H1 title, so the
           // task lands at the top of the project body rather than the bottom.
           var ctParas = ctNote.paragraphs;
@@ -576,6 +582,50 @@ async function onMessageFromHTMLView(actionType, data) {
           insertTasksAboveDone(ctNote, [{ content: ctContent, type: 'open' }]);
         }
         await sendToHTMLWindow(replyWindowID, 'TASK_CREATED', { filename: ctFilename });
+        break;
+      }
+
+      case 'insertHeading': {
+        var ihNote = findNoteByFilename(msg.filename);
+        if (!ihNote) break;
+        var ihText = (msg.content || '').replace(/^#+\s*/, '').trim();
+        if (!ihText) break;
+        var ihLine = '## ' + ihText;
+        if (msg.afterLineIndex !== undefined && msg.afterLineIndex !== null) {
+          ihNote.insertParagraph(ihLine, msg.afterLineIndex + 1, 'title');
+        } else {
+          // Top of body: after the frontmatter block and the first H1 (same as createTask prepend).
+          var ihLines = (ihNote.content || '').split('\n');
+          var ihIdx = 0;
+          if (ihLines[0] === '---') {
+            for (var ihfi = 1; ihfi < ihLines.length; ihfi++) { if (ihLines[ihfi] === '---') { ihIdx = ihfi + 1; break; } }
+          }
+          var ihParas = ihNote.paragraphs;
+          while (ihIdx < ihParas.length && ihParas[ihIdx].type === 'empty') ihIdx++;
+          if (ihIdx < ihParas.length && ihParas[ihIdx].type === 'title' && ihParas[ihIdx].headingLevel === 1) {
+            ihIdx++;
+            while (ihIdx < ihParas.length && ihParas[ihIdx].type === 'empty') ihIdx++;
+          }
+          ihNote.insertParagraph(ihLine, ihIdx, 'title');
+        }
+        await sendToHTMLWindow(replyWindowID, 'TASK_CREATED', { filename: msg.filename });
+        break;
+      }
+
+      case 'createProjectNote': {
+        var cpnFrom = msg.filename || '';
+        var cpnFolder = cpnFrom.indexOf('/') >= 0 ? cpnFrom.replace(/\/[^/]+$/, '') : '';
+        var cpnTitle = await CommandBar.showInput('New project', "Create '%@'");
+        if (!cpnTitle || !String(cpnTitle).trim()) break;
+        cpnTitle = String(cpnTitle).trim();
+        var cpnContent = '---\ntype: project\n---\n# ' + cpnTitle + '\n';
+        var cpnNew = null;
+        try { cpnNew = DataStore.newNoteWithContent(cpnContent, cpnFolder); } catch (e) { console.log('Clarity: newNoteWithContent failed: ' + String(e)); }
+        if (cpnNew) {
+          saveSetting('lastView', 'note');
+          saveSetting('lastNoteFilename', cpnNew);
+          await sendToHTMLWindow(replyWindowID, 'SHOW_NOTE', { filename: cpnNew });
+        }
         break;
       }
 
