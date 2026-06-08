@@ -1230,6 +1230,7 @@ body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
   font-size: 13px;
   font-family: inherit;
   text-align: left;
+  white-space: nowrap;
   border-radius: var(--cl-radius-sm);
   cursor: pointer;
 }
