@@ -1,4 +1,5 @@
 /* global sendMessageToPlugin */
+import { sendToPlugin } from '../lib/bridge.js';
 // Sidebar: built-in views (Inbox/Today/...) followed by project/area notes
 // grouped by folder. The footer popover holds visibility toggles and the
 // "Keyboard shortcuts" entry. handleNavClick is the click target for every
@@ -106,7 +107,7 @@ export function renderSidebar() {
       var group = el.querySelector('[data-area-group="' + areaKey + '"]');
       if (chevron) chevron.classList.toggle('cl-collapsed');
       if (group) group.classList.toggle('cl-hidden');
-      sendMessageToPlugin('saveCollapsedAreas', JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
+      sendToPlugin('saveCollapsedAreas', JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
     });
   }
 
@@ -184,36 +185,36 @@ function attachSidebarFooterHandlers() {
         break;
       case 'toggleHideEmpty':
         State.hideEmptyProjects = !!target.checked;
-        sendMessageToPlugin('saveHideEmptyProjects', JSON.stringify({ hideEmptyProjects: State.hideEmptyProjects }));
+        sendToPlugin('saveHideEmptyProjects', JSON.stringify({ hideEmptyProjects: State.hideEmptyProjects }));
         renderSidebar();
         break;
       case 'toggleHidePaused':
         State.hidePaused = !!target.checked;
-        sendMessageToPlugin('saveHidePaused', JSON.stringify({ hidePaused: State.hidePaused }));
+        sendToPlugin('saveHidePaused', JSON.stringify({ hidePaused: State.hidePaused }));
         renderSidebar();
         break;
       case 'toggleHideNonProjects':
         State.hideNonProjects = !!target.checked;
-        sendMessageToPlugin('saveHideNonProjects', JSON.stringify({ hideNonProjects: State.hideNonProjects }));
+        sendToPlugin('saveHideNonProjects', JSON.stringify({ hideNonProjects: State.hideNonProjects }));
         renderSidebar();
         break;
       case 'collapseAllAreas':
         for (var fi = 0; fi < State.folders.length; fi++) {
           State.collapsedAreas[State.folders[fi].path] = true;
         }
-        sendMessageToPlugin('saveCollapsedAreas', JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
+        sendToPlugin('saveCollapsedAreas', JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
         renderSidebar();
         break;
       case 'expandAllAreas':
         State.collapsedAreas = {};
-        sendMessageToPlugin('saveCollapsedAreas', JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
+        sendToPlugin('saveCollapsedAreas', JSON.stringify({ collapsedAreas: JSON.stringify(State.collapsedAreas) }));
         renderSidebar();
         break;
       case 'toggleViewVisibility': {
         var vid = target.dataset.view;
         if (!vid) break;
         State.visibleViews[vid] = !!target.checked;
-        sendMessageToPlugin('saveVisibleViews', JSON.stringify({ visibleViews: JSON.stringify(State.visibleViews) }));
+        sendToPlugin('saveVisibleViews', JSON.stringify({ visibleViews: JSON.stringify(State.visibleViews) }));
         renderSidebar();
         break;
       }
@@ -266,7 +267,7 @@ function handleNavClick(e) {
 
   if (view === 'note') {
     State.currentNoteFilename = item.dataset.filename || null;
-    sendMessageToPlugin('requestNoteContent', JSON.stringify({ filename: State.currentNoteFilename }));
+    sendToPlugin('requestNoteContent', JSON.stringify({ filename: State.currentNoteFilename }));
     pushRecentNote(State.currentNoteFilename);
   }
 
@@ -274,7 +275,7 @@ function handleNavClick(e) {
   restoreViewPrefs(view, State.currentNoteFilename);
   persistViewPrefs();
 
-  sendMessageToPlugin('saveView', JSON.stringify({ view: view, noteFilename: State.currentNoteFilename }));
+  sendToPlugin('saveView', JSON.stringify({ view: view, noteFilename: State.currentNoteFilename }));
   var allNav = document.querySelectorAll('.cl-nav-item');
   for (var i = 0; i < allNav.length; i++) allNav[i].classList.remove('cl-nav-active');
   item.classList.add('cl-nav-active');
@@ -329,6 +330,6 @@ export function setupSidebarResizer() {
     document.body.classList.remove('cl-resizing');
     resizer.classList.remove('cl-resizer-active');
     var finalWidth = sidebar.getBoundingClientRect().width;
-    sendMessageToPlugin('saveSidebarWidth', JSON.stringify({ width: Math.round(finalWidth) }));
+    sendToPlugin('saveSidebarWidth', JSON.stringify({ width: Math.round(finalWidth) }));
   });
 }

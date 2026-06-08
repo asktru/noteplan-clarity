@@ -4,7 +4,7 @@
 // into the final markup.
 
 import { State } from '../state.js';
-import { esc, capitalize, formatDateHeader } from '../lib/helpers.js';
+import { esc, capitalize, formatDateHeader, formatWeekHeader } from '../lib/helpers.js';
 import { renderInlineMarkdown } from '../lib/markdown.js';
 import { getTasksForView } from '../lib/task-categorization.js';
 
@@ -15,12 +15,14 @@ export function renderTaskRow(task, options) {
   var isOverdue = options.isOverdue || false;
   var alwaysShowDate = options.alwaysShowDate || false;
   var dimmed = options.dimmed || false;
+  var future = options.future || false;
 
   var classes = 'cl-task-row';
   if (task.status === 'done') classes += ' cl-done';
   if (task.status === 'cancelled') classes += ' cl-cancelled';
   if (isOverdue) classes += ' cl-overdue';
   if (dimmed) classes += ' cl-dimmed';
+  if (future) classes += ' cl-future';
 
   var dragAttrs = '';
   if (options.lineIndex !== undefined) {
@@ -209,12 +211,30 @@ export function renderGroupedTasks(tasks, grouping, options) {
     var priRank = { '!!!': 3, '!!': 2, '!': 1, 'No Priority': 0 };
     groupOrder.sort(function(a, b) { return (priRank[b] || 0) - (priRank[a] || 0); });
   }
+  if (grouping === 'folder' || grouping === 'note') {
+    // Weekly-note groups sort above project/area groups; among themselves by
+    // week. Non-weekly groups keep their existing relative order (stable sort).
+    groupOrder.sort(function(a, b) {
+      var aw = (groups[a][0] && groups[a][0].sourceWeek) ? 1 : 0;
+      var bw = (groups[b][0] && groups[b][0].sourceWeek) ? 1 : 0;
+      if (aw !== bw) return bw - aw;
+      if (aw && bw) return (groups[a][0].sourceWeek || '').localeCompare(groups[b][0].sourceWeek || '');
+      return 0;
+    });
+  }
 
   var html = '';
   for (var gi = 0; gi < groupOrder.length; gi++) {
     var name = groupOrder[gi];
-    var displayName = (grouping === 'date') ? formatDateHeader(name) : name;
     var group = groups[groupOrder[gi]];
+    var group0 = group[0];
+    // The weekly-note header/grouping only applies to folder/note grouping
+    // (where weekly notes form their own group above project/area notes). In
+    // priority grouping, weekly-note tasks are ordinary tasks in their
+    // priority group, so keep the normal (priority) header.
+    var isWeekGroup = (grouping === 'folder' || grouping === 'note') && group0 && group0.sourceWeek;
+    var displayName = grouping === 'date' ? formatDateHeader(name)
+      : (isWeekGroup ? formatWeekHeader(group0.sourceWeek) : name);
     if (grouping === 'note' && group[0] && group[0].noteFilename) {
       html += '<div class="cl-group-header cl-group-clickable" data-action="jumpToProjectNote" data-filename="' + esc(group[0].noteFilename) + '">' + esc(displayName) + '</div>';
     } else {

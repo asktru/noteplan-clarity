@@ -1,4 +1,5 @@
 /* global sendMessageToPlugin */
+import { sendToPlugin } from './lib/bridge.js';
 //
 // Entry point for the Clarity webview bundle. The webview's runtime now lives
 // across ~20 sibling modules; what's left here is the wiring layer:
@@ -68,8 +69,8 @@ export function navigateToProjectNote(filename) {
   State.tasksOnly = false;
   State.expandedTaskId = null;
   State.editDraft = null;
-  sendMessageToPlugin('requestNoteContent', JSON.stringify({ filename: filename }));
-  sendMessageToPlugin('saveView', JSON.stringify({ view: 'note', noteFilename: filename }));
+  sendToPlugin('requestNoteContent', JSON.stringify({ filename: filename }));
+  sendToPlugin('saveView', JSON.stringify({ view: 'note', noteFilename: filename }));
   pushRecentNote(filename);
   renderSidebar();
   renderCurrentView();
@@ -177,6 +178,12 @@ export function attachMainEventListeners() {
         saveCurrentViewPrefs(); persistViewPrefs();
         renderCurrentView();
         break;
+      case 'toggleHideFuture':
+        State.filters.hideFuture = !State.filters.hideFuture;
+        saveCurrentViewPrefs();
+        persistViewPrefs();
+        renderCurrentView();
+        break;
       case 'setGrouping':
         State.grouping = target.dataset.grouping || 'note';
         saveCurrentViewPrefs(); persistViewPrefs();
@@ -184,7 +191,7 @@ export function attachMainEventListeners() {
         break;
       case 'openInEditor':
         if (target.dataset.filename) {
-          sendMessageToPlugin('openNoteInEditor', JSON.stringify({ filename: target.dataset.filename }));
+          sendToPlugin('openNoteInEditor', JSON.stringify({ filename: target.dataset.filename }));
         }
         break;
       case 'jumpToProjectNote': {
@@ -199,7 +206,7 @@ export function attachMainEventListeners() {
           break;
         }
         // Fallback: not a Clarity-tracked project (e.g. calendar note) — open in editor.
-        sendMessageToPlugin('openNoteInEditor', JSON.stringify({ filename: jfn }));
+        sendToPlugin('openNoteInEditor', JSON.stringify({ filename: jfn }));
         break;
       }
       case 'openNoteMetaModal':
@@ -209,7 +216,7 @@ export function attachMainEventListeners() {
       case 'markReviewedFromFooter': {
         var nc = State.noteContent;
         if (!nc) break;
-        sendMessageToPlugin('updateNoteFrontmatter', JSON.stringify({
+        sendToPlugin('updateNoteFrontmatter', JSON.stringify({
           filename: nc.filename,
           updates: { reviewed: State.today },
         }));
@@ -227,8 +234,16 @@ export function attachMainEventListeners() {
         if (!rfn) break;
         closeProjectMenu();
         target.classList.add('cl-spinning');
-        sendMessageToPlugin('refreshProject', JSON.stringify({ filename: rfn }));
-        sendMessageToPlugin('requestNoteContent', JSON.stringify({ filename: rfn }));
+        sendToPlugin('refreshProject', JSON.stringify({ filename: rfn }));
+        sendToPlugin('requestNoteContent', JSON.stringify({ filename: rfn }));
+        break;
+      }
+      case 'moveCompletedToBottom': {
+        var mcfn = target.dataset.filename || State.currentNoteFilename;
+        if (!mcfn) break;
+        closeProjectMenu();
+        sendToPlugin('moveCompletedToBottom', JSON.stringify({ filename: mcfn }));
+        sendToPlugin('requestNoteContent', JSON.stringify({ filename: mcfn }));
         break;
       }
       case 'archiveProject':
@@ -282,7 +297,7 @@ export function attachMainEventListeners() {
         var heading = target.closest('.cl-note-heading');
         if (!heading) break;
         toggleHeadingFocusUI(heading);
-        sendMessageToPlugin('toggleHeadingFocus', JSON.stringify({
+        sendToPlugin('toggleHeadingFocus', JSON.stringify({
           filename: State.currentNoteFilename,
           lineIndex: fLine,
         }));
@@ -303,7 +318,7 @@ export function attachMainEventListeners() {
           }
           target.classList.toggle('cl-always-visible', nowHidden);
         }
-        sendMessageToPlugin('toggleHeadingCollapse', JSON.stringify({
+        sendToPlugin('toggleHeadingCollapse', JSON.stringify({
           filename: State.currentNoteFilename,
           lineIndex: lineIdx,
         }));
@@ -321,13 +336,13 @@ export function attachMainEventListeners() {
       var days = parseInt(target.value, 10);
       if (!isNaN(days) && days > 0) {
         State.inboxLookbackDays = days;
-        sendMessageToPlugin('saveInboxLookback', JSON.stringify({ days: days }));
+        sendToPlugin('saveInboxLookback', JSON.stringify({ days: days }));
       }
     } else if (action === 'setUpcomingLookahead') {
       var days = parseInt(target.value, 10);
       if (!isNaN(days) && days > 0) {
         State.upcomingLookaheadDays = days;
-        sendMessageToPlugin('saveUpcomingLookahead', JSON.stringify({ days: days }));
+        sendToPlugin('saveUpcomingLookahead', JSON.stringify({ days: days }));
       }
     }
   });
@@ -345,7 +360,7 @@ export function attachMainEventListeners() {
       if (view === 'today') msg.scheduledDate = State.today;
       if (view === 'someday') msg.tags = ['#someday'];
       if (view === 'note') msg.prepend = true;
-      sendMessageToPlugin('createTask', JSON.stringify(msg));
+      sendToPlugin('createTask', JSON.stringify(msg));
       e.target.value = '';
     }
   });
@@ -371,7 +386,7 @@ export function toggleTaskTagById(taskId, tag, add) {
     }
   }
   renderCurrentView();
-  sendMessageToPlugin('setTaskTag', JSON.stringify({
+  sendToPlugin('setTaskTag', JSON.stringify({
     filename: filename, lineIndex: lineIndex, tag: tag, add: !!add,
   }));
 }
@@ -393,7 +408,7 @@ export function rescheduleTaskById(taskId, dateStr) {
     }
   }
   renderCurrentView();
-  sendMessageToPlugin('rescheduleTask', JSON.stringify({
+  sendToPlugin('rescheduleTask', JSON.stringify({
     filename: filename, lineIndex: lineIndex,
     scheduledDate: dateStr || null, scheduledWeek: null,
   }));
@@ -420,7 +435,7 @@ export function toggleTask(taskId) {
   var parts = taskId.split(':');
   var filename = parts.slice(0, -1).join(':');
   var lineIndex = parseInt(parts[parts.length - 1]);
-  sendMessageToPlugin('toggleTask', JSON.stringify({ filename: filename, lineIndex: lineIndex }));
+  sendToPlugin('toggleTask', JSON.stringify({ filename: filename, lineIndex: lineIndex }));
 }
 
 

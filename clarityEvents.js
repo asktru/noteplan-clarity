@@ -1,16 +1,12 @@
-/* global sendMessageToPlugin, npWindowID */
 (() => {
-  // receivingPluginID and npWindowID are set in the inline script before the bridge
-  // loads. Route every outgoing message through sendToPlugin so each payload carries
-  // the originating window's ID; the plugin replies to that window (sidebar embed vs.
-  // separate floating window). sendMessageToPlugin is `const` in the bridge and can't
-  // be monkey-patched, so we wrap it.
+  // src/webview/lib/bridge.js
   function sendToPlugin(action, data) {
     try {
       var d = data ? JSON.parse(data) : {};
-      if (typeof npWindowID !== 'undefined' && npWindowID && d._windowID === undefined) d._windowID = npWindowID;
+      if (typeof npWindowID !== "undefined" && npWindowID && d._windowID === void 0) d._windowID = npWindowID;
       data = JSON.stringify(d);
-    } catch (e) {}
+    } catch (e) {
+    }
     return sendMessageToPlugin(action, data);
   }
 
@@ -396,21 +392,13 @@
           if (t.scheduledDate && t.scheduledDate <= today) match = true;
           break;
         case "upcoming":
-          // Future day-scheduled, future week-scheduled, calendar-source tasks
-          // living on a future daily note, or living in a future weekly note.
-          if ((t.scheduledDate && t.scheduledDate > today) ||
-              (t.scheduledWeek && t.scheduledWeek > currentWeek) ||
-              (t.sourceType === "calendar" && t.sourceDate && t.sourceDate > today) ||
-              (t.sourceType === "calendar" && t.sourceWeek && t.sourceWeek > currentWeek)) match = true;
+          if (t.scheduledDate && t.scheduledDate > today || t.scheduledWeek && t.scheduledWeek > currentWeek || t.sourceType === "calendar" && t.sourceDate && t.sourceDate > today || t.sourceType === "calendar" && t.sourceWeek && t.sourceWeek > currentWeek) match = true;
           break;
         case "anytime":
           if (t.tags && t.tags.indexOf("#someday") >= 0) break;
           if (t.sourceType === "calendar") {
-            // Tasks living in a weekly note (have sourceWeek, no sourceDate) for
-            // the current or a past week. Daily-note calendar tasks stay excluded.
             if (t.sourceWeek && t.sourceWeek <= currentWeek) match = true;
-          } else if ((!t.scheduledDate || t.scheduledDate <= today) &&
-                     (!t.scheduledWeek || t.scheduledWeek <= currentWeek)) {
+          } else if ((!t.scheduledDate || t.scheduledDate <= today) && (!t.scheduledWeek || t.scheduledWeek <= currentWeek)) {
             match = true;
           }
           break;
@@ -766,11 +754,9 @@
       });
     }
     if (grouping === "folder" || grouping === "note") {
-      // Weekly-note groups sort above project/area groups; among themselves by
-      // week. Non-weekly groups keep their existing relative order (stable sort).
       groupOrder.sort(function(a, b) {
-        var aw = (groups[a][0] && groups[a][0].sourceWeek) ? 1 : 0;
-        var bw = (groups[b][0] && groups[b][0].sourceWeek) ? 1 : 0;
+        var aw = groups[a][0] && groups[a][0].sourceWeek ? 1 : 0;
+        var bw = groups[b][0] && groups[b][0].sourceWeek ? 1 : 0;
         if (aw !== bw) return bw - aw;
         if (aw && bw) return (groups[a][0].sourceWeek || "").localeCompare(groups[b][0].sourceWeek || "");
         return 0;
@@ -781,13 +767,8 @@
       var name = groupOrder[gi];
       var group = groups[groupOrder[gi]];
       var group0 = group[0];
-      // The weekly-note header/grouping only applies to folder/note grouping
-      // (where weekly notes form their own group above project/area notes). In
-      // priority grouping, weekly-note tasks are ordinary tasks in their
-      // priority group, so keep the normal (priority) header.
       var isWeekGroup = (grouping === "folder" || grouping === "note") && group0 && group0.sourceWeek;
-      var displayName = grouping === "date" ? formatDateHeader(name)
-        : (isWeekGroup ? formatWeekHeader(group0.sourceWeek) : name);
+      var displayName = grouping === "date" ? formatDateHeader(name) : isWeekGroup ? formatWeekHeader(group0.sourceWeek) : name;
       if (grouping === "note" && group[0] && group[0].noteFilename) {
         html += '<div class="cl-group-header cl-group-clickable" data-action="jumpToProjectNote" data-filename="' + esc(group[0].noteFilename) + '">' + esc(displayName) + "</div>";
       } else {
@@ -1090,7 +1071,6 @@
         hideToc();
       }
       if (__flags.focus) applyFocusMode();
-      // Restore focus to a task moved by keyboard (cmd+ctrl+up/down) after re-render.
       if (State.pendingFocusTaskId) {
         var pfRows = el.querySelectorAll(".cl-task-row");
         for (var pf = 0; pf < pfRows.length; pf++) {
@@ -1544,7 +1524,6 @@
           children
         };
         var taskFuture = status === "open" && taskObj.scheduledDate && taskObj.scheduledDate > State.today;
-        // Hide-upcoming filter: skip future open tasks entirely (before any markup).
         if (State.filters.hideFuture && taskFuture) {
           if (children && children.length) skipUntilIndent = pIndent;
           continue;
@@ -2454,7 +2433,7 @@
       items: [
         { keys: ["\u2318N"], label: "Focus the New Task input" },
         { keys: ["\u2318\u2303N"], label: "New task below the focused task" },
-        { keys: ["\u2318\u21e7N"], label: "New heading below the focused task" },
+        { keys: ["\u2318\u21E7N"], label: "New heading below the focused task" },
         { keys: ["\u2318\u2325N"], label: "New project note in this folder" },
         { keys: ["?"], label: "Show this cheatsheet" }
       ]
@@ -3143,10 +3122,6 @@
         siblings.push(rows[i]);
       }
     }
-    // Headings are valid drop targets for top-level tasks: dropping "after" a
-    // heading inserts as the first item of that (possibly empty) section, and
-    // "before" inserts just above it. Without this, an empty section between two
-    // headings has no droppable element, so tasks can't land between headings.
     if (sourceIndent === 0) {
       var heads = container.querySelectorAll(".cl-note-heading[data-line-index]");
       for (var h = 0; h < heads.length; h++) siblings.push(heads[h]);
@@ -3636,15 +3611,12 @@
     }, 0);
   }
 
-  // The .cl-task-row for the currently focused task, or null.
+  // src/webview/keyboard.js
   function focusedTaskRow() {
     var rows = document.querySelectorAll(".cl-task-row");
     if (State.focusedTaskIndex >= 0 && State.focusedTaskIndex < rows.length) return rows[State.focusedTaskIndex];
     return null;
   }
-
-  // One-off inline input for a new task or h2 heading, placed below the focused
-  // task row (or at the top of the note body when afterRow is null).
   function showInlineNewItem(kind, afterRow) {
     var existing = document.querySelector(".cl-inline-new");
     if (existing) existing.remove();
@@ -3653,7 +3625,7 @@
     var input = document.createElement("input");
     input.type = "text";
     input.className = "cl-quick-add-input";
-    input.placeholder = kind === "heading" ? "New heading…" : "New task…";
+    input.placeholder = kind === "heading" ? "New heading\u2026" : "New task\u2026";
     wrap.appendChild(input);
     if (afterRow) {
       afterRow.insertAdjacentElement("afterend", wrap);
@@ -3662,14 +3634,9 @@
       if (!body) return;
       body.insertBefore(wrap, body.firstChild);
     }
-    // Drop task focus while the inline input is open: removes the focus
-    // highlight and stops the global Enter handler from also opening the
-    // focused task's editor (which would also set expandedTaskId and break
-    // arrow-key navigation afterwards).
     var allRows = document.querySelectorAll(".cl-task-row");
     for (var fr = 0; fr < allRows.length; fr++) allRows[fr].classList.remove("cl-focused");
     State.focusedTaskIndex = -1;
-
     var done = false;
     input.addEventListener("keydown", function(ev) {
       if (ev.key === "Enter") {
@@ -3681,10 +3648,10 @@
         if (!text) return;
         var afterIdx = afterRow ? parseInt(afterRow.dataset.lineIndex, 10) : null;
         if (kind === "heading") {
-          sendToPlugin("insertHeading", JSON.stringify({ filename: State.currentNoteFilename, content: text, afterLineIndex: (afterIdx === null || isNaN(afterIdx)) ? null : afterIdx }));
+          sendToPlugin("insertHeading", JSON.stringify({ filename: State.currentNoteFilename, content: text, afterLineIndex: afterIdx === null || isNaN(afterIdx) ? null : afterIdx }));
         } else {
-          var indent = afterRow ? (parseInt(afterRow.dataset.indent, 10) || 0) : 0;
-          sendToPlugin("createTask", JSON.stringify({ filename: State.currentNoteFilename, content: text, afterLineIndex: (afterIdx === null || isNaN(afterIdx)) ? null : afterIdx, indent: indent }));
+          var indent = afterRow ? parseInt(afterRow.dataset.indent, 10) || 0 : 0;
+          sendToPlugin("createTask", JSON.stringify({ filename: State.currentNoteFilename, content: text, afterLineIndex: afterIdx === null || isNaN(afterIdx) ? null : afterIdx, indent }));
         }
       } else if (ev.key === "Escape") {
         ev.preventDefault();
@@ -3693,11 +3660,11 @@
         if (wrap.parentNode) wrap.remove();
       }
     });
-    input.addEventListener("blur", function() { if (!done && wrap.parentNode) wrap.remove(); });
+    input.addEventListener("blur", function() {
+      if (!done && wrap.parentNode) wrap.remove();
+    });
     input.focus();
   }
-
-  // src/webview/keyboard.js
   document.addEventListener("keydown", function(e) {
     if (e.metaKey && e.key === "Enter") {
       if (State.expandedTaskId) {
@@ -3834,23 +3801,23 @@
       openQuickJump();
       return;
     }
-    // New task below the focused task (fall back to the top input if none focused).
     if (e.metaKey && e.ctrlKey && !e.shiftKey && !e.altKey && e.code === "KeyN") {
       if (State.currentView !== "note") return;
       e.preventDefault();
       var ctrlRow = focusedTaskRow();
       if (ctrlRow) showInlineNewItem("task", ctrlRow);
-      else { var ctrlQa = document.querySelector(".cl-quick-add-input"); if (ctrlQa) ctrlQa.focus(); }
+      else {
+        var ctrlQa = document.querySelector(".cl-quick-add-input");
+        if (ctrlQa) ctrlQa.focus();
+      }
       return;
     }
-    // New h2 heading below the focused task (or at the top of the body if none).
     if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && e.code === "KeyN") {
       if (State.currentView !== "note") return;
       e.preventDefault();
       showInlineNewItem("heading", focusedTaskRow());
       return;
     }
-    // New project note in the same folder as the current note, then open it.
     if (e.metaKey && e.altKey && !e.ctrlKey && !e.shiftKey && e.code === "KeyN") {
       if (State.currentView !== "note" || !State.currentNoteFilename) return;
       e.preventDefault();
@@ -3863,7 +3830,6 @@
       if (quickAdd) quickAdd.focus();
       return;
     }
-    // Move the focused task up/down one slot (reuses the drag reorder path).
     if (e.metaKey && e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
       if (State.currentView !== "note") return;
       var moveRow = focusedTaskRow();
@@ -3871,7 +3837,9 @@
       e.preventDefault();
       var moveCands = dragFindSiblings(moveRow).slice();
       moveCands.push(moveRow);
-      moveCands.sort(function(a, b) { return a.getBoundingClientRect().top - b.getBoundingClientRect().top; });
+      moveCands.sort(function(a, b) {
+        return a.getBoundingClientRect().top - b.getBoundingClientRect().top;
+      });
       var moveIdx = moveCands.indexOf(moveRow);
       var neighbor = e.key === "ArrowUp" ? moveCands[moveIdx - 1] : moveCands[moveIdx + 1];
       if (!neighbor) return;

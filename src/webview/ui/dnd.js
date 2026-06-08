@@ -1,4 +1,5 @@
 /* global sendMessageToPlugin */
+import { sendToPlugin } from '../lib/bridge.js';
 // Drag-and-drop reordering of tasks within the note/project view. Long-press
 // (300ms) starts a drag; movement < 10px before that cancels it; siblings are
 // the same-indent rows under the same `.cl-note-content` container. The
@@ -35,7 +36,7 @@ function dragGetTaskRow(el) {
   return row;
 }
 
-function dragFindSiblings(sourceRow) {
+export function dragFindSiblings(sourceRow) {
   var container = document.querySelector('.cl-note-content');
   if (!container) return [];
   var sourceIndent = parseInt(sourceRow.dataset.indent, 10) || 0;
@@ -46,6 +47,14 @@ function dragFindSiblings(sourceRow) {
     if (rowIndent === sourceIndent && rows[i] !== sourceRow) {
       siblings.push(rows[i]);
     }
+  }
+  // Headings are valid drop targets for top-level tasks: dropping "after" a
+  // heading inserts as the first item of that (possibly empty) section, and
+  // "before" inserts just above it. Without this, an empty section between two
+  // headings has no droppable element, so tasks can't land between headings.
+  if (sourceIndent === 0) {
+    var heads = container.querySelectorAll('.cl-note-heading[data-line-index]');
+    for (var h = 0; h < heads.length; h++) siblings.push(heads[h]);
   }
   return siblings;
 }
@@ -115,7 +124,7 @@ function dragAutoScroll(y) {
   }
 }
 
-function dragCommit(sourceRow, dropTarget) {
+export function dragCommit(sourceRow, dropTarget) {
   if (!dropTarget) return;
   var sourceLineIndex = parseInt(sourceRow.dataset.lineIndex, 10);
   var childCount = parseInt(sourceRow.dataset.childCount, 10) || 0;
@@ -132,7 +141,7 @@ function dragCommit(sourceRow, dropTarget) {
   } else {
     targetRef.parentNode.insertBefore(sourceRef, targetRef.nextSibling);
   }
-  sendMessageToPlugin('reorderTask', JSON.stringify({
+  sendToPlugin('reorderTask', JSON.stringify({
     filename: State.currentNoteFilename,
     sourceLineIndex: sourceLineIndex,
     childCount: childCount,

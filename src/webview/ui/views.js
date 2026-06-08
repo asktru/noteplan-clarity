@@ -62,6 +62,19 @@ export function renderCurrentView() {
       hideToc();
     }
     if (__flags.focus) applyFocusMode();
+    // Restore focus to a task moved by keyboard (cmd+ctrl+up/down) after re-render.
+    if (State.pendingFocusTaskId) {
+      var pfRows = el.querySelectorAll('.cl-task-row');
+      for (var pf = 0; pf < pfRows.length; pf++) {
+        if (pfRows[pf].dataset.taskId === State.pendingFocusTaskId) {
+          State.focusedTaskIndex = pf;
+          pfRows[pf].classList.add('cl-focused');
+          pfRows[pf].scrollIntoView({ block: 'nearest' });
+          break;
+        }
+      }
+      State.pendingFocusTaskId = null;
+    }
   } else {
     hideToc();
   }
@@ -217,11 +230,14 @@ function renderUpcomingView() {
   function upcomingDateOf(t) {
     return t.scheduledDate || (t.sourceType === 'calendar' ? t.sourceDate : null);
   }
+  function upcomingWeekOf(t) {
+    return t.scheduledWeek || t.sourceWeek || null;
+  }
 
   var dayTasks = [];
   var weekTasks = [];
   for (var i = 0; i < tasks.length; i++) {
-    if (tasks[i].scheduledWeek && !upcomingDateOf(tasks[i])) weekTasks.push(tasks[i]);
+    if (upcomingWeekOf(tasks[i]) && !upcomingDateOf(tasks[i])) weekTasks.push(tasks[i]);
     else dayTasks.push(tasks[i]);
   }
 
@@ -241,11 +257,11 @@ function renderUpcomingView() {
     }
   }
 
-  weekTasks.sort(function(a, b) { return (a.scheduledWeek || '').localeCompare(b.scheduledWeek || ''); });
+  weekTasks.sort(function(a, b) { return (upcomingWeekOf(a) || '').localeCompare(upcomingWeekOf(b) || ''); });
   var weekGroups = {};
   var weekOrder = [];
   for (var wi = 0; wi < weekTasks.length; wi++) {
-    var wk = weekTasks[wi].scheduledWeek || 'unknown';
+    var wk = upcomingWeekOf(weekTasks[wi]) || 'unknown';
     if (!weekGroups[wk]) { weekGroups[wk] = []; weekOrder.push(wk); }
     weekGroups[wk].push(weekTasks[wi]);
   }
@@ -375,6 +391,7 @@ function renderNoteView() {
     html += '<span class="cl-filter-pill' + sfActive + '" data-action="filterNoteStatus" data-status="' + statusFilters[sf] + '">' + capitalize(statusFilters[sf]) + '</span>';
   }
   html += '</div>';
+  html += '<div class="cl-tasks-only-toggle' + (State.filters.hideFuture ? ' cl-filter-active' : '') + '" data-action="toggleHideFuture" title="Hide tasks scheduled for a future date">' + (State.filters.hideFuture ? '☑' : '☐') + ' Hide upcoming</div>';
   html += '<div class="cl-tasks-only-toggle' + (State.tasksOnly ? ' cl-filter-active' : '') + '" data-action="toggleTasksOnly">' + (State.tasksOnly ? '☑' : '☐') + ' Tasks only</div>';
   html += '</div>';
   html += '</div>';
@@ -532,11 +549,16 @@ function renderNoteView() {
         noteFilename: nc.filename, noteTitle: nc.title, folderPath: '', folderName: '',
         lineIndex: p.lineIndex, children: children,
       };
+      var taskFuture = (status === 'open' && taskObj.scheduledDate && taskObj.scheduledDate > State.today);
+      // Hide-upcoming filter: skip future open tasks entirely (before any markup).
+      if (State.filters.hideFuture && taskFuture) {
+        if (children && children.length) skipUntilIndent = pIndent;
+        continue;
+      }
       var indent = pIndent * 20;
       if (indent > 0) html += '<div class="cl-indent-wrap" style="padding-left:' + indent + 'px;">';
       var taskOverdue = (status === 'open' && taskObj.scheduledDate && taskObj.scheduledDate < State.today);
-      var taskFuture = (status === 'open' && taskObj.scheduledDate && taskObj.scheduledDate > State.today);
-      html += renderTaskRow(taskObj, { showSource: false, lineIndex: p.lineIndex, indentLevel: pIndent, childCount: children.length, showStar: true, isOverdue: taskOverdue, alwaysShowDate: true, dimmed: taskFuture });
+      html += renderTaskRow(taskObj, { showSource: false, lineIndex: p.lineIndex, indentLevel: pIndent, childCount: children.length, showStar: true, isOverdue: taskOverdue, alwaysShowDate: true, future: taskFuture });
       if (indent > 0) html += '</div>';
     } else {
       var indent = pIndent * 20;

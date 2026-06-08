@@ -8,16 +8,79 @@
 
 import { State } from './state.js';
 import { addDays } from './lib/helpers.js';
+import { sendToPlugin } from './lib/bridge.js';
 import { expandTask, collapseTask, saveExpandedTask } from './ui/task-editor.js';
 import { openShortcutsCheatsheet, deleteTaskById } from './ui/modals.js';
 import { openQuickJump } from './ui/quick-jump.js';
 import { updateDateChip } from './ui/pickers.js';
+import { dragFindSiblings, dragCommit } from './ui/dnd.js';
 import {
   getFocusedTaskId,
   toggleTask,
   toggleTaskTagById,
   rescheduleTaskById,
 } from './index.js';
+
+// The .cl-task-row for the currently focused task, or null.
+function focusedTaskRow() {
+  var rows = document.querySelectorAll('.cl-task-row');
+  if (State.focusedTaskIndex >= 0 && State.focusedTaskIndex < rows.length) return rows[State.focusedTaskIndex];
+  return null;
+}
+
+// One-off inline input for a new task or h2 heading, placed below the focused
+// task row (or at the top of the note body when afterRow is null).
+function showInlineNewItem(kind, afterRow) {
+  var existing = document.querySelector('.cl-inline-new');
+  if (existing) existing.remove();
+  var wrap = document.createElement('div');
+  wrap.className = 'cl-inline-new cl-inline-new-' + kind;
+  var input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'cl-quick-add-input';
+  input.placeholder = kind === 'heading' ? 'New heading…' : 'New task…';
+  wrap.appendChild(input);
+  if (afterRow) {
+    afterRow.insertAdjacentElement('afterend', wrap);
+  } else {
+    var body = document.querySelector('#cl-main .cl-note-content');
+    if (!body) return;
+    body.insertBefore(wrap, body.firstChild);
+  }
+  // Drop task focus while the inline input is open: removes the focus
+  // highlight and stops the global Enter handler from also opening the
+  // focused task's editor (which would also set expandedTaskId and break
+  // arrow-key navigation afterwards).
+  var allRows = document.querySelectorAll('.cl-task-row');
+  for (var fr = 0; fr < allRows.length; fr++) allRows[fr].classList.remove('cl-focused');
+  State.focusedTaskIndex = -1;
+
+  var done = false;
+  input.addEventListener('keydown', function(ev) {
+    if (ev.key === 'Enter') {
+      ev.preventDefault();
+      ev.stopPropagation();
+      var text = input.value.trim();
+      done = true;
+      if (wrap.parentNode) wrap.remove();
+      if (!text) return;
+      var afterIdx = afterRow ? parseInt(afterRow.dataset.lineIndex, 10) : null;
+      if (kind === 'heading') {
+        sendToPlugin('insertHeading', JSON.stringify({ filename: State.currentNoteFilename, content: text, afterLineIndex: (afterIdx === null || isNaN(afterIdx)) ? null : afterIdx }));
+      } else {
+        var indent = afterRow ? (parseInt(afterRow.dataset.indent, 10) || 0) : 0;
+        sendToPlugin('createTask', JSON.stringify({ filename: State.currentNoteFilename, content: text, afterLineIndex: (afterIdx === null || isNaN(afterIdx)) ? null : afterIdx, indent: indent }));
+      }
+    } else if (ev.key === 'Escape') {
+      ev.preventDefault();
+      ev.stopPropagation();
+      done = true;
+      if (wrap.parentNode) wrap.remove();
+    }
+  });
+  input.addEventListener('blur', function() { if (!done && wrap.parentNode) wrap.remove(); });
+  input.focus();
+}
 
 document.addEventListener('keydown', function(e) {
   // Cmd+Enter: save expanded task
@@ -158,11 +221,54 @@ document.addEventListener('keydown', function(e) {
     return;
   }
 
+  // New task below the focused task (fall back to the top input if none focused).
+  if (e.metaKey && e.ctrlKey && !e.shiftKey && !e.altKey && e.code === 'KeyN') {
+    if (State.currentView !== 'note') return;
+    e.preventDefault();
+    var ctrlRow = focusedTaskRow();
+    if (ctrlRow) showInlineNewItem('task', ctrlRow);
+    else { var ctrlQa = document.querySelector('.cl-quick-add-input'); if (ctrlQa) ctrlQa.focus(); }
+    return;
+  }
+
+  // New h2 heading below the focused task (or at the top of the body if none).
+  if (e.metaKey && e.shiftKey && !e.ctrlKey && !e.altKey && e.code === 'KeyN') {
+    if (State.currentView !== 'note') return;
+    e.preventDefault();
+    showInlineNewItem('heading', focusedTaskRow());
+    return;
+  }
+
+  // New project note in the same folder as the current note, then open it.
+  if (e.metaKey && e.altKey && !e.ctrlKey && !e.shiftKey && e.code === 'KeyN') {
+    if (State.currentView !== 'note' || !State.currentNoteFilename) return;
+    e.preventDefault();
+    sendToPlugin('createProjectNote', JSON.stringify({ filename: State.currentNoteFilename }));
+    return;
+  }
+
   // Cmd+N: focus quick add
   if (e.metaKey && e.key === 'n') {
     e.preventDefault();
     var quickAdd = document.querySelector('.cl-quick-add-input');
     if (quickAdd) quickAdd.focus();
+    return;
+  }
+
+  // Move the focused task up/down one slot (reuses the drag reorder path).
+  if (e.metaKey && e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    if (State.currentView !== 'note') return;
+    var moveRow = focusedTaskRow();
+    if (!moveRow) return;
+    e.preventDefault();
+    var moveCands = dragFindSiblings(moveRow).slice();
+    moveCands.push(moveRow);
+    moveCands.sort(function(a, b) { return a.getBoundingClientRect().top - b.getBoundingClientRect().top; });
+    var moveIdx = moveCands.indexOf(moveRow);
+    var neighbor = e.key === 'ArrowUp' ? moveCands[moveIdx - 1] : moveCands[moveIdx + 1];
+    if (!neighbor) return;
+    State.pendingFocusTaskId = moveRow.dataset.taskId;
+    dragCommit(moveRow, { el: neighbor, position: e.key === 'ArrowUp' ? 'before' : 'after' });
     return;
   }
 

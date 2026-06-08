@@ -1,4 +1,5 @@
 /* global sendMessageToPlugin */
+import { sendToPlugin } from '../lib/bridge.js';
 // Cheatsheet + confirmation + project-action overlays. These all hang
 // off the document body and tear themselves down on outside click / Esc.
 //
@@ -79,7 +80,7 @@ export function deleteTaskById(taskId) {
       if (State.expandedTaskId === taskId) collapseTask();
       State.focusedTaskIndex = -1;
       renderCurrentView();
-      sendMessageToPlugin('deleteTask', JSON.stringify({ filename: filename, lineIndex: lineIndex }));
+      sendToPlugin('deleteTask', JSON.stringify({ filename: filename, lineIndex: lineIndex }));
     },
   });
 }
@@ -92,6 +93,7 @@ var SHORTCUTS_GROUPS = [
       { keys: ['⌘1', '..', '⌘5'], label: 'Switch view (Inbox, Today, Upcoming, Anytime, Someday)' },
       { keys: ['⌘/'], label: 'Quick-jump to a project or area' },
       { keys: ['↑', '↓'], label: 'Move focus between tasks' },
+      { keys: ['⌘⌃↑', '⌘⌃↓'], label: 'Move the focused task up / down' },
       { keys: ['Enter'], label: 'Open the focused task' },
       { keys: ['Esc'], label: 'Close editor, picker, or palette' },
     ],
@@ -112,6 +114,9 @@ var SHORTCUTS_GROUPS = [
     title: 'Other',
     items: [
       { keys: ['⌘N'], label: 'Focus the New Task input' },
+      { keys: ['⌘⌃N'], label: 'New task below the focused task' },
+      { keys: ['⌘⇧N'], label: 'New heading below the focused task' },
+      { keys: ['⌘⌥N'], label: 'New project note in this folder' },
       { keys: ['?'], label: 'Show this cheatsheet' },
     ],
   },
@@ -182,12 +187,32 @@ export function toggleProjectMenu(button) {
       '<span class="cl-project-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></span>' +
       '<span>Edit metadata…</span>' +
     '</button>' +
+    '<button type="button" class="cl-project-menu-item" data-action="moveCompletedToBottom" data-filename="' + esc(fn) + '">' +
+      '<span class="cl-project-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12"/><path d="M6 14l6 6 6-6"/><path d="M5 22h14"/></svg></span>' +
+      '<span>Move completed to bottom</span>' +
+    '</button>' +
     '<div class="cl-project-menu-sep"></div>' +
     '<button type="button" class="cl-project-menu-item cl-project-menu-destructive" data-action="archiveProject">' +
       '<span class="cl-project-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8H3v13h18V8z"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg></span>' +
       '<span>Move to archive…</span>' +
     '</button>';
-  wrap.appendChild(menu);
+  menu.style.visibility = 'hidden';
+  (document.getElementById('cl-main') || document.body).appendChild(menu);
+  var btnRect = button.getBoundingClientRect();
+  var menuW = menu.offsetWidth;
+  var menuH = menu.offsetHeight;
+  var left = btnRect.right - menuW;
+  if (left < 8) left = 8;
+  var maxLeft = window.innerWidth - menuW - 8;
+  if (left > maxLeft) left = maxLeft;
+  var top = btnRect.bottom + 4;
+  if (top + menuH > window.innerHeight - 8) {
+    var above = btnRect.top - 4 - menuH;
+    if (above >= 8) top = above;
+  }
+  menu.style.left = left + 'px';
+  menu.style.top = top + 'px';
+  menu.style.visibility = '';
 
   _projectMenuOutsideListener = function(e) {
     if (!menu.contains(e.target) && !button.contains(e.target)) closeProjectMenu();
@@ -213,7 +238,7 @@ export function confirmArchiveProject() {
     cancelLabel: 'Cancel',
     destructive: true,
     onConfirm: function() {
-      sendMessageToPlugin('archiveProject', JSON.stringify({ filename: fn }));
+      sendToPlugin('archiveProject', JSON.stringify({ filename: fn }));
     },
   });
 }
@@ -228,7 +253,7 @@ export function openNoteMetaModal() {
 
   var fm = nc.frontmatter || {};
   var typeVal = fm.type === 'project' || fm.type === 'area' ? fm.type : '';
-  var statusVal = (fm.status === 'paused' || fm.status === 'someday' || fm.status === 'completed' || fm.status === 'canceled') ? fm.status : '';
+  var statusVal = (fm.status === 'working' || fm.status === 'paused' || fm.status === 'someday' || fm.status === 'completed' || fm.status === 'canceled') ? fm.status : '';
   var dueVal = fm.due || '';
   var reviewedVal = fm.reviewed || '';
   var reviewVal = fm.review || '';
@@ -251,6 +276,7 @@ export function openNoteMetaModal() {
         '<label class="cl-meta-label">Status</label>' +
         '<select class="cl-meta-input" data-field="status">' +
           '<option value=""' + (statusVal === '' ? ' selected' : '') + '>Active</option>' +
+          '<option value="working"' + (statusVal === 'working' ? ' selected' : '') + '>Working</option>' +
           '<option value="paused"' + (statusVal === 'paused' ? ' selected' : '') + '>Paused</option>' +
           '<option value="someday"' + (statusVal === 'someday' ? ' selected' : '') + '>Someday</option>' +
           (typeVal === 'project'
@@ -327,7 +353,7 @@ export function openNoteMetaModal() {
       review: draft.review || null,
       clarity: serializeClarityFlags(chipFlags),
     };
-    sendMessageToPlugin('updateNoteFrontmatter', JSON.stringify({ filename: nc.filename, updates: updates }));
+    sendToPlugin('updateNoteFrontmatter', JSON.stringify({ filename: nc.filename, updates: updates }));
     close();
   }
 

@@ -1,4 +1,5 @@
 /* global sendMessageToPlugin */
+import { sendToPlugin } from './lib/bridge.js';
 // Shared mutable state for the Clarity webview. Other modules import `State`
 // as a live binding and mutate its properties directly — the object itself is
 // never reassigned. `navigateToProjectNote` stays in index.js for now because
@@ -12,11 +13,12 @@ export var State = {
   currentView: 'inbox',
   currentNoteFilename: null,
   expandedTaskId: null,
-  filters: { tag: null, folder: null, mention: null, text: '', noteStatus: 'all', todayRepeat: 'all' },
+  filters: { tag: null, folder: null, mention: null, text: '', noteStatus: 'all', todayRepeat: 'all', hideFuture: false },
   grouping: 'note',
   movedFromInbox: [],
   editDraft: null,
   focusedTaskIndex: -1,
+  pendingFocusTaskId: null,
   today: '',
   currentWeek: '',
   tasksOnly: false,
@@ -44,7 +46,7 @@ export function pushRecentNote(filename) {
   arr.unshift(filename);
   if (arr.length > MAX_RECENT_NOTES) arr = arr.slice(0, MAX_RECENT_NOTES);
   State.recentNotes = arr;
-  sendMessageToPlugin('saveRecentNotes', JSON.stringify({ recentNotes: JSON.stringify(arr) }));
+  sendToPlugin('saveRecentNotes', JSON.stringify({ recentNotes: JSON.stringify(arr) }));
 }
 
 // ─── (merged from view-prefs.js) ─────────────────────────
@@ -56,7 +58,7 @@ export function viewPrefsKey(view, filename) {
 export function saveCurrentViewPrefs() {
   var key = viewPrefsKey(State.currentView, State.currentNoteFilename);
   if (State.currentView === 'note') {
-    State.viewPrefs[key] = { noteStatus: State.filters.noteStatus, tasksOnly: State.tasksOnly };
+    State.viewPrefs[key] = { noteStatus: State.filters.noteStatus, tasksOnly: State.tasksOnly, hideFuture: State.filters.hideFuture };
   } else {
     var prefs = { tag: State.filters.tag, folder: State.filters.folder, grouping: State.grouping };
     if (State.currentView === 'today') prefs.todayRepeat = State.filters.todayRepeat;
@@ -70,6 +72,7 @@ export function restoreViewPrefs(view, filename) {
   if (view === 'note') {
     State.filters.noteStatus = (saved && saved.noteStatus) || 'all';
     State.tasksOnly = (saved && saved.tasksOnly) || false;
+    State.filters.hideFuture = (saved && saved.hideFuture) || false;
   } else {
     State.filters.tag = (saved && saved.tag) || null;
     State.filters.folder = (saved && saved.folder) || null;
@@ -85,5 +88,5 @@ export function defaultGrouping(view) {
 }
 
 export function persistViewPrefs() {
-  sendMessageToPlugin('saveViewPrefs', JSON.stringify({ viewPrefs: JSON.stringify(State.viewPrefs) }));
+  sendToPlugin('saveViewPrefs', JSON.stringify({ viewPrefs: JSON.stringify(State.viewPrefs) }));
 }

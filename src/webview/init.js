@@ -1,4 +1,5 @@
 /* global sendMessageToPlugin */
+import { sendToPlugin } from './lib/bridge.js';
 // Boot sequence: paint a skeleton sidebar + spinner while we wait for the
 // plugin to push INIT_DATA over the bridge, then wire mobile sidebar toggles,
 // drag-and-drop listeners, and the sidebar resizer. The "ready" message is
@@ -51,7 +52,7 @@ function renderInitialLoading() {
 document.addEventListener('DOMContentLoaded', function() {
   renderInitialLoading();
   setTimeout(function() {
-    sendMessageToPlugin('ready', '{}');
+    sendToPlugin('ready', '{}');
   }, 100);
 
   attachDragListeners(document.getElementById('cl-main'));

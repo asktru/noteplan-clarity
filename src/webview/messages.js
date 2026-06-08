@@ -1,4 +1,5 @@
 /* global sendMessageToPlugin */
+import { sendToPlugin } from './lib/bridge.js';
 // Message handler invoked by NotePlan's pluginToHTMLCommsBridge.js when the
 // plugin side wants to push data into the webview. The bridge looks up
 // `onMessageFromPlugin` on the window, so the entry point is republished onto
@@ -55,7 +56,7 @@ export function onMessageFromPlugin(type, data) {
       renderSidebar();
       // If in note view, re-request note content
       if (State.currentView === 'note' && State.currentNoteFilename) {
-        sendMessageToPlugin('requestNoteContent', JSON.stringify({ filename: State.currentNoteFilename }));
+        sendToPlugin('requestNoteContent', JSON.stringify({ filename: State.currentNoteFilename }));
       }
       renderCurrentView();
       break;
@@ -81,7 +82,7 @@ export function onMessageFromPlugin(type, data) {
     case 'TASK_RESCHEDULED':
     case 'TASK_DELETED':
     case 'TASK_TAG_UPDATED':
-      sendMessageToPlugin('ready', '{}');
+      sendToPlugin('ready', '{}');
       break;
     case 'PROJECT_ARCHIVED':
       if (data && data.success) {
@@ -89,9 +90,9 @@ export function onMessageFromPlugin(type, data) {
           State.currentView = 'inbox';
           State.currentNoteFilename = null;
           State.noteContent = null;
-          sendMessageToPlugin('saveView', JSON.stringify({ view: 'inbox', noteFilename: null }));
+          sendToPlugin('saveView', JSON.stringify({ view: 'inbox', noteFilename: null }));
         }
-        sendMessageToPlugin('ready', '{}');
+        sendToPlugin('ready', '{}');
       } else {
         console.log('Clarity: archive failed: ' + (data && data.error));
       }
@@ -132,7 +133,7 @@ export function onMessageFromPlugin(type, data) {
       })();
       renderSidebar();
       renderCurrentView();
-      sendMessageToPlugin('ready', '{}');
+      sendToPlugin('ready', '{}');
       break;
     default:
       console.log('Clarity WebView: unknown message type: ' + type);

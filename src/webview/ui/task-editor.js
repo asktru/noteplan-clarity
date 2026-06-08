@@ -1,4 +1,5 @@
 /* global sendMessageToPlugin */
+import { sendToPlugin } from '../lib/bridge.js';
 // Expanded inline task editor. `expandTask` swaps the focused .cl-task-row
 // out for an editor block with title, notes, checklist children, and the
 // metadata chip strip; Tab toggles between title and notes; ⌘Enter saves;
@@ -301,7 +302,7 @@ function attachEditorListeners(editor) {
           var idParts = State.expandedTaskId.split(':');
           var fname = idParts.slice(0, -1).join(':');
           var lineIdx = parseInt(idParts[idParts.length - 1]);
-          sendMessageToPlugin('toggleTask', JSON.stringify({ filename: fname, lineIndex: lineIdx }));
+          sendToPlugin('toggleTask', JSON.stringify({ filename: fname, lineIndex: lineIdx }));
         }
         break;
       case 'toggleChecklist':
@@ -416,7 +417,7 @@ export function saveExpandedTask() {
     moveToFilename: draft.moveToFilename,
   };
 
-  sendMessageToPlugin('saveTask', JSON.stringify(msg));
+  sendToPlugin('saveTask', JSON.stringify(msg));
 
   if (draft.moveToFilename && State.currentView === 'inbox') {
     State.movedFromInbox.push(taskId);

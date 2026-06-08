@@ -26,22 +26,22 @@ export function getTasksForView(view) {
         if (t.scheduledDate && t.scheduledDate <= today) match = true;
         break;
       case 'upcoming':
-        if (
-          (t.scheduledDate && t.scheduledDate > today) ||
-          (t.scheduledWeek && t.scheduledWeek > currentWeek) ||
-          // Calendar-source tasks living on a future daily note. Symmetric to
-          // Inbox's sourceDate <= today filter — the source date IS the
-          // scheduled date for these.
-          (t.sourceType === 'calendar' && t.sourceDate && t.sourceDate > today)
-        ) match = true;
+        // Future day-scheduled, future week-scheduled, calendar-source tasks
+        // living on a future daily note, or living in a future weekly note.
+        if ((t.scheduledDate && t.scheduledDate > today) ||
+            (t.scheduledWeek && t.scheduledWeek > currentWeek) ||
+            (t.sourceType === 'calendar' && t.sourceDate && t.sourceDate > today) ||
+            (t.sourceType === 'calendar' && t.sourceWeek && t.sourceWeek > currentWeek)) match = true;
         break;
       case 'anytime':
-        if (t.sourceType !== 'calendar') {
-          if (!t.tags || t.tags.indexOf('#someday') === -1) {
-            if (!t.scheduledDate || t.scheduledDate <= today) {
-              if (!t.scheduledWeek || t.scheduledWeek <= currentWeek) match = true;
-            }
-          }
+        if (t.tags && t.tags.indexOf('#someday') >= 0) break;
+        if (t.sourceType === 'calendar') {
+          // Tasks living in a weekly note (have sourceWeek, no sourceDate) for
+          // the current or a past week. Daily-note calendar tasks stay excluded.
+          if (t.sourceWeek && t.sourceWeek <= currentWeek) match = true;
+        } else if ((!t.scheduledDate || t.scheduledDate <= today) &&
+                   (!t.scheduledWeek || t.scheduledWeek <= currentWeek)) {
+          match = true;
         }
         break;
       case 'someday':
