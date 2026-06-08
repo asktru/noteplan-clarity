@@ -614,6 +614,13 @@ async function onMessageFromHTMLView(actionType, data) {
         break;
       }
 
+      case 'moveCompletedToBottom': {
+        var mcNote = findNoteByFilename(msg.filename);
+        if (mcNote) moveCompletedToBottom(mcNote);
+        await sendToHTMLWindow(replyWindowID, 'TASK_CREATED', { filename: msg.filename });
+        break;
+      }
+
       case 'createProjectNote': {
         var cpnFrom = msg.filename || '';
         var cpnFolder = cpnFrom.indexOf('/') >= 0 ? cpnFrom.replace(/\/[^/]+$/, '') : '';
@@ -1302,6 +1309,56 @@ function insertTasksAboveDone(note, items) {
   }
   if (!hadBlank) note.insertParagraph('', idx, 'empty');
   return firstEmpty;
+}
+
+// ─── Move Completed to Bottom ──────────────────────────────
+// Move all completed/cancelled TOP-LEVEL tasks & checklists (with their nested
+// content) to the end of the note under a "## Done" heading (created if absent).
+// Items already under "## Done" stay put; no-op if there's nothing to move.
+function moveCompletedToBottom(note) {
+  var paras = note.paragraphs || [];
+  if (!paras.length) return;
+  function indentOf(p) {
+    var ind = p.indentLevel || 0;
+    if (ind === 0 && p.rawContent) { var m = p.rawContent.match(/^\t+/); if (m) ind = m[0].length; }
+    return ind;
+  }
+  var doneLine = -1;
+  for (var i = 0; i < paras.length; i++) {
+    if (paras[i].type === 'title' && paras[i].headingLevel === 2 && (paras[i].content || '').trim() === 'Done') { doneLine = paras[i].lineIndex; break; }
+  }
+  var DONE_TYPES = { done: 1, cancelled: 1, checklistDone: 1, checklistCancelled: 1 };
+  var ranges = [];
+  for (var j = 0; j < paras.length; j++) {
+    var p = paras[j];
+    if (indentOf(p) !== 0 || !DONE_TYPES[p.type]) continue;
+    if (doneLine >= 0 && p.lineIndex > doneLine) continue; // already under ## Done
+    var endLine = p.lineIndex;
+    for (var k = j + 1; k < paras.length; k++) {
+      if (indentOf(paras[k]) > 0) endLine = paras[k].lineIndex;
+      else break;
+    }
+    ranges.push({ start: p.lineIndex, end: endLine });
+  }
+  if (!ranges.length) return;
+
+  var lines = (note.content || '').split('\n');
+  var moved = [];
+  var remove = {};
+  for (var r = 0; r < ranges.length; r++) {
+    for (var ln = ranges[r].start; ln <= ranges[r].end; ln++) { moved.push(lines[ln]); remove[ln] = true; }
+  }
+  var remaining = [];
+  for (var li = 0; li < lines.length; li++) { if (!remove[li]) remaining.push(lines[li]); }
+  while (remaining.length && remaining[remaining.length - 1].trim() === '') remaining.pop();
+
+  var hasDone = false;
+  for (var di = 0; di < remaining.length; di++) { if (/^##\s+Done\s*$/.test(remaining[di])) { hasDone = true; break; } }
+  var tail = hasDone ? [] : ['', '## Done'];
+  tail = tail.concat(moved);
+
+  note.content = remaining.concat(tail).join('\n');
+  DataStore.updateCache(note, true);
 }
 
 // ─── Note Finder ───────────────────────────────────────────
