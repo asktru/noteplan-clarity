@@ -2513,7 +2513,23 @@
     var menu = document.createElement("div");
     menu.className = "cl-project-menu";
     menu.innerHTML = '<button type="button" class="cl-project-menu-item" data-action="refreshProject" data-filename="' + esc(fn) + '"><span class="cl-project-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3.5-7.1"/><path d="M21 4v5h-5"/></svg></span><span>Refresh</span></button><button type="button" class="cl-project-menu-item" data-action="openNoteMetaModal"><span class="cl-project-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></span><span>Edit metadata\u2026</span></button><button type="button" class="cl-project-menu-item" data-action="moveCompletedToBottom" data-filename="' + esc(fn) + '"><span class="cl-project-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12"/><path d="M6 14l6 6 6-6"/><path d="M5 22h14"/></svg></span><span>Move completed to bottom</span></button><div class="cl-project-menu-sep"></div><button type="button" class="cl-project-menu-item cl-project-menu-destructive" data-action="archiveProject"><span class="cl-project-menu-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8H3v13h18V8z"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg></span><span>Move to archive\u2026</span></button>';
-    wrap.appendChild(menu);
+    menu.style.visibility = "hidden";
+    document.body.appendChild(menu);
+    var btnRect = button.getBoundingClientRect();
+    var menuW = menu.offsetWidth;
+    var menuH = menu.offsetHeight;
+    var left = btnRect.right - menuW;
+    if (left < 8) left = 8;
+    var maxLeft = window.innerWidth - menuW - 8;
+    if (left > maxLeft) left = maxLeft;
+    var top = btnRect.bottom + 4;
+    if (top + menuH > window.innerHeight - 8) {
+      var above = btnRect.top - 4 - menuH;
+      if (above >= 8) top = above;
+    }
+    menu.style.left = left + "px";
+    menu.style.top = top + "px";
+    menu.style.visibility = "";
     _projectMenuOutsideListener = function(e) {
       if (!menu.contains(e.target) && !button.contains(e.target)) closeProjectMenu();
     };

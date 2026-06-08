@@ -1207,9 +1207,7 @@ body.cl-settings-backdrop .cl-settings-popover.cl-popover-open {
   display: inline-flex;
 }
 .cl-project-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
+  position: fixed;
   min-width: 180px;
   background: var(--cl-bg);
   border: 1px solid var(--cl-border);
