@@ -7,8 +7,8 @@
   "plugin.description": "Things 3-inspired task clarity layer. Smart views for Inbox, Today, Upcoming, Anytime, Someday with inline task editing.",
   "plugin.icon": "🔮",
   "plugin.author": "asktru",
-  "plugin.version": "1.8.1",
-  "plugin.lastUpdateInfo": "Hotfixes: date-picker month-navigation arrows now work, calendar day cells render as uniform circles on narrow widths, the inline task editor auto-scrolls into view with breathing room when opened near the viewport edge, and saving a task no longer jumps the note scroll back to the top.",
+  "plugin.version": "1.9.0",
+  "plugin.lastUpdateInfo": "Note-view keyboard shortcuts (new task/heading/project, move task up/down), a 'Move completed to bottom' project action, a 'Hide upcoming' toggle, week-scheduled tasks in Upcoming/Anytime, a 'Working' status, fenced code-block rendering, and project-menu layout fixes.",
   "plugin.script": "script.js",
   "plugin.isRemote": "false",
   "plugin.requiredFiles": [

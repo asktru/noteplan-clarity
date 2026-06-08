@@ -1,5 +1,29 @@
 # What's changed in 💎 Clarity plugin?
 
+## [1.9.0] 2026-06-07
+### New
+- **Note-view keyboard shortcuts**: `⌘⌃N` new task, `⌘⇧N` new heading, and `⌘⌥N` new project note (in the current note's folder), all via an inline input; `⌘⌃↑` / `⌘⌃↓` move the focused task up / down.
+- **Move completed to bottom**: project ⋯ menu action that moves completed/cancelled top-level tasks (with their nested content) under a `## Done` heading at the end of the note.
+- **Hide upcoming** toggle in the note-view filter row — hides tasks scheduled for a future date; future tasks otherwise render dimmed rather than disappearing.
+- **Fenced code blocks** render with a copy button in the note view.
+- Checklist items render markdown and are editable on click in the task editor.
+- **Week-scheduled tasks** appear in Upcoming and Anytime; weekly notes form their own group in folder/note grouping.
+- **Working** project status option.
+- **Repeating / non-repeating filter pills** in the Today view.
+- Standardized **Open** commands — Open in sidebar / separate window, plus Open current note in sidebar / separate window, with per-window reply routing.
+- jgclark `project:` frontmatter is recognised for project/area detection.
+- np.Shared is auto-installed on install/update.
+
+### Changes
+- "Hide upcoming" sits before "Tasks only" in the note-view filter row.
+- Appended / moved tasks insert above the `## Done` section.
+
+### Fixes
+- Project actions menu no longer clipped by the sidebar, long items no longer wrap to two lines, and menu actions fire reliably.
+- A task can be dropped into an empty section between two headings.
+- New-item shortcuts: correct H2 heading insertion, focus/Enter handling, and inline-input alignment.
+- Toggling task / checklist completion updates visibly in the editor.
+
 ## [1.8.1] 2026-05-17
 ### Fixes
 - Date-picker month-navigation arrows now work correctly.

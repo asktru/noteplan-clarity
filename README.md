@@ -50,7 +50,7 @@ Click a project in the sidebar to open it inline:
 - Filter pills: All / Open / Done · "Tasks only" toggle hides prose, keeps headings as section dividers
 - Drag-and-drop to reorder tasks (long-press, ⌘E ESC to cancel)
 - Collapse / expand markdown sections via heading chevrons (matches NotePlan's `…` convention)
-- Project actions menu (⋯): **Refresh** · **Edit metadata…** · **Move to archive…**
+- Project actions menu (⋯): **Refresh** · **Edit metadata…** · **Move completed to bottom** · **Move to archive…**
 - Click the project title to open the underlying note in NotePlan's split-view editor
 - Quick-add creates tasks directly in the viewed project
 
@@ -112,6 +112,7 @@ When completing a task with `@repeat(...)`, Clarity invokes the Routine plugin t
 | Shortcut | Action |
 |----------|--------|
 | `↑` / `↓` | Move focus between tasks |
+| `⌘⌃↑` / `⌘⌃↓` | Move the focused task up / down (note view) |
 | `Enter` (or double-click) | Open the focused task |
 | `Space` | Toggle the focused task done / open |
 | `Esc` | Close editor, picker, or palette |
@@ -119,6 +120,9 @@ When completing a task with `@repeat(...)`, Clarity invokes the Routine plugin t
 | `Cmd+1`..`Cmd+5` | Switch view (Inbox / Today / Upcoming / Anytime / Someday) |
 | `Cmd+/` | Quick-jump to a project or area |
 | `Cmd+N` | Focus the New Task input |
+| `⌘⌃N` | New task below the focused task (note view) |
+| `⌘⇧N` | New heading below the focused task (note view) |
+| `⌘⌥N` | New project note in the current folder (note view) |
 | `Cmd+T` | Schedule the focused or open task for today |
 | `Cmd+Shift+T` | Schedule for tomorrow |
 | `Cmd+E` | Add to "This Evening" |
@@ -131,8 +135,10 @@ When completing a task with `@repeat(...)`, Clarity invokes the Routine plugin t
 
 | Command | Description |
 |---------|-------------|
-| **Clarity** | Open the Clarity dashboard in the sidebar |
-| **Show in Clarity** | Open the current note as a project view in Clarity |
+| **Open in sidebar** (alias `clarity`) | Open the Clarity dashboard in the sidebar |
+| **Open in separate window** | Open the Clarity dashboard in a floating window |
+| **Open current note in sidebar** (alias `show in clarity`) | Open the current note as a project view in the sidebar |
+| **Open current note in separate window** | Open the current note as a project view in a floating window |
 
 ### State Persistence
 
@@ -169,7 +175,7 @@ Run `npm run build` after editing anything under `src/webview/`. `npm run watch`
    ```
    (Adjust path for non-Setapp installations.)
 2. Ensure `np.Shared` is installed (FontAwesome icons + comms bridge).
-3. Restart NotePlan or run the **Clarity** command.
+3. Restart NotePlan or run the **Open in sidebar** command (alias `clarity`).
 
 ## Settings
 
